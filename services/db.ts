@@ -6,7 +6,6 @@ import {
   Customer,
   Supplier,
   Invoice,
-  InvoiceItem,
   PurchaseInvoice,
   PurchaseItem,
   PurchaseOrder,
@@ -19,7 +18,7 @@ import {
   Representative,
   Warehouse,
   StockMovement,
-  StockMovementType
+  JournalEntry
 } from '../types';
 
 export interface SystemSettings {
@@ -140,15 +139,66 @@ class DatabaseService {
   getSystemSnapshot(): string {
     const totalSales = this.invoices.reduce((s, i) => s + i.net_total, 0);
     const cash = this.getCashBalance();
-    const lowStock = this.getProductsWithBatches().filter(p => 
-      p.batches.reduce((s, b) => s + b.quantity, 0) < this.settings.lowStockThreshold
-    );
+    const inventoryValue = this.batches.reduce((sum, b) => sum + (b.quantity * b.purchase_price), 0);
+    const receivables = this.customers.reduce((sum, c) => sum + (c.current_balance > 0 ? c.current_balance : 0), 0);
     return `
       Company: ${this.settings.companyName}
-      Total Sales: ${this.settings.currency} ${totalSales.toLocaleString()}
-      Cash Balance: ${this.settings.currency} ${cash.toLocaleString()}
-      Low Stock Products: ${lowStock.length}
+      Current Sales: ${this.settings.currency} ${totalSales.toLocaleString()}
+      Available Cash: ${this.settings.currency} ${cash.toLocaleString()}
+      Inventory Asset: ${this.settings.currency} ${inventoryValue.toLocaleString()}
+      Total Receivables: ${this.settings.currency} ${receivables.toLocaleString()}
     `;
+  }
+
+  getGeneralLedger(): JournalEntry[] {
+      const entries: JournalEntry[] = [];
+      
+      // 1. Sales Invoices
+      this.invoices.forEach(inv => {
+          entries.push({
+              id: `JE-S-${inv.id}`,
+              date: inv.date,
+              description: `Sales Invoice #${inv.invoice_number}`,
+              reference: inv.id,
+              debit: inv.net_total,
+              credit: 0,
+              account: 'Accounts Receivable'
+          });
+          entries.push({
+              id: `JE-SR-${inv.id}`,
+              date: inv.date,
+              description: `Revenue for Invoice #${inv.invoice_number}`,
+              reference: inv.id,
+              debit: 0,
+              credit: inv.net_total,
+              account: 'Sales Revenue'
+          });
+      });
+
+      // 2. Cash Transactions
+      this.cashTransactions.forEach(tx => {
+          const isReceipt = tx.type === CashTransactionType.RECEIPT;
+          entries.push({
+              id: `JE-C-${tx.id}`,
+              date: tx.date,
+              description: tx.notes || `${tx.type} - ${tx.category}`,
+              reference: tx.id,
+              debit: isReceipt ? tx.amount : 0,
+              credit: isReceipt ? 0 : tx.amount,
+              account: 'Cash Account'
+          });
+          entries.push({
+              id: `JE-CO-${tx.id}`,
+              date: tx.date,
+              description: tx.notes || `${tx.type} - ${tx.category}`,
+              reference: tx.id,
+              debit: isReceipt ? 0 : tx.amount,
+              credit: isReceipt ? tx.amount : 0,
+              account: tx.category === 'CUSTOMER_PAYMENT' ? 'Accounts Receivable' : tx.category
+          });
+      });
+
+      return entries.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   async updateSettings(s: SystemSettings) {
@@ -248,20 +298,20 @@ class DatabaseService {
       if (error) return { success: false, message: error.message };
       const idx = this.batches.findIndex(b => b.id === batchId);
       if (idx !== -1) this.batches[idx].quantity = newQuantity;
-      return { success: true, message: 'تم تحديث المخزون' };
+      return { success: true, message: 'Stock Updated' };
   }
 
   async reportSpoilage(batchId: string, quantityToRemove: number, reason: string): Promise<{ success: boolean; message: string }> {
       const idx = this.batches.findIndex(b => b.id === batchId);
-      if (idx === -1) return { success: false, message: 'التشغيلة غير موجودة' };
-      if (this.batches[idx].quantity < quantityToRemove) return { success: false, message: 'الكمية غير كافية' };
+      if (idx === -1) return { success: false, message: 'Batch not found' };
+      if (this.batches[idx].quantity < quantityToRemove) return { success: false, message: 'Insufficient quantity' };
       
       const newQty = this.batches[idx].quantity - quantityToRemove;
       const { error } = await supabase.from('batches').update({ quantity: newQty }).eq('id', batchId);
       if (error) return { success: false, message: error.message };
       
       this.batches[idx].quantity = newQty;
-      return { success: true, message: `تم تسجيل التوالف: ${quantityToRemove}` };
+      return { success: true, message: `Spoilage recorded: ${quantityToRemove}` };
   }
 
   async transferStock(batchId: string, targetWarehouseId: string, quantity: number): Promise<{ success: boolean; message: string }> {
@@ -280,13 +330,12 @@ class DatabaseService {
         await supabase.from('batches').insert(newBatch);
         this.batches.push(newBatch);
         
-        return { success: true, message: 'تم التحويل بنجاح' };
+        return { success: true, message: 'Transfer successful' };
     } catch (e: any) {
         return { success: false, message: e.message };
     }
   }
 
-  // Added fix: Implementation of updateInvoice to resolve error in NewInvoice.tsx
   async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message: string; id?: string }> {
     try {
         const index = this.invoices.findIndex(i => i.id === id);
@@ -316,7 +365,6 @@ class DatabaseService {
         }
         const netTotal = totalGross - totalItemDiscount - additionalDiscount;
 
-        // Atomic Cloud Updates
         for(const item of items) {
             const batchIdx = this.batches.findIndex(b => b.id === item.batch.id);
             if(batchIdx === -1) continue;
@@ -356,7 +404,7 @@ class DatabaseService {
                  notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`
              });
         }
-        return { success: true, message: isReturn ? 'تم إنشاء مرتجع' : 'تم إنشاء فاتورة', id: invoiceId };
+        return { success: true, message: isReturn ? 'Return Created' : 'Invoice Created', id: invoiceId };
     } catch (e: any) {
         return { success: false, message: e.message };
     }
@@ -380,7 +428,7 @@ class DatabaseService {
           related_name: this.customers[customerIdx]?.name, amount: amount, date: new Date().toISOString(),
           notes: `Payment for INV#${invoice.invoice_number}`
       });
-      return { success: true, message: "تم تسجيل التحصيل" };
+      return { success: true, message: "Payment recorded" };
     }
 
   getInvoicePaidAmount(invoiceId: string): number {
@@ -407,7 +455,6 @@ class DatabaseService {
         const id = `PUR-${Date.now()}`;
         const total = items.reduce((a,b)=>a+(b.quantity*b.cost_price),0);
         
-        // Update batches and supplier balance on cloud
         const supplierIdx = this.suppliers.findIndex(s => s.id === supplierId);
         if (supplierIdx !== -1) {
             const balanceChange = isReturn ? -total : total;
@@ -417,14 +464,13 @@ class DatabaseService {
         }
 
         for (const item of items) {
-            // Find existing batch or create new
             const { data: existing } = await supabase.from('batches').select('*').eq('product_id', item.product_id).eq('batch_number', item.batch_number).single();
             if (existing) {
                 const newQty = isReturn ? existing.quantity - item.quantity : existing.quantity + item.quantity;
                 await supabase.from('batches').update({ quantity: newQty }).eq('id', existing.id);
             } else if (!isReturn) {
                 await supabase.from('batches').insert({
-                    id: `B-${Date.now()}-${Math.random()}`,
+                    id: `B-${Date.now()}-${Math.floor(Math.random()*1000)}`,
                     product_id: item.product_id,
                     warehouse_id: item.warehouse_id,
                     batch_number: item.batch_number,
@@ -444,11 +490,10 @@ class DatabaseService {
         await supabase.from('purchase_invoices').insert(inv);
         this.purchaseInvoices.push(inv);
         
-        // Update cache
         const { data: refreshedBatches } = await supabase.from('batches').select('*');
         if (refreshedBatches) this.batches = refreshedBatches;
 
-        return { success: true, message: 'تم حفظ فاتورة الشراء' };
+        return { success: true, message: 'Purchase saved' };
     } catch (e: any) {
         return { success: false, message: e.message };
     }
@@ -462,7 +507,7 @@ class DatabaseService {
       };
       await supabase.from('purchase_orders').insert(order);
       this.purchaseOrders.push(order);
-      return { success: true, message: 'تم حفظ طلب الشراء' };
+      return { success: true, message: 'Order saved' };
   }
 
   async updatePurchaseOrderStatus(id: string, status: 'COMPLETED' | 'CANCELLED') {
@@ -504,7 +549,7 @@ class DatabaseService {
       return { 
           classifiedProducts: sortedProducts.map(p => {
               cumulativeRevenue += p.revenue;
-              const percentage = (cumulativeRevenue / totalRevenue) * 100;
+              const percentage = totalRevenue > 0 ? (cumulativeRevenue / totalRevenue) * 100 : 0;
               let category = 'C';
               if (percentage <= 80) category = 'A';
               else if (percentage <= 95) category = 'B';
@@ -547,7 +592,7 @@ class DatabaseService {
       window.location.reload();
   }
 
-  exportDatabase(): string { return JSON.stringify({ products: this.products, customers: this.customers, suppliers: this.suppliers }); }
+  exportDatabase(): string { return JSON.stringify({ products: this.products, customers: this.customers, suppliers: this.suppliers, invoices: this.invoices, transactions: this.cashTransactions }); }
   importDatabase(json: string): boolean { return true; }
   
   getStockMovements(productId?: string) { return this.stockMovements; }

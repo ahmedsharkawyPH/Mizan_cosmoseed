@@ -15,7 +15,7 @@ export interface User {
   name: string;
   role: Role;
   avatar?: string;
-  permissions?: string[]; // List of enabled permission IDs
+  permissions?: string[]; 
 }
 
 export interface Warehouse {
@@ -28,31 +28,31 @@ export interface Product {
   id: string;
   code: string;
   name: string;
-  package_type?: string; // NEW: e.g., "Carton", "Bale", "Box"
-  items_per_package?: number; // NEW: e.g., 12, 20, 6
+  package_type?: string; 
+  items_per_package?: number; 
 }
 
 export interface Batch {
   id: string;
   product_id: string;
-  warehouse_id: string; // Link to Warehouse
+  warehouse_id: string; 
   batch_number: string;
   selling_price: number;
   purchase_price: number;
   quantity: number;
-  expiry_date: string; // ISO Date string
+  expiry_date: string; 
   status: BatchStatus;
 }
 
 export interface Representative {
   id: string;
-  code: string; // Primary Link
+  code: string; 
   name: string;
   phone: string;
-  supervisor_id?: string; // Link to User (Supervisor) - DEPRECATED in new structure but kept for type safety
-  distribution_line?: string; // NEW: The specific route/line
-  commission_rate?: number; // Commission Percentage (e.g., 1 for 1%)
-  commission_target?: number; // Target Sales Amount to trigger commission
+  supervisor_id?: string; 
+  distribution_line?: string; 
+  commission_rate?: number; 
+  commission_target?: number; 
 }
 
 export interface Customer {
@@ -62,12 +62,12 @@ export interface Customer {
   phone: string;
   area: string;
   address: string;
-  distribution_line?: string; // NEW: Distribution Line / Route
+  distribution_line?: string; 
   opening_balance: number;
   current_balance: number;
-  credit_limit?: number; // Added: Max debt allowed
-  representative_code?: string; // Link to Representative Code
-  default_discount_percent?: number; // NEW: Customer specific discount %
+  credit_limit?: number; 
+  representative_code?: string; 
+  default_discount_percent?: number; 
 }
 
 export interface Supplier {
@@ -91,18 +91,18 @@ export interface Invoice {
   id: string;
   invoice_number: string;
   customer_id: string;
-  created_by?: string; // NEW: User ID of who created the invoice
-  created_by_name?: string; // NEW: Name of the creator for easier display
+  created_by?: string; 
+  created_by_name?: string; 
   date: string;
   total_before_discount: number;
-  total_discount: number; // Item discounts sum
-  additional_discount?: number; // NEW: Global extra discount
+  total_discount: number; 
+  additional_discount?: number; 
   net_total: number;
   previous_balance: number;
   final_balance: number;
   payment_status: PaymentStatus;
-  items: CartItem[]; // Added to persist items
-  type: 'SALE' | 'RETURN'; // Added Invoice Type
+  items: CartItem[]; 
+  type: 'SALE' | 'RETURN'; 
 }
 
 export interface PurchaseInvoice {
@@ -118,15 +118,14 @@ export interface PurchaseInvoice {
 
 export interface PurchaseItem {
   product_id: string;
-  warehouse_id: string; // Target Warehouse
-  batch_number: string; // For new batches or identifying returned batches
+  warehouse_id: string; 
+  batch_number: string; 
   quantity: number;
   cost_price: number;
   selling_price: number;
   expiry_date: string;
 }
 
-// NEW: Purchase Order (Planning)
 export interface PurchaseOrder {
   id: string;
   order_number: string;
@@ -137,23 +136,11 @@ export interface PurchaseOrder {
   items: {
       product_id: string;
       quantity: number;
-      cost_price: number; // NEW: Agreed/Estimated Cost
-      last_cost?: number; // Snapshot of last cost
+      cost_price: number; 
+      last_cost?: number; 
       current_stock?: number;
       monthly_avg?: number;
   }[];
-}
-
-export interface InvoiceItem {
-  id: string;
-  invoice_id: string;
-  product_id: string;
-  batch_id: string;
-  quantity: number;
-  bonus_quantity: number;
-  unit_price: number;
-  discount_percentage: number;
-  line_total: number;
 }
 
 export enum CashTransactionType {
@@ -161,22 +148,20 @@ export enum CashTransactionType {
   EXPENSE = 'EXPENSE',
 }
 
-// Changed from union type to string to allow dynamic categories
 export type CashCategory = string;
 
 export interface CashTransaction {
   id: string;
-  ref_number?: string; // NEW: Manual or Auto Tracking Number (Doc No)
+  ref_number?: string; 
   type: CashTransactionType;
   category: CashCategory;
-  reference_id?: string; // ID of the Invoice, Customer, or Supplier
-  related_name?: string; // Name of the person/entity for display
+  reference_id?: string; 
+  related_name?: string; 
   amount: number;
   date: string;
   notes: string;
 }
 
-// NEW: Audit Trail for Inventory (Card Item)
 export type StockMovementType = 'SALE' | 'PURCHASE' | 'RETURN_IN' | 'RETURN_OUT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'ADJUSTMENT' | 'SPOILAGE' | 'INITIAL';
 
 export interface StockMovement {
@@ -186,9 +171,20 @@ export interface StockMovement {
     product_id: string;
     batch_number: string;
     warehouse_id: string;
-    quantity: number; // Positive for IN, Negative for OUT
-    reference_id?: string; // Invoice ID, Transfer ID, etc.
+    quantity: number; 
+    reference_id?: string; 
     notes?: string;
+}
+
+// Accounting Types
+export interface JournalEntry {
+    id: string;
+    date: string;
+    description: string;
+    reference: string;
+    debit: number;
+    credit: number;
+    account: string;
 }
 
 // Helper types for UI
@@ -202,5 +198,5 @@ export interface CartItem {
   quantity: number;
   bonus_quantity: number;
   discount_percentage: number;
-  unit_price?: number; // Added: The actual selling price used
+  unit_price?: number; 
 }

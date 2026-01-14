@@ -1,5 +1,7 @@
 {
-  "name": "Mizan 4 khalaf",
-  "description": "A comprehensive accounting system demo for Web, featuring strict inventory controls, batch tracking, and financial reporting.",
-  "requestFramePermissions": []
+  "name": "Mizan Online Pro",
+  "description": "Enterprise-grade unified accounting and inventory management system with real-time analytics and AI integration.",
+  "requestFramePermissions": [
+    "camera"
+  ]
 }
