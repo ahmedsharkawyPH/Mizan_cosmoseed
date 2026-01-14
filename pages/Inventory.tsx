@@ -1,14 +1,13 @@
-
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Clock, Upload } from 'lucide-react';
-import { useHistory, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
 import { readExcelFile } from '../utils/excel';
 
 const Inventory: React.FC = () => {
-  const history = useHistory();
+  const navigate = useNavigate();
   const location = useLocation();
   const [products, setProducts] = useState(db.getProductsWithBatches());
   const warehouses = db.getWarehouses();
@@ -136,15 +135,15 @@ const Inventory: React.FC = () => {
             
             {/* Purchase Orders Section */}
             <div className="flex bg-purple-50 p-1 rounded-xl border border-purple-100 shadow-sm">
-                <button onClick={() => history.push('/purchase-orders')} className="bg-purple-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-all hover:bg-purple-700">
+                <button onClick={() => navigate('/purchase-orders')} className="bg-purple-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-all hover:bg-purple-700">
                     <ShoppingBag className="w-4 h-4" />{t('stock.order')}
                 </button>
             </div>
 
-            <button onClick={() => history.push('/purchases/new')} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-slate-900">
+            <button onClick={() => navigate('/purchases/new')} className="bg-slate-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-slate-900">
                 <PlusCircle className="w-4 h-4" />{t('stock.purchase')}
             </button>
-            <button onClick={() => history.push('/purchases/return')} className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-slate-50">
+            <button onClick={() => navigate('/purchases/return')} className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-slate-50">
                 <RotateCcw className="w-4 h-4" />{t('stock.return')}
             </button>
         </div>
@@ -178,7 +177,7 @@ const Inventory: React.FC = () => {
                                 <th className="px-6 py-3 text-right">{t('stock.cost')}</th>
                                 <th className="px-6 py-3 text-right">{t('stock.price')}</th>
                                 <th className="px-6 py-3 text-right">{t('stock.qty')}</th>
-                                <th className="px-6 py-3 text-center">{t('common.action')}</th>
+                                <th className="px-6 py-4 text-center">{t('common.action')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">

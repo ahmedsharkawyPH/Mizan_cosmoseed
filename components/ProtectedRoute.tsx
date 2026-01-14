@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { Redirect } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { authService } from '../services/auth';
 
 interface Props {
@@ -9,5 +8,5 @@ interface Props {
 
 export const ProtectedRoute = ({ children }: Props) => {
   const isAuth = authService.isAuthenticated();
-  return isAuth ? <>{children}</> : <Redirect to="/login" />;
+  return isAuth ? <>{children}</> : <Navigate to="/login" replace />;
 };

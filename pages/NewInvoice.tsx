@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
 import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag } from 'lucide-react';
-import { useHistory, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 
@@ -15,7 +14,7 @@ interface InvoiceSettings {
 }
 
 export default function NewInvoice() {
-  const history = useHistory();
+  const navigate = useNavigate();
   const { id } = useParams<{id: string}>();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<ProductWithBatches[]>([]);
@@ -204,7 +203,7 @@ export default function NewInvoice() {
         ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
         : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined);
       
-      if (result.success) history.push('/invoices', result.id ? { autoPrintId: result.id } : undefined);
+      if (result.success) navigate('/invoices', { state: { autoPrintId: result.id } });
       else setError(result.message);
     } catch (e: any) {
       setError(e.message);
@@ -217,7 +216,7 @@ export default function NewInvoice() {
     <div className="flex flex-col h-full space-y-4 max-w-[1600px] mx-auto pb-6">
       <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <button onClick={() => history.push('/invoices')} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200">
+             <button onClick={() => navigate('/invoices')} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200">
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
              </button>
              <h1 className="text-2xl font-bold text-gray-800 tracking-tight">
