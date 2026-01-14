@@ -25,6 +25,7 @@ export default function NewInvoice() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cashPayment, setCashPayment] = useState<number>(0);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
+  const [additionalDiscountPercent, setAdditionalDiscountPercent] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -80,6 +81,18 @@ export default function NewInvoice() {
     }
   }, [id]);
 
+  // تحديث الخصم التلقائي عند تغيير العميل
+  useEffect(() => {
+      if (selectedCustomer && !id) { // فقط في الفواتير الجديدة
+          const customer = customers.find(c => c.id === selectedCustomer);
+          if (customer?.default_discount_percent) {
+              setAdditionalDiscountPercent(customer.default_discount_percent);
+          } else {
+              setAdditionalDiscountPercent(0);
+          }
+      }
+  }, [selectedCustomer, customers, id]);
+
   const availableBatch = useMemo(() => {
     if (!selectedProduct || !selectedWarehouse) return null;
     const prod = products.find(p => p.id === selectedProduct);
@@ -87,12 +100,10 @@ export default function NewInvoice() {
     return prod.batches.find(b => b.warehouse_id === selectedWarehouse && (isReturnMode || b.quantity > 0)) || null;
   }, [selectedProduct, selectedWarehouse, products, isReturnMode]);
 
-  // دالة لجلب آخر سعر شراء من السجل
   const lastPurchasePrice = useMemo(() => {
     if (!selectedProduct) return 0;
     const history = db.getPurchaseInvoices();
     let latestCost = 0;
-    // نبحث عن أحدث فاتورة شراء تحتوي على هذا الصنف
     for (const inv of history) {
         if (inv.type === 'PURCHASE') {
             const item = inv.items.find(i => i.product_id === selectedProduct);
@@ -102,14 +113,13 @@ export default function NewInvoice() {
             }
         }
     }
-    // إذا لم يجد في السجل، نأخذ سعر تكلفة التشغيلة الحالية كاحتياطي
     return latestCost || (availableBatch?.purchase_price || 0);
   }, [selectedProduct, availableBatch]);
 
   useEffect(() => {
       if (availableBatch) {
           setManualPrice(availableBatch.selling_price);
-          setShowLastCost(false); // ريست لإخفاء السعر عند تغيير الصنف
+          setShowLastCost(false);
           setTimeout(() => {
               if (invoiceConfig.enableManualPrice) priceRef.current?.focus();
               else qtyRef.current?.focus();
@@ -169,8 +179,17 @@ export default function NewInvoice() {
       totalItemDiscount += gross * (item.discount_percentage / 100);
     });
     const subtotal = totalGross - totalItemDiscount;
-    return { gross: totalGross, itemDiscount: totalItemDiscount, subtotal, net: Math.max(0, subtotal - additionalDiscount) };
-  }, [cart, additionalDiscount]);
+    const discountFromPercent = (subtotal * additionalDiscountPercent / 100);
+    const totalAdditionalDiscountValue = discountFromPercent + additionalDiscount;
+    
+    return { 
+      gross: totalGross, 
+      itemDiscount: totalItemDiscount, 
+      subtotal, 
+      totalAdditionalDiscount: totalAdditionalDiscountValue,
+      net: Math.max(0, subtotal - totalAdditionalDiscountValue) 
+    };
+  }, [cart, additionalDiscount, additionalDiscountPercent]);
 
   const handleCheckout = async (print: boolean = false) => {
     if (!selectedCustomer || cart.length === 0) {
@@ -180,9 +199,10 @@ export default function NewInvoice() {
     setIsSubmitting(true);
     const user = authService.getCurrentUser();
     try {
+      // إرسال إجمالي الخصم (المبلغ الثابت + مبلغ النسبة) ليتم حفظه في الفاتورة
       const result = id 
         ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
-        : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, additionalDiscount, user ? { id: user.id, name: user.name } : undefined);
+        : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined);
       
       if (result.success) navigate('/invoices', result.id ? { state: { autoPrintId: result.id } } : undefined);
       else setError(result.message);
@@ -318,9 +338,42 @@ export default function NewInvoice() {
             <h3 className="font-bold text-slate-700 text-lg border-b pb-4">{t('inv.details')}</h3>
             <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span>{t('inv.subtotal')}</span><span className="font-bold">{currency}{totals.subtotal.toFixed(2)}</span></div>
-                <div className="flex justify-between text-red-500 font-bold"><span>{t('inv.discount')}</span><span>-{currency}{additionalDiscount.toFixed(2)}</span></div>
-                <div className="flex justify-between text-xl font-bold border-t pt-2 mt-2"><span>{t('inv.net_total')}</span><span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span></div>
+                
+                <div className="space-y-3 pt-2">
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase flex-1">{t('inv.discount')} (%)</label>
+                        <div className="relative w-24">
+                            <input 
+                                type="number" 
+                                className="w-full border rounded-lg p-1.5 text-center font-bold text-blue-600 focus:ring-1 focus:ring-blue-500 outline-none" 
+                                value={additionalDiscountPercent} 
+                                onChange={e => setAdditionalDiscountPercent(parseFloat(e.target.value) || 0)} 
+                            />
+                            <Percent className="absolute right-2 top-2 w-3 h-3 text-slate-400" />
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase flex-1">{t('inv.additional_discount')} (مبلغ)</label>
+                        <input 
+                            type="number" 
+                            className="w-24 border rounded-lg p-1.5 text-center font-bold text-red-600 focus:ring-1 focus:ring-blue-500 outline-none" 
+                            value={additionalDiscount} 
+                            onChange={e => setAdditionalDiscount(parseFloat(e.target.value) || 0)} 
+                        />
+                    </div>
+                </div>
+
+                <div className="flex justify-between text-red-500 font-bold border-t pt-2 mt-2">
+                    <span>إجمالي الخصم</span>
+                    <span>-{currency}{totals.totalAdditionalDiscount.toFixed(2)}</span>
+                </div>
+                
+                <div className="flex justify-between text-xl font-bold border-t-2 border-slate-100 pt-2 mt-2">
+                    <span>{t('inv.net_total')}</span>
+                    <span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span>
+                </div>
             </div>
+
             <div className="space-y-4 pt-4">
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.cash_paid')}</label><input ref={cashRef} type="number" className="w-full border rounded-lg p-2.5 text-lg font-bold text-emerald-600" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} /></div>
                 <button onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
