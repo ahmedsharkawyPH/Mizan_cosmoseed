@@ -109,7 +109,8 @@ export default function PurchaseOrders() {
       setCart(cart.filter((_, i) => i !== idx));
   };
 
-  const handleSaveOrder = () => {
+  // Added fix: Marked handleSaveOrder as async and added await to db.createPurchaseOrder
+  const handleSaveOrder = async () => {
       if (!selectedSupplier || cart.length === 0) return;
       
       const itemsPayload = cart.map(item => ({
@@ -121,7 +122,7 @@ export default function PurchaseOrders() {
           monthly_avg: item.monthly_avg
       }));
 
-      const res = db.createPurchaseOrder(selectedSupplier, itemsPayload);
+      const res = await db.createPurchaseOrder(selectedSupplier, itemsPayload);
       if (res.success) {
           alert(t('common.success_import') || "Order Saved");
           setOrders(db.getPurchaseOrders());

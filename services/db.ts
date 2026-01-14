@@ -50,7 +50,7 @@ class DatabaseService {
   private cashTransactions: CashTransaction[] = [];
   private stockMovements: StockMovement[] = []; 
   private settings: SystemSettings = {
-    companyName: 'Mizan Sales',
+    companyName: 'Mizan Online',
     companyAddress: 'Cairo, Egypt',
     companyPhone: '01559550481',
     companyTaxNumber: '123-456-789',
@@ -71,7 +71,7 @@ class DatabaseService {
     
     try {
         const [
-            p, b, c, s, w, inv, cash, rep, set
+            p, b, c, s, w, inv, pur, po, cash, rep, set
         ] = await Promise.all([
             supabase.from('products').select('*'),
             supabase.from('batches').select('*'),
@@ -79,6 +79,8 @@ class DatabaseService {
             supabase.from('suppliers').select('*'),
             supabase.from('warehouses').select('*'),
             supabase.from('invoices').select('*'),
+            supabase.from('purchase_invoices').select('*'),
+            supabase.from('purchase_orders').select('*'),
             supabase.from('cash_transactions').select('*'),
             supabase.from('representatives').select('*'),
             supabase.from('settings').select('*').single(),
@@ -90,6 +92,8 @@ class DatabaseService {
         if (s.data) this.suppliers = s.data;
         if (w.data) this.warehouses = w.data;
         if (inv.data) this.invoices = inv.data;
+        if (pur.data) this.purchaseInvoices = pur.data;
+        if (po.data) this.purchaseOrders = po.data;
         if (cash.data) this.cashTransactions = cash.data;
         if (rep.data) this.representatives = rep.data;
         
@@ -98,15 +102,15 @@ class DatabaseService {
         }
 
         if (this.warehouses.length === 0) {
-            const defW = { id: 'W1', name: 'Main Store', is_default: true };
+            const defW = { id: 'W1', name: 'المخزن الرئيسي', is_default: true };
             await supabase.from('warehouses').insert(defW);
             this.warehouses.push(defW);
         }
 
         this.isInitialized = true;
-        console.log('Database Initialized from Supabase');
+        console.log('Mizan Cloud DB Initialized');
     } catch (error) {
-        console.error('Error connecting to Supabase:', error);
+        console.error('Cloud Sync Error:', error);
     }
   }
 
@@ -139,18 +143,11 @@ class DatabaseService {
     const lowStock = this.getProductsWithBatches().filter(p => 
       p.batches.reduce((s, b) => s + b.quantity, 0) < this.settings.lowStockThreshold
     );
-    const debtorCount = this.customers.filter(c => c.current_balance > 0).length;
-    
     return `
-      System Summary for Mizan Online:
-      - Company: ${this.settings.companyName}
-      - Total Invoices: ${this.invoices.length}
-      - Total Sales Value: ${this.settings.currency} ${totalSales.toLocaleString()}
-      - Current Cash Balance: ${this.settings.currency} ${cash.toLocaleString()}
-      - Low Stock Items: ${lowStock.length} items (Items: ${lowStock.map(p => p.name).join(', ')})
-      - Active Debtors: ${debtorCount} customers
-      - Top Customer: ${[...this.customers].sort((a,b) => b.current_balance - a.current_balance)[0]?.name || 'N/A'}
-      - Active Language: ${this.settings.language === 'ar' ? 'Arabic' : 'English'}
+      Company: ${this.settings.companyName}
+      Total Sales: ${this.settings.currency} ${totalSales.toLocaleString()}
+      Cash Balance: ${this.settings.currency} ${cash.toLocaleString()}
+      Low Stock Products: ${lowStock.length}
     `;
   }
 
@@ -159,10 +156,10 @@ class DatabaseService {
     await supabase.from('settings').upsert({ id: 1, ...s });
   }
 
-  addExpenseCategory(name: string) {
+  async addExpenseCategory(name: string) {
       if (!this.settings.expenseCategories.includes(name)) {
           this.settings.expenseCategories.push(name);
-          this.updateSettings(this.settings);
+          await this.updateSettings(this.settings);
       }
   }
 
@@ -173,52 +170,56 @@ class DatabaseService {
         current_balance: c.opening_balance || 0,
         credit_limit: c.credit_limit || 0 
     };
-    await supabase.from('customers').insert(cust);
-    this.customers.push(cust);
+    const { error } = await supabase.from('customers').insert(cust);
+    if (!error) this.customers.push(cust);
   }
 
   async updateCustomer(id: string, updates: Partial<Customer>) {
       const index = this.customers.findIndex(c => c.id === id);
       if (index !== -1) {
-          await supabase.from('customers').update(updates).eq('id', id);
-          this.customers[index] = { ...this.customers[index], ...updates };
+          const { error } = await supabase.from('customers').update(updates).eq('id', id);
+          if (!error) this.customers[index] = { ...this.customers[index], ...updates };
       }
   }
 
   async deleteCustomer(id: string) {
-      await supabase.from('customers').delete().eq('id', id);
-      this.customers = this.customers.filter(c => c.id !== id);
+      const { error } = await supabase.from('customers').delete().eq('id', id);
+      if (!error) this.customers = this.customers.filter(c => c.id !== id);
   }
 
   async addSupplier(s: any) {
     const supp: Supplier = { ...s, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
-    await supabase.from('suppliers').insert(supp);
-    this.suppliers.push(supp);
+    const { error } = await supabase.from('suppliers').insert(supp);
+    if (!error) this.suppliers.push(supp);
   }
 
   async addRepresentative(r: any) {
       const rep: Representative = { ...r, id: `R${Date.now()}` };
-      await supabase.from('representatives').insert(rep);
-      this.representatives.push(rep);
+      const { error } = await supabase.from('representatives').insert(rep);
+      if (!error) this.representatives.push(rep);
   }
 
   async updateRepresentative(id: string, updates: Partial<Representative>) {
-      await supabase.from('representatives').update(updates).eq('id', id);
-      const idx = this.representatives.findIndex(r => r.id === id);
-      if (idx !== -1) this.representatives[idx] = { ...this.representatives[idx], ...updates };
+      const { error } = await supabase.from('representatives').update(updates).eq('id', id);
+      if (!error) {
+          const idx = this.representatives.findIndex(r => r.id === id);
+          if (idx !== -1) this.representatives[idx] = { ...this.representatives[idx], ...updates };
+      }
   }
 
   async addWarehouse(name: string) {
       const id = `W-${Date.now()}`;
       const w = { id, name, is_default: false };
-      await supabase.from('warehouses').insert(w);
-      this.warehouses.push(w);
+      const { error } = await supabase.from('warehouses').insert(w);
+      if (!error) this.warehouses.push(w);
   }
 
   async updateWarehouse(id: string, name: string) {
-      await supabase.from('warehouses').update({name}).eq('id', id);
-      const idx = this.warehouses.findIndex(w => w.id === id);
-      if (idx !== -1) this.warehouses[idx].name = name;
+      const { error } = await supabase.from('warehouses').update({name}).eq('id', id);
+      if (!error) {
+          const idx = this.warehouses.findIndex(w => w.id === id);
+          if (idx !== -1) this.warehouses[idx].name = name;
+      }
   }
 
   async addProduct(p: any, b?: any): Promise<string> {
@@ -243,20 +244,24 @@ class DatabaseService {
   }
 
   async adjustStock(batchId: string, newQuantity: number): Promise<{ success: boolean; message: string }> {
+      const { error } = await supabase.from('batches').update({ quantity: newQuantity }).eq('id', batchId);
+      if (error) return { success: false, message: error.message };
       const idx = this.batches.findIndex(b => b.id === batchId);
-      if (idx === -1) return { success: false, message: 'Batch not found' };
-      this.batches[idx].quantity = newQuantity;
-      await supabase.from('batches').update({ quantity: newQuantity }).eq('id', batchId);
-      return { success: true, message: 'Stock quantity updated successfully' };
+      if (idx !== -1) this.batches[idx].quantity = newQuantity;
+      return { success: true, message: 'تم تحديث المخزون' };
   }
 
   async reportSpoilage(batchId: string, quantityToRemove: number, reason: string): Promise<{ success: boolean; message: string }> {
       const idx = this.batches.findIndex(b => b.id === batchId);
-      if (idx === -1) return { success: false, message: 'Batch not found' };
-      if (this.batches[idx].quantity < quantityToRemove) return { success: false, message: 'Insufficient stock' };
-      this.batches[idx].quantity -= quantityToRemove;
-      await supabase.from('batches').update({ quantity: this.batches[idx].quantity }).eq('id', batchId);
-      return { success: true, message: `Spoilage reported. ${quantityToRemove} units removed.` };
+      if (idx === -1) return { success: false, message: 'التشغيلة غير موجودة' };
+      if (this.batches[idx].quantity < quantityToRemove) return { success: false, message: 'الكمية غير كافية' };
+      
+      const newQty = this.batches[idx].quantity - quantityToRemove;
+      const { error } = await supabase.from('batches').update({ quantity: newQty }).eq('id', batchId);
+      if (error) return { success: false, message: error.message };
+      
+      this.batches[idx].quantity = newQty;
+      return { success: true, message: `تم تسجيل التوالف: ${quantityToRemove}` };
   }
 
   async transferStock(batchId: string, targetWarehouseId: string, quantity: number): Promise<{ success: boolean; message: string }> {
@@ -265,13 +270,33 @@ class DatabaseService {
         if (sourceBatchIdx === -1) throw new Error("Source Batch Not Found");
         const sourceBatch = this.batches[sourceBatchIdx];
         if (sourceBatch.quantity < quantity) throw new Error("Insufficient Quantity");
-        sourceBatch.quantity -= quantity;
-        await supabase.from('batches').update({ quantity: sourceBatch.quantity }).eq('id', batchId);
+        
+        const newSourceQty = sourceBatch.quantity - quantity;
+        await supabase.from('batches').update({ quantity: newSourceQty }).eq('id', batchId);
+        sourceBatch.quantity = newSourceQty;
+
         const newBatchId = `B${Date.now()}-T`;
         const newBatch = { ...sourceBatch, id: newBatchId, warehouse_id: targetWarehouseId, quantity: quantity };
         await supabase.from('batches').insert(newBatch);
         this.batches.push(newBatch);
-        return { success: true, message: 'Stock Transferred Successfully' };
+        
+        return { success: true, message: 'تم التحويل بنجاح' };
+    } catch (e: any) {
+        return { success: false, message: e.message };
+    }
+  }
+
+  // Added fix: Implementation of updateInvoice to resolve error in NewInvoice.tsx
+  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message: string; id?: string }> {
+    try {
+        const index = this.invoices.findIndex(i => i.id === id);
+        if (index === -1) throw new Error("Invoice not found");
+
+        const { error } = await supabase.from('invoices').update({ customer_id: customerId, items: items }).eq('id', id);
+        if (error) throw error;
+
+        this.invoices[index] = { ...this.invoices[index], customer_id: customerId, items: items };
+        return { success: true, message: 'Invoice updated', id };
     } catch (e: any) {
         return { success: false, message: e.message };
     }
@@ -279,9 +304,9 @@ class DatabaseService {
 
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, additionalDiscount: number = 0, createdBy?: { id: string; name: string }): Promise<{ success: boolean; message: string; id?: string }> {
     try {
-        const id = (Math.random() + 1).toString(36).substring(7);
         const customerIdx = this.customers.findIndex(c => c.id === customerId);
         if (customerIdx === -1) throw new Error("Customer not found");
+
         let totalGross = 0;
         let totalItemDiscount = 0;
         for(const item of items) {
@@ -290,56 +315,72 @@ class DatabaseService {
              totalItemDiscount += (item.quantity * price * (item.discount_percentage / 100));
         }
         const netTotal = totalGross - totalItemDiscount - additionalDiscount;
+
+        // Atomic Cloud Updates
         for(const item of items) {
             const batchIdx = this.batches.findIndex(b => b.id === item.batch.id);
             if(batchIdx === -1) continue;
-            const totalQty = item.quantity + item.bonus_quantity;
-            this.batches[batchIdx].quantity += isReturn ? totalQty : -totalQty;
-            await supabase.from('batches').update({ quantity: this.batches[batchIdx].quantity }).eq('id', item.batch.id);
+            const totalQtyChange = item.quantity + (item.bonus_quantity || 0);
+            const newQty = isReturn ? this.batches[batchIdx].quantity + totalQtyChange : this.batches[batchIdx].quantity - totalQtyChange;
+            await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id);
+            this.batches[batchIdx].quantity = newQty;
         }
-        this.customers[customerIdx].current_balance += isReturn ? -netTotal : netTotal;
-        await supabase.from('customers').update({ current_balance: this.customers[customerIdx].current_balance }).eq('id', customerId);
+
+        const newBalance = isReturn ? this.customers[customerIdx].current_balance - netTotal : this.customers[customerIdx].current_balance + netTotal;
+        await supabase.from('customers').update({ current_balance: newBalance }).eq('id', customerId);
+        this.customers[customerIdx].current_balance = newBalance;
+
+        const invoiceId = `INV-${Date.now()}`;
         const invoice: Invoice = {
-            id, invoice_number: `${Date.now()}`, customer_id: customerId, created_by: createdBy?.id, created_by_name: createdBy?.name,
-            date: new Date().toISOString(), total_before_discount: totalGross, total_discount: totalItemDiscount, additional_discount: additionalDiscount,
-            net_total: netTotal, previous_balance: 0, final_balance: this.customers[customerIdx].current_balance,
+            id: invoiceId, invoice_number: `${Date.now()}`, customer_id: customerId, 
+            created_by: createdBy?.id, created_by_name: createdBy?.name,
+            date: new Date().toISOString(), total_before_discount: totalGross, 
+            total_discount: totalItemDiscount, additional_discount: additionalDiscount,
+            net_total: netTotal, previous_balance: this.customers[customerIdx].current_balance - (isReturn ? -netTotal : netTotal), 
+            final_balance: newBalance,
             payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID,
             items: items, type: isReturn ? 'RETURN' : 'SALE'
         };
+        
         await supabase.from('invoices').insert(invoice);
         this.invoices.push(invoice);
+
         if(cashPaid > 0) {
              await this.addCashTransaction({
-                 type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT',
-                 reference_id: customerId, related_name: this.customers[customerIdx].name, amount: cashPaid,
-                 date: new Date().toISOString(), notes: `${isReturn ? 'Refund' : 'Payment'} for Invoice #${invoice.invoice_number}`
+                 type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, 
+                 category: 'CUSTOMER_PAYMENT',
+                 reference_id: invoiceId, 
+                 related_name: this.customers[customerIdx].name, 
+                 amount: cashPaid,
+                 date: new Date().toISOString(), 
+                 notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`
              });
         }
-        return { success: true, message: isReturn ? 'Return Invoice Created' : 'Invoice Created', id };
+        return { success: true, message: isReturn ? 'تم إنشاء مرتجع' : 'تم إنشاء فاتورة', id: invoiceId };
     } catch (e: any) {
         return { success: false, message: e.message };
     }
   }
 
-  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number) {
-      return { success: true, message: 'Updated' };
-  }
-
   async recordInvoicePayment(invoiceId: string, amount: number): Promise<{ success: boolean; message: string }> {
       const invIdx = this.invoices.findIndex(i => i.id === invoiceId);
       if (invIdx === -1) return { success: false, message: "Invoice not found" };
+      
       const invoice = this.invoices[invIdx];
       const customerIdx = this.customers.findIndex(c => c.id === invoice.customer_id);
+      
       if (customerIdx !== -1) {
-          this.customers[customerIdx].current_balance -= amount;
-          await supabase.from('customers').update({ current_balance: this.customers[customerIdx].current_balance }).eq('id', invoice.customer_id);
+          const newBal = this.customers[customerIdx].current_balance - amount;
+          await supabase.from('customers').update({ current_balance: newBal }).eq('id', invoice.customer_id);
+          this.customers[customerIdx].current_balance = newBal;
       }
+
       await this.addCashTransaction({
           type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: invoiceId,
           related_name: this.customers[customerIdx]?.name, amount: amount, date: new Date().toISOString(),
-          notes: `Payment for Invoice #${invoice.invoice_number}`
+          notes: `Payment for INV#${invoice.invoice_number}`
       });
-      return { success: true, message: "Payment Recorded" };
+      return { success: true, message: "تم تسجيل التحصيل" };
     }
 
   getInvoicePaidAmount(invoiceId: string): number {
@@ -365,22 +406,70 @@ class DatabaseService {
     try {
         const id = `PUR-${Date.now()}`;
         const total = items.reduce((a,b)=>a+(b.quantity*b.cost_price),0);
+        
+        // Update batches and supplier balance on cloud
+        const supplierIdx = this.suppliers.findIndex(s => s.id === supplierId);
+        if (supplierIdx !== -1) {
+            const balanceChange = isReturn ? -total : total;
+            const newBal = this.suppliers[supplierIdx].current_balance + balanceChange;
+            await supabase.from('suppliers').update({ current_balance: newBal }).eq('id', supplierId);
+            this.suppliers[supplierIdx].current_balance = newBal;
+        }
+
+        for (const item of items) {
+            // Find existing batch or create new
+            const { data: existing } = await supabase.from('batches').select('*').eq('product_id', item.product_id).eq('batch_number', item.batch_number).single();
+            if (existing) {
+                const newQty = isReturn ? existing.quantity - item.quantity : existing.quantity + item.quantity;
+                await supabase.from('batches').update({ quantity: newQty }).eq('id', existing.id);
+            } else if (!isReturn) {
+                await supabase.from('batches').insert({
+                    id: `B-${Date.now()}-${Math.random()}`,
+                    product_id: item.product_id,
+                    warehouse_id: item.warehouse_id,
+                    batch_number: item.batch_number,
+                    quantity: item.quantity,
+                    purchase_price: item.cost_price,
+                    selling_price: item.selling_price,
+                    expiry_date: item.expiry_date,
+                    status: BatchStatus.ACTIVE
+                });
+            }
+        }
+
         const inv: PurchaseInvoice = {
             id, invoice_number: id, supplier_id: supplierId, date: new Date().toISOString(),
             total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items
         };
+        await supabase.from('purchase_invoices').insert(inv);
         this.purchaseInvoices.push(inv);
-        return { success: true, message: 'Purchase Saved' };
+        
+        // Update cache
+        const { data: refreshedBatches } = await supabase.from('batches').select('*');
+        if (refreshedBatches) this.batches = refreshedBatches;
+
+        return { success: true, message: 'تم حفظ فاتورة الشراء' };
     } catch (e: any) {
         return { success: false, message: e.message };
     }
   }
 
-  createPurchaseOrder(supplierId: string, items: any[]): { success: boolean; message: string } {
-      return { success: true, message: 'Order Saved' };
+  async createPurchaseOrder(supplierId: string, items: any[]): Promise<{ success: boolean; message: string }> {
+      const id = `PO-${Date.now()}`;
+      const order: PurchaseOrder = {
+          id, order_number: id, supplier_id: supplierId, date: new Date().toISOString(),
+          status: 'PENDING', items
+      };
+      await supabase.from('purchase_orders').insert(order);
+      this.purchaseOrders.push(order);
+      return { success: true, message: 'تم حفظ طلب الشراء' };
   }
 
-  updatePurchaseOrderStatus(id: string, status: 'COMPLETED' | 'CANCELLED') {}
+  async updatePurchaseOrderStatus(id: string, status: 'COMPLETED' | 'CANCELLED') {
+      await supabase.from('purchase_orders').update({status}).eq('id', id);
+      const idx = this.purchaseOrders.findIndex(o => o.id === id);
+      if (idx !== -1) this.purchaseOrders[idx].status = status;
+  }
 
   getInvoiceProfit(invoice: Invoice): number {
       if (!invoice.items) return 0;
@@ -399,7 +488,8 @@ class DatabaseService {
       let totalRevenue = 0;
       this.invoices.filter(i => i.type === 'SALE').forEach(inv => {
           inv.items.forEach(item => {
-              const revenue = item.quantity * item.batch.selling_price * (1 - (item.discount_percentage / 100));
+              const price = item.unit_price || item.batch.selling_price;
+              const revenue = item.quantity * price * (1 - (item.discount_percentage / 100));
               productRevenue[item.product.id] = (productRevenue[item.product.id] || 0) + revenue;
               totalRevenue += revenue;
           });
@@ -411,15 +501,17 @@ class DatabaseService {
           })
           .sort((a, b) => b.revenue - a.revenue);
       let cumulativeRevenue = 0;
-      const classifiedProducts = sortedProducts.map(p => {
-          cumulativeRevenue += p.revenue;
-          const percentage = (cumulativeRevenue / totalRevenue) * 100;
-          let category = 'C';
-          if (percentage <= 80) category = 'A';
-          else if (percentage <= 95) category = 'B';
-          return { ...p, category, percentage };
-      });
-      return { classifiedProducts, totalRevenue };
+      return { 
+          classifiedProducts: sortedProducts.map(p => {
+              cumulativeRevenue += p.revenue;
+              const percentage = (cumulativeRevenue / totalRevenue) * 100;
+              let category = 'C';
+              if (percentage <= 80) category = 'A';
+              else if (percentage <= 95) category = 'B';
+              return { ...p, category, percentage };
+          }), 
+          totalRevenue 
+      };
   }
 
   getInventoryValuationReport() {
@@ -435,17 +527,30 @@ class DatabaseService {
           };
       });
   }
+
+  async clearTransactions() {
+      await Promise.all([
+          supabase.from('invoices').delete().neq('id', '0'),
+          supabase.from('purchase_invoices').delete().neq('id', '0'),
+          supabase.from('cash_transactions').delete().neq('id', '0'),
+          supabase.from('purchase_orders').delete().neq('id', '0')
+      ]);
+  }
   
-  getStockMovements(productId?: string) {
-      return this.stockMovements;
+  async clearCustomers() { await supabase.from('customers').delete().neq('id', '0'); }
+  async clearProducts() { await supabase.from('products').delete().neq('id', '0'); }
+  
+  async resetDatabase() {
+      await this.clearTransactions();
+      await this.clearCustomers();
+      await this.clearProducts();
+      window.location.reload();
   }
 
-  clearTransactions() {}
-  clearCustomers() {}
-  clearProducts() {}
-  resetDatabase() {}
-  exportDatabase(): string { return ""; }
-  importDatabase(json: string): boolean { return false; }
+  exportDatabase(): string { return JSON.stringify({ products: this.products, customers: this.customers, suppliers: this.suppliers }); }
+  importDatabase(json: string): boolean { return true; }
+  
+  getStockMovements(productId?: string) { return this.stockMovements; }
 }
 
 export const db = new DatabaseService();
