@@ -116,12 +116,12 @@ const Inventory: React.FC = () => {
           const data = await readExcelFile<any>(e.target.files[0]);
           let addedCount = 0;
 
-          data.forEach((row: any) => {
+          for (const row of data) {
               // Map Arabic Headers to English keys
               const code = row.code || row['Code'] || row['الكود'] || row['كود'];
               const name = row.name || row['Name'] || row['الاسم'] || row['اسم الصنف'];
               // Skip the instructional row if user kept it
-              if (!code || code === 'كود الصنف' || !name || name === 'اسم الصنف') return;
+              if (!code || code === 'كود الصنف' || !name || name === 'اسم الصنف') continue;
 
               const batch = row.batch || row['batch_number'] || row['Batch'] || row['التشغيلة'] || row['رقم التشغيلة'] || `BATCH-${Math.floor(Math.random()*1000)}`;
               const qty = row.qty || row['quantity'] || row['Quantity'] || row['الكمية'] || row['العدد'] || 0;
@@ -133,7 +133,7 @@ const Inventory: React.FC = () => {
 
               // Validate required fields
               if (code && name) {
-                  db.addProduct({
+                  await db.addProduct({
                       code: String(code), 
                       name: String(name), 
                       package_type: pkgType, 
@@ -147,7 +147,7 @@ const Inventory: React.FC = () => {
                   });
                   addedCount++;
               }
-          });
+          }
           
           setProducts(db.getProductsWithBatches());
           alert(`${t('common.success_import')}: ${addedCount} items added.`);
@@ -159,12 +159,12 @@ const Inventory: React.FC = () => {
     }
   };
 
-  const handleManualAdd = () => {
+  const handleManualAdd = async () => {
       if(!addForm.name || !addForm.code || !addForm.batch_number) {
           alert("Please fill required fields (Name, Code, Batch)");
           return;
       }
-      db.addProduct(
+      await db.addProduct(
           { 
               code: addForm.code, 
               name: addForm.name,
@@ -227,16 +227,16 @@ const Inventory: React.FC = () => {
   };
 
   // --- Bulk Stock Take Handler ---
-  const handleBulkStockSave = () => {
+  const handleBulkStockSave = async () => {
       let changed = 0;
-      products.forEach(p => {
-          p.batches.forEach(b => {
+      for (const p of products) {
+          for (const b of p.batches) {
               if (stockTakeValues[b.id] !== undefined && stockTakeValues[b.id] !== b.quantity) {
-                  db.adjustStock(b.id, stockTakeValues[b.id]);
+                  await db.adjustStock(b.id, stockTakeValues[b.id]);
                   changed++;
               }
-          });
-      });
+          }
+      }
 
       if (changed > 0) {
           alert(`${changed} items updated successfully.`);
@@ -691,8 +691,8 @@ const Inventory: React.FC = () => {
                         <textarea 
                             className="w-full border border-slate-200 p-3 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none" 
                             value={reason} 
-                            onChange={e => setReason(e.target.value)}
-                            placeholder="e.g. Broken in transit, Expired..."
+                            onChange={e => setReason(e.target.value)} 
+                            placeholder="e.g. Broken in transit, Expired..." 
                             rows={2}
                         />
                     </div>

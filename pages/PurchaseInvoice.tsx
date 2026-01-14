@@ -127,13 +127,13 @@ export default function PurchaseInvoice({ type }: Props) {
   };
 
   // --- Quick Add Product Handler ---
-  const handleSaveNewProduct = () => {
+  const handleSaveNewProduct = async () => {
       if (!newProductForm.name || !newProductForm.code) {
           alert("Name and Code are required");
           return;
       }
       
-      const newId = db.addProduct({
+      const newId = await db.addProduct({
           name: newProductForm.name,
           code: newProductForm.code,
           package_type: newProductForm.package_type,
