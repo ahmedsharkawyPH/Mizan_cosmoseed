@@ -66,7 +66,7 @@ class DatabaseService {
 
   constructor() {}
 
-  // Helper to map DB columns (single-word lowercase) to App properties
+  // Mapping to support lowercase single-word columns in Supabase
   private mapFromDb(dbData: any): SystemSettings {
     return {
       companyName: dbData.companyname || dbData.company_name || this.settings.companyName,
@@ -84,7 +84,6 @@ class DatabaseService {
     };
   }
 
-  // Helper to map App properties to DB columns (single-word style as reported by user)
   private mapToDb(s: SystemSettings): any {
     return {
       id: 1,
@@ -140,7 +139,7 @@ class DatabaseService {
             console.log('Creating initial settings in cloud...');
             const dbPayload = this.mapToDb(this.settings);
             const { error } = await supabase.from('settings').insert(dbPayload);
-            if (error) console.error("Error creating initial settings:", error);
+            if (error) console.error("Error creating initial settings:", error.message || JSON.stringify(error));
         }
 
         if (this.warehouses.length === 0) {
@@ -150,9 +149,8 @@ class DatabaseService {
         }
 
         this.isInitialized = true;
-        console.log('Mizan Cloud DB Initialized');
-    } catch (error) {
-        console.error('Cloud Sync Error:', error);
+    } catch (error: any) {
+        console.error('Cloud Sync Error:', error.message || error);
     }
   }
 
@@ -193,54 +191,6 @@ class DatabaseService {
     `;
   }
 
-  getGeneralLedger(): JournalEntry[] {
-      const entries: JournalEntry[] = [];
-      this.invoices.forEach(inv => {
-          entries.push({
-              id: `JE-S-${inv.id}`,
-              date: inv.date,
-              description: `Sales Invoice #${inv.invoice_number}`,
-              reference: inv.id,
-              debit: inv.net_total,
-              credit: 0,
-              account: 'Accounts Receivable'
-          });
-          entries.push({
-              id: `JE-SR-${inv.id}`,
-              date: inv.date,
-              description: `Revenue for Invoice #${inv.invoice_number}`,
-              reference: inv.id,
-              debit: 0,
-              credit: inv.net_total,
-              account: 'Sales Revenue'
-          });
-      });
-
-      this.cashTransactions.forEach(tx => {
-          const isReceipt = tx.type === CashTransactionType.RECEIPT;
-          entries.push({
-              id: `JE-C-${tx.id}`,
-              date: tx.date,
-              description: tx.notes || `${tx.type} - ${tx.category}`,
-              reference: tx.id,
-              debit: isReceipt ? tx.amount : 0,
-              credit: isReceipt ? 0 : tx.amount,
-              account: 'Cash Account'
-          });
-          entries.push({
-              id: `JE-CO-${tx.id}`,
-              date: tx.date,
-              description: tx.notes || `${tx.type} - ${tx.category}`,
-              reference: tx.id,
-              debit: isReceipt ? 0 : tx.amount,
-              credit: isReceipt ? tx.amount : 0,
-              account: tx.category === 'CUSTOMER_PAYMENT' ? 'Accounts Receivable' : tx.category
-          });
-      });
-
-      return entries.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }
-
   async updateSettings(s: SystemSettings): Promise<boolean> {
     try {
         const dbPayload = this.mapToDb(s);
@@ -252,17 +202,17 @@ class DatabaseService {
         
         this.settings = { ...s };
         return true;
-    } catch (e) {
-        console.error('Update Settings Error:', e);
+    } catch (e: any) {
+        console.error('Update Settings Error:', e.message || JSON.stringify(e));
         return false;
     }
   }
 
-  async addExpenseCategory(name: string) {
-      if (!this.settings.expenseCategories.includes(name)) {
-          this.settings.expenseCategories.push(name);
-          await this.updateSettings(this.settings);
-      }
+  // Fix: Add missing addExpenseCategory method used in CashRegister.tsx
+  async addExpenseCategory(category: string) {
+    if (this.settings.expenseCategories.includes(category)) return;
+    const newCategories = [...this.settings.expenseCategories, category];
+    await this.updateSettings({ ...this.settings, expenseCategories: newCategories });
   }
 
   async addCustomer(c: any) {
@@ -316,12 +266,13 @@ class DatabaseService {
       if (!error) this.warehouses.push(w);
   }
 
+  // Fix: Add missing updateWarehouse method used in Warehouses.tsx
   async updateWarehouse(id: string, name: string) {
-      const { error } = await supabase.from('warehouses').update({name}).eq('id', id);
-      if (!error) {
-          const idx = this.warehouses.findIndex(w => w.id === id);
-          if (idx !== -1) this.warehouses[idx].name = name;
-      }
+    const { error } = await supabase.from('warehouses').update({ name }).eq('id', id);
+    if (!error) {
+      const idx = this.warehouses.findIndex(w => w.id === id);
+      if (idx !== -1) this.warehouses[idx].name = name;
+    }
   }
 
   async addProduct(p: any, b?: any): Promise<string> {
@@ -337,6 +288,8 @@ class DatabaseService {
             id: `B${Date.now()}`, 
             product_id: pid, 
             warehouse_id: defaultWarehouseId,
+            batch_number: 'AUTO',
+            expiry_date: '2099-12-31',
             status: BatchStatus.ACTIVE 
         };
         await supabase.from('batches').insert(batch);
@@ -378,7 +331,14 @@ class DatabaseService {
         sourceBatch.quantity = newSourceQty;
 
         const newBatchId = `B${Date.now()}-T`;
-        const newBatch = { ...sourceBatch, id: newBatchId, warehouse_id: targetWarehouseId, quantity: quantity };
+        const newBatch = { 
+            ...sourceBatch, 
+            id: newBatchId, 
+            warehouse_id: targetWarehouseId, 
+            quantity: quantity,
+            batch_number: 'AUTO',
+            expiry_date: '2099-12-31'
+        };
         await supabase.from('batches').insert(newBatch);
         this.batches.push(newBatch);
         
@@ -516,20 +476,22 @@ class DatabaseService {
         }
 
         for (const item of items) {
-            const { data: existing } = await supabase.from('batches').select('*').eq('product_id', item.product_id).eq('batch_number', item.batch_number).single();
+            // Force batch/expiry to AUTO/2099
+            const bNo = 'AUTO';
+            const { data: existing } = await supabase.from('batches').select('*').eq('product_id', item.product_id).eq('batch_number', bNo).single();
             if (existing) {
                 const newQty = isReturn ? existing.quantity - item.quantity : existing.quantity + item.quantity;
                 await supabase.from('batches').update({ quantity: newQty }).eq('id', existing.id);
             } else if (!isReturn) {
                 await supabase.from('batches').insert({
-                    id: `B-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+                    id: `B-${Date.now()}-${Math.floor(Math.random()*100)}`,
                     product_id: item.product_id,
                     warehouse_id: item.warehouse_id,
-                    batch_number: item.batch_number,
+                    batch_number: bNo,
                     quantity: item.quantity,
                     purchase_price: item.cost_price,
                     selling_price: item.selling_price,
-                    expiry_date: item.expiry_date,
+                    expiry_date: '2099-12-31',
                     status: BatchStatus.ACTIVE
                 });
             }
@@ -562,10 +524,13 @@ class DatabaseService {
       return { success: true, message: 'Order saved' };
   }
 
-  async updatePurchaseOrderStatus(id: string, status: 'COMPLETED' | 'CANCELLED') {
-      await supabase.from('purchase_orders').update({status}).eq('id', id);
-      const idx = this.purchaseOrders.findIndex(o => o.id === id);
+  // Fix: Add missing updatePurchaseOrderStatus method used in PurchaseOrders.tsx
+  async updatePurchaseOrderStatus(id: string, status: 'PENDING' | 'COMPLETED' | 'CANCELLED') {
+    const { error } = await supabase.from('purchase_orders').update({ status }).eq('id', id);
+    if (!error) {
+      const idx = this.purchaseOrders.findIndex(po => po.id === id);
       if (idx !== -1) this.purchaseOrders[idx].status = status;
+    }
   }
 
   getInvoiceProfit(invoice: Invoice): number {
@@ -648,6 +613,52 @@ class DatabaseService {
   importDatabase(json: string): boolean { return true; }
   
   getStockMovements(productId?: string) { return this.stockMovements; }
+
+  getGeneralLedger(): JournalEntry[] {
+    const entries: JournalEntry[] = [];
+    this.invoices.forEach(inv => {
+        entries.push({
+            id: `JE-S-${inv.id}`,
+            date: inv.date,
+            description: `Sales Invoice #${inv.invoice_number}`,
+            reference: inv.id,
+            debit: inv.net_total,
+            credit: 0,
+            account: 'Accounts Receivable'
+        });
+        entries.push({
+            id: `JE-SR-${inv.id}`,
+            date: inv.date,
+            description: `Revenue for Invoice #${inv.invoice_number}`,
+            reference: inv.id,
+            debit: 0,
+            credit: inv.net_total,
+            account: 'Sales Revenue'
+        });
+    });
+    this.cashTransactions.forEach(tx => {
+        const isReceipt = tx.type === CashTransactionType.RECEIPT;
+        entries.push({
+            id: `JE-C-${tx.id}`,
+            date: tx.date,
+            description: tx.notes || `${tx.type} - ${tx.category}`,
+            reference: tx.id,
+            debit: isReceipt ? tx.amount : 0,
+            credit: isReceipt ? 0 : tx.amount,
+            account: 'Cash Account'
+        });
+        entries.push({
+            id: `JE-CO-${tx.id}`,
+            date: tx.date,
+            description: tx.notes || `${tx.type} - ${tx.category}`,
+            reference: tx.id,
+            debit: isReceipt ? 0 : tx.amount,
+            credit: isReceipt ? tx.amount : 0,
+            account: tx.category === 'CUSTOMER_PAYMENT' ? 'Accounts Receivable' : tx.category
+        });
+    });
+    return entries.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
 }
 
 export const db = new DatabaseService();
