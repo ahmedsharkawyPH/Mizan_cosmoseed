@@ -1,17 +1,14 @@
 
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
-import { authService } from '../services/auth';
 import { t } from '../utils/t';
-import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, ClipboardCheck, Trash2, AlertOctagon, Package, Save } from 'lucide-react';
+import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
-import { readExcelFile } from '../utils/excel';
 
 const Inventory: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'TAKE'>('OVERVIEW');
   const [products, setProducts] = useState(db.getProductsWithBatches());
   const warehouses = db.getWarehouses();
   const settings = db.getSettings();
@@ -45,6 +42,12 @@ const Inventory: React.FC = () => {
       if (!transferModal.batch || !targetWarehouse || transferQty <= 0) return;
       const res = await db.transferStock(transferModal.batch.id, targetWarehouse, transferQty);
       if (res.success) { setProducts(db.getProductsWithBatches()); setTransferModal({ isOpen: false, batch: null }); }
+  };
+
+  const handleSpoilageReport = async () => {
+    if (!spoilageModal.batch || damagedQty <= 0) return;
+    const res = await db.reportSpoilage(spoilageModal.batch.id, damagedQty, reason);
+    if (res.success) { setProducts(db.getProductsWithBatches()); setSpoilageModal({ isOpen: false, batch: null }); }
   };
 
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.code.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -133,6 +136,20 @@ const Inventory: React.FC = () => {
                         <input type="number" className="w-full border p-2.5 rounded-lg text-lg font-bold" value={transferQty} onChange={e => setTransferQty(Number(e.target.value))} />
                     </div>
                     <button onClick={handleTransfer} disabled={!targetWarehouse || transferQty <= 0} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-500/30">{t('stock.confirm_transfer')}</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Spoilage Modal */}
+      {spoilageModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div className="flex justify-between items-center p-5 border-b bg-amber-50"><h3 className="font-bold text-amber-800 flex items-center gap-2"><AlertOctagon className="w-5 h-5" />{t('stock.spoilage')}</h3><button onClick={() => setSpoilageModal({isOpen: false, batch: null})}><X className="w-5 h-5 text-amber-400" /></button></div>
+                <div className="p-6 space-y-4">
+                    <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('stock.damaged_qty')}</label><input type="number" className="w-full border p-2.5 rounded-lg text-lg font-bold text-red-600" value={damagedQty} onChange={e => setDamagedQty(Number(e.target.value))} min={1} /></div>
+                    <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('stock.reason')}</label><textarea className="w-full border p-2.5 rounded-lg" value={reason} onChange={e => setReason(e.target.value)} rows={2} /></div>
+                    <button onClick={handleSpoilageReport} disabled={damagedQty <= 0} className="w-full bg-amber-600 text-white py-3 rounded-xl font-bold shadow-lg">{t('stock.confirm_spoilage')}</button>
                 </div>
             </div>
         </div>

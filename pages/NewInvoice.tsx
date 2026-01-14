@@ -25,7 +25,6 @@ export default function NewInvoice() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cashPayment, setCashPayment] = useState<number>(0);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
-  const [additionalDiscountPercent, setAdditionalDiscountPercent] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -38,8 +37,6 @@ export default function NewInvoice() {
   });
 
   const [overrideModal, setOverrideModal] = useState<{ isOpen: boolean; pendingItem: CartItem | null }>({ isOpen: false, pendingItem: null });
-  const [adminPassword, setAdminPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
       localStorage.setItem('invoice_settings', JSON.stringify(invoiceConfig));
@@ -86,7 +83,7 @@ export default function NewInvoice() {
     if (!selectedProduct || !selectedWarehouse) return null;
     const prod = products.find(p => p.id === selectedProduct);
     if (!prod) return null;
-    // Auto-select the first valid batch (usually there's only one 'AUTO' batch now)
+    // Auto-select the first valid stock source in the warehouse
     return prod.batches.find(b => b.warehouse_id === selectedWarehouse && (isReturnMode || b.quantity > 0)) || null;
   }, [selectedProduct, selectedWarehouse, products, isReturnMode]);
 
