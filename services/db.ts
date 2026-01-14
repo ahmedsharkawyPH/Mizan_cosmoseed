@@ -66,40 +66,40 @@ class DatabaseService {
 
   constructor() {}
 
-  // Helper to map DB snake_case to App CamelCase
+  // Helper to map DB columns (single-word lowercase) to App properties
   private mapFromDb(dbData: any): SystemSettings {
     return {
-      companyName: dbData.company_name || this.settings.companyName,
-      companyAddress: dbData.company_address || this.settings.companyAddress,
-      companyPhone: dbData.company_phone || this.settings.companyPhone,
-      companyTaxNumber: dbData.company_tax_number || this.settings.companyTaxNumber,
-      companyCommercialRegister: dbData.company_commercial_register || this.settings.companyCommercialRegister,
-      companyLogo: dbData.company_logo || this.settings.companyLogo,
+      companyName: dbData.companyname || dbData.company_name || this.settings.companyName,
+      companyAddress: dbData.companyaddress || dbData.company_address || this.settings.companyAddress,
+      companyPhone: dbData.companyphone || dbData.company_phone || this.settings.companyPhone,
+      companyTaxNumber: dbData.companytaxnumber || dbData.company_tax_number || this.settings.companyTaxNumber,
+      companyCommercialRegister: dbData.companycommercialregister || dbData.company_commercial_register || this.settings.companyCommercialRegister,
+      companyLogo: dbData.companylogo || dbData.company_logo || this.settings.companyLogo,
       currency: dbData.currency || this.settings.currency,
       language: dbData.language || this.settings.language,
-      invoiceTemplate: dbData.invoice_template || this.settings.invoiceTemplate,
-      printerPaperSize: dbData.printer_paper_size || this.settings.printerPaperSize,
-      expenseCategories: dbData.expense_categories || this.settings.expenseCategories,
-      lowStockThreshold: dbData.low_stock_threshold || this.settings.lowStockThreshold
+      invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
+      printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
+      expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
+      lowStockThreshold: dbData.lowstockthreshold || dbData.low_stock_threshold || this.settings.lowStockThreshold
     };
   }
 
-  // Helper to map App CamelCase to DB snake_case
+  // Helper to map App properties to DB columns (single-word style as reported by user)
   private mapToDb(s: SystemSettings): any {
     return {
       id: 1,
-      company_name: s.companyName,
-      company_address: s.companyAddress,
-      company_phone: s.companyPhone,
-      company_tax_number: s.companyTaxNumber,
-      company_commercial_register: s.companyCommercialRegister,
-      company_logo: s.companyLogo,
+      companyname: s.companyName,
+      companyaddress: s.companyAddress,
+      companyphone: s.companyPhone,
+      companytaxnumber: s.companyTaxNumber,
+      companycommercialregister: s.companyCommercialRegister,
+      companylogo: s.companyLogo,
       currency: s.currency,
       language: s.language,
-      invoice_template: s.invoiceTemplate,
-      printer_paper_size: s.printerPaperSize,
-      expense_categories: s.expenseCategories,
-      low_stock_threshold: s.lowStockThreshold
+      invoicetemplate: s.invoiceTemplate,
+      printerpapersize: s.printerPaperSize,
+      expensecategories: s.expenseCategories,
+      lowstockthreshold: s.lowStockThreshold
     };
   }
 
@@ -139,7 +139,8 @@ class DatabaseService {
         } else {
             console.log('Creating initial settings in cloud...');
             const dbPayload = this.mapToDb(this.settings);
-            await supabase.from('settings').insert(dbPayload);
+            const { error } = await supabase.from('settings').insert(dbPayload);
+            if (error) console.error("Error creating initial settings:", error);
         }
 
         if (this.warehouses.length === 0) {
