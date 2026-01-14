@@ -5,8 +5,6 @@ import { Sparkles, Send, X, Bot, User, Loader2, MessageSquare } from 'lucide-rea
 import { db } from '../services/db';
 import { t } from '../utils/t';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 export default function AiAssistant() {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string }[]>([
@@ -31,6 +29,7 @@ export default function AiAssistant() {
         setLoading(true);
 
         try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const snapshot = db.getSystemSnapshot();
             const response = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
