@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash } from 'lucide-react';
+import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
 
@@ -74,9 +74,10 @@ const Inventory: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h1 className="text-2xl font-bold text-slate-800">{t('stock.title')}</h1>
         <div className="flex flex-wrap gap-3">
-            <button onClick={() => setIsAddOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all"><PackagePlus className="w-4 h-4" />{t('stock.new')}</button>
-            <button onClick={() => navigate('/purchases/new')} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all"><PlusCircle className="w-4 h-4" />{t('stock.purchase')}</button>
-            <button onClick={() => navigate('/purchases/return')} className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all"><RotateCcw className="w-4 h-4" />{t('stock.return')}</button>
+            <button onClick={() => setIsAddOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-blue-700"><PackagePlus className="w-4 h-4" />{t('stock.new')}</button>
+            <button onClick={() => navigate('/purchase-orders')} className="bg-purple-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-purple-700"><ShoppingBag className="w-4 h-4" />{t('stock.order')}</button>
+            <button onClick={() => navigate('/purchases/new')} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-emerald-700"><PlusCircle className="w-4 h-4" />{t('stock.purchase')}</button>
+            <button onClick={() => navigate('/purchases/return')} className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-slate-50"><RotateCcw className="w-4 h-4" />{t('stock.return')}</button>
         </div>
       </div>
 

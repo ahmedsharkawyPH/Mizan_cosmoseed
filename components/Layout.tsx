@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command } from 'lucide-react';
+import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
@@ -44,6 +44,7 @@ export default function Layout() {
     { label: t('nav.new_invoice'), path: '/invoice/new', icon: ShoppingCart, perm: 'MANAGE_SALES', roles: ['ADMIN', 'REP', 'TELESALES'] },
     { label: t('nav.invoices'), path: '/invoices', icon: FileText, perm: 'MANAGE_SALES', roles: ['ADMIN', 'REP', 'TELESALES'] },
     { label: t('pur.list_title'), path: '/purchases/list', icon: FileText, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
+    { label: t('stock.order'), path: '/purchase-orders', icon: ShoppingBag, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
     { label: t('nav.inventory'), path: '/inventory', icon: Package, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
     { label: t('nav.inventory_analysis'), path: '/inventory/analysis', icon: Activity, perm: 'MANAGE_INVENTORY', roles: ['ADMIN'] },
     { label: t('cust.title'), path: '/customers', icon: NAV_ITEMS[4].icon, perm: 'MANAGE_CUSTOMERS', roles: ['ADMIN', 'REP', 'TELESALES'] },
