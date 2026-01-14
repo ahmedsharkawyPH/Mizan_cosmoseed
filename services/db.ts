@@ -53,6 +53,7 @@ class DatabaseService {
     companyAddress: 'Cairo, Egypt',
     companyPhone: '01559550481',
     companyTaxNumber: '123-456-789',
+    companyLogo: 'https://drive.google.com/uc?export=download&id=1R0gNWIrTN7WDOtXxpWDkmblvcnlhOtOB',
     currency: 'ج.م',
     language: 'ar',
     invoiceTemplate: '1',
@@ -97,7 +98,11 @@ class DatabaseService {
         if (rep.data) this.representatives = rep.data;
         
         if (set.data) {
+            // Merge cloud settings but keep our new logo if cloud doesn't have one
             this.settings = { ...this.settings, ...set.data };
+            if (!set.data.companyLogo) {
+                this.settings.companyLogo = 'https://drive.google.com/uc?export=download&id=1R0gNWIrTN7WDOtXxpWDkmblvcnlhOtOB';
+            }
         }
 
         if (this.warehouses.length === 0) {
