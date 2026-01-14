@@ -251,7 +251,7 @@ export default function Shortages() {
                         {activeTab === 'STAGNANT' && (
                             <div className="flex items-center gap-2 text-blue-800 bg-blue-50 px-3 py-1 rounded-lg w-full">
                                 <Clock className="w-4 h-4" />
-                                <strong>Insight:</strong> Stock > 0 but NO sales (30 Days).
+                                <strong>Insight:</strong> Stock &gt; 0 but NO sales (30 Days).
                             </div>
                         )}
                         {activeTab === 'BEST_SELLING' && (
