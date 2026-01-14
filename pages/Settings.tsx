@@ -29,7 +29,6 @@ export default function Settings() {
     try {
         const success = await db.updateSettings(settings);
         if (success) {
-            // ننتظر قليلاً للتأكد من وصول البيانات ثم نعيد التحميل
             setTimeout(() => {
                 window.location.reload();
             }, 500);
@@ -61,7 +60,7 @@ export default function Settings() {
       } else {
           setUserForm({ 
               id: '', name: '', username: '', password: '', role: 'USER', 
-              permissions: ['VIEW_DASHBOARD', 'MANAGE_SALES'] // Default permissions for new user
+              permissions: ['VIEW_DASHBOARD', 'MANAGE_SALES']
           });
       }
       setIsUserModalOpen(true);
@@ -132,33 +131,33 @@ export default function Settings() {
       }
   };
 
-  const handleClearTransactions = () => {
-      if(confirm('WARNING: This will delete ALL Invoices, Purchase Orders, and Cash movements.\nCustomer balances will reset to Opening Balance.\n\nAre you sure?')) {
-          db.clearTransactions();
+  const handleClearTransactions = async () => {
+      if(confirm(t('set.clear_trans_desc') + '\n\nAre you sure?')) {
+          await db.clearTransactions();
           alert('All transactions cleared successfully.');
           window.location.reload();
       }
   };
 
-  const handleClearCustomers = () => {
-      if(confirm('WARNING: This will delete ALL Customers database.\n\nAre you sure?')) {
-          db.clearCustomers();
+  const handleClearCustomers = async () => {
+      if(confirm(t('set.clear_cust_desc') + '\n\nAre you sure?')) {
+          await db.clearCustomers();
           alert('All customers deleted successfully.');
           window.location.reload();
       }
   };
 
-  const handleClearProducts = () => {
-      if(confirm('WARNING: This will delete ALL Products and Batches.\n\nAre you sure?')) {
-          db.clearProducts();
+  const handleClearProducts = async () => {
+      if(confirm(t('set.clear_prod_desc') + '\n\nAre you sure?')) {
+          await db.clearProducts();
           alert('All products deleted successfully.');
           window.location.reload();
       }
   };
 
-  const handleResetAll = () => {
-      if(confirm('CRITICAL WARNING: This will delete EVERYTHING.\nThis action cannot be undone.\n\nAre you absolutely sure?')) {
-          db.resetDatabase();
+  const handleResetAll = async () => {
+      if(confirm(t('set.factory_desc') + '\n\nAre you absolutely sure?')) {
+          await db.resetDatabase();
       }
   };
 
@@ -502,7 +501,6 @@ export default function Settings() {
              </div>
         )}
 
-        {/* ... بقية الأبواب (users, backup, data) تبقى كما هي ... */}
         {activeTab === 'users' && (
             <div className="space-y-6 animate-in fade-in">
                 <div className="flex justify-between items-center border-b pb-2">
@@ -571,7 +569,6 @@ export default function Settings() {
             </div>
         )}
         
-        {/* ... modals for user adding and danger zone remain the same as previous logic but with proper tab checks ... */}
         {activeTab === 'backup' && (
             <div className="space-y-6 animate-in fade-in">
                 <div className="border-b pb-4">
@@ -606,6 +603,96 @@ export default function Settings() {
                             {t('set.select_file')}
                             <input type="file" className="hidden" accept=".json" onChange={handleRestore} />
                         </label>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* DANGER ZONE TAB (Fixing missing content) */}
+        {activeTab === 'data' && (
+            <div className="space-y-6 animate-in fade-in">
+                <div className="border-b pb-4">
+                    <h3 className="font-bold text-red-600 flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-5 h-5" /> {t('set.danger_zone')}
+                    </h3>
+                    <p className="text-sm text-gray-500">{t('set.danger_desc')}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Clear Transactions */}
+                    <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
+                        <div className="flex gap-4 mb-4">
+                            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center shrink-0">
+                                <FileMinus className="w-6 h-6 text-red-600" />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-gray-800">{t('set.clear_trans')}</h4>
+                                <p className="text-xs text-gray-500 mt-1">{t('set.clear_trans_desc')}</p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={handleClearTransactions}
+                            className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors w-full"
+                        >
+                            {t('set.delete_trans')}
+                        </button>
+                    </div>
+
+                    {/* Clear Customers */}
+                    <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
+                        <div className="flex gap-4 mb-4">
+                            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center shrink-0">
+                                <UserMinus className="w-6 h-6 text-red-600" />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-gray-800">{t('set.clear_cust')}</h4>
+                                <p className="text-xs text-gray-500 mt-1">{t('set.clear_cust_desc')}</p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={handleClearCustomers}
+                            className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors w-full"
+                        >
+                            {t('set.delete_cust')}
+                        </button>
+                    </div>
+
+                    {/* Clear Products */}
+                    <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
+                        <div className="flex gap-4 mb-4">
+                            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center shrink-0">
+                                <PackageMinus className="w-6 h-6 text-red-600" />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-gray-800">{t('set.clear_prod')}</h4>
+                                <p className="text-xs text-gray-500 mt-1">{t('set.clear_prod_desc')}</p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={handleClearProducts}
+                            className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors w-full"
+                        >
+                            {t('set.delete_prod')}
+                        </button>
+                    </div>
+
+                    {/* Factory Reset */}
+                    <div className="p-6 rounded-xl border-2 border-red-200 bg-red-50 flex flex-col justify-between">
+                        <div className="flex gap-4 mb-4">
+                            <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center shrink-0">
+                                <RefreshCw className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-red-800">{t('set.factory_reset')}</h4>
+                                <p className="text-xs text-red-600/80 mt-1">{t('set.factory_desc')}</p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={handleResetAll}
+                            className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700 shadow-lg shadow-red-200 transition-all w-full"
+                        >
+                            {t('set.reset_everything')}
+                        </button>
                     </div>
                 </div>
             </div>
