@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent } from 'lucide-react';
+import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
@@ -29,6 +29,7 @@ export default function NewInvoice() {
   const [error, setError] = useState<string | null>(null);
   
   const [isReturnMode, setIsReturnMode] = useState(false);
+  const [showLastCost, setShowLastCost] = useState(false);
 
   const [showSettings, setShowSettings] = useState(false);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceSettings>(() => {
@@ -83,13 +84,32 @@ export default function NewInvoice() {
     if (!selectedProduct || !selectedWarehouse) return null;
     const prod = products.find(p => p.id === selectedProduct);
     if (!prod) return null;
-    // Auto-select the first valid stock source in the warehouse
     return prod.batches.find(b => b.warehouse_id === selectedWarehouse && (isReturnMode || b.quantity > 0)) || null;
   }, [selectedProduct, selectedWarehouse, products, isReturnMode]);
+
+  // دالة لجلب آخر سعر شراء من السجل
+  const lastPurchasePrice = useMemo(() => {
+    if (!selectedProduct) return 0;
+    const history = db.getPurchaseInvoices();
+    let latestCost = 0;
+    // نبحث عن أحدث فاتورة شراء تحتوي على هذا الصنف
+    for (const inv of history) {
+        if (inv.type === 'PURCHASE') {
+            const item = inv.items.find(i => i.product_id === selectedProduct);
+            if (item) {
+                latestCost = item.cost_price;
+                break;
+            }
+        }
+    }
+    // إذا لم يجد في السجل، نأخذ سعر تكلفة التشغيلة الحالية كاحتياطي
+    return latestCost || (availableBatch?.purchase_price || 0);
+  }, [selectedProduct, availableBatch]);
 
   useEffect(() => {
       if (availableBatch) {
           setManualPrice(availableBatch.selling_price);
+          setShowLastCost(false); // ريست لإخفاء السعر عند تغيير الصنف
           setTimeout(() => {
               if (invoiceConfig.enableManualPrice) priceRef.current?.focus();
               else qtyRef.current?.focus();
@@ -135,6 +155,7 @@ export default function NewInvoice() {
     setBonus(0);
     setDiscount(0);
     setManualPrice(0);
+    setShowLastCost(false);
     setTimeout(() => productRef.current?.focus(), 50);
   };
 
@@ -208,9 +229,28 @@ export default function NewInvoice() {
                 <SearchableSelect ref={productRef} label={t('inv.product')} placeholder={t('cust.search')} options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} value={selectedProduct} onChange={setSelectedProduct} />
               </div>
               <div className="col-span-12 md:col-span-3">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('stock.total')}</label>
-                <div className="w-full bg-slate-50 border rounded-lg p-2.5 font-bold text-slate-800">
-                  {availableBatch ? availableBatch.quantity : "-"}
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
+                    {t('stock.total')}
+                    {selectedProduct && (
+                        <button 
+                            type="button"
+                            onClick={() => setShowLastCost(!showLastCost)}
+                            className={`p-1 rounded-full transition-colors ${showLastCost ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-blue-500'}`}
+                            title="آخر سعر شراء"
+                        >
+                            <Info className="w-3.5 h-3.5" />
+                        </button>
+                    )}
+                </label>
+                <div className="relative">
+                    <div className="w-full bg-slate-50 border rounded-lg p-2.5 font-bold text-slate-800 flex justify-between items-center">
+                        <span>{availableBatch ? availableBatch.quantity : "-"}</span>
+                        {showLastCost && (
+                            <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded animate-in fade-in slide-in-from-top-1">
+                                التكلفة: {currency}{lastPurchasePrice}
+                            </span>
+                        )}
+                    </div>
                 </div>
               </div>
 
