@@ -1,11 +1,10 @@
-
 import React, { useState } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/auth';
 import { Lock, User, ArrowRight, Loader2, ShieldCheck, Phone } from 'lucide-react';
 
 export default function Login() {
-  const history = useHistory();
+  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -18,7 +17,7 @@ export default function Login() {
 
     try {
       await authService.login(username, password);
-      history.push('/');
+      navigate('/');
     } catch (err) {
       setError('Invalid username or password');
     } finally {
