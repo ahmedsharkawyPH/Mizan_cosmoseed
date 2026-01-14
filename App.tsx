@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Switch, Route, Redirect } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import NewInvoice from './pages/NewInvoice';
@@ -46,41 +46,45 @@ function App() {
 
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+      <Switch>
+        <Route path="/login" component={Login} />
         
-        <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="invoice/new" element={<NewInvoice />} />
-            <Route path="invoice/edit/:id" element={<NewInvoice />} />
-            <Route path="invoices" element={<Invoices />} />
-            
-            <Route path="inventory" element={<Inventory />} />
-            <Route path="inventory/analysis" element={<InventoryAnalysis />} />
-            <Route path="shortages" element={<Shortages />} />
-            
-            <Route path="purchases/new" element={<PurchaseInvoice type="PURCHASE" />} />
-            <Route path="purchases/return" element={<PurchaseInvoice type="RETURN" />} />
-            <Route path="purchases/list" element={<PurchaseList />} />
-            <Route path="purchase-orders" element={<PurchaseOrders />} />
-            
-            <Route path="customers" element={<Customers />} />
-            <Route path="suppliers" element={<Suppliers />} />
-            <Route path="representatives" element={<Representatives />} />
-            <Route path="telesales" element={<Telesales />} />
-            <Route path="warehouses" element={<Warehouses />} />
-            
-            <Route path="cash" element={<CashRegister />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="reports/*" element={<Reports />} />
-            
-            <Route path="settings" element={<Settings />} />
-          </Route>
+        <Route path="/">
+          <ProtectedRoute>
+            <Layout>
+              <Switch>
+                <Route exact path="/" component={Dashboard} />
+                
+                <Route path="/invoice/new" component={NewInvoice} />
+                <Route path="/invoice/edit/:id" component={NewInvoice} />
+                <Route path="/invoices" component={Invoices} />
+                
+                <Route path="/inventory/analysis" component={InventoryAnalysis} />
+                <Route path="/inventory" component={Inventory} />
+                <Route path="/shortages" component={Shortages} />
+                
+                <Route path="/purchases/new" render={() => <PurchaseInvoice type="PURCHASE" />} />
+                <Route path="/purchases/return" render={() => <PurchaseInvoice type="RETURN" />} />
+                <Route path="/purchases/list" component={PurchaseList} />
+                <Route path="/purchase-orders" component={PurchaseOrders} />
+                
+                <Route path="/customers" component={Customers} />
+                <Route path="/suppliers" component={Suppliers} />
+                <Route path="/representatives" component={Representatives} />
+                <Route path="/telesales" component={Telesales} />
+                <Route path="/warehouses" component={Warehouses} />
+                
+                <Route path="/cash" component={CashRegister} />
+                <Route path="/reports" component={Reports} />
+                
+                <Route path="/settings" component={Settings} />
+                
+                <Redirect to="/" />
+              </Switch>
+            </Layout>
+          </ProtectedRoute>
         </Route>
-
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      </Switch>
     </HashRouter>
   );
 }

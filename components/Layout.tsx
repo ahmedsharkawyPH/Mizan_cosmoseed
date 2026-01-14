@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useHistory, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
 import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag } from 'lucide-react';
@@ -8,8 +8,13 @@ import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
 
-export default function Layout() {
-  const navigate = useNavigate();
+interface LayoutProps {
+  children: React.ReactNode;
+}
+
+export default function Layout({ children }: LayoutProps) {
+  const history = useHistory();
+  const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<string[]>(['user_mgmt']);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
@@ -96,20 +101,25 @@ export default function Layout() {
                         </button>
                         {isOpen && (
                             <div className={`space-y-1 ${isRTL() ? 'pr-4 border-r border-slate-700' : 'pl-4 border-l border-slate-700'} ml-3 mr-3`}>
-                                {item.children.map((child: any) => (
-                                    <NavLink key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 text-sm ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-                                        <child.icon className="w-4 h-4 ltr:mr-3 rtl:ml-3 shrink-0" />{child.label}
-                                    </NavLink>
-                                ))}
+                                {item.children.map((child: any) => {
+                                    const isActive = location.pathname === child.path;
+                                    return (
+                                        <Link key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={`flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 text-sm ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+                                            <child.icon className="w-4 h-4 ltr:mr-3 rtl:ml-3 shrink-0" />{child.label}
+                                        </Link>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
                 );
             }
+            
+            const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
             return (
-                <NavLink key={item.path} to={item.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                <Link key={item.path} to={item.path} onClick={() => setIsSidebarOpen(false)} className={`flex items-center px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                     <item.icon className="w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0" />{item.label}
-                </NavLink>
+                </Link>
             );
           })}
         </nav>
@@ -159,7 +169,7 @@ export default function Layout() {
 
         <main className="flex-1 overflow-y-auto bg-slate-50 p-4 lg:p-8">
           <div className="max-w-7xl mx-auto animate-in fade-in zoom-in duration-300">
-            <Outlet />
+            {children}
           </div>
         </main>
       </div>
@@ -181,7 +191,7 @@ export default function Layout() {
               <div className="max-h-[400px] overflow-y-auto p-2">
                  {searchResults.length > 0 ? (
                     searchResults.map((res, i) => (
-                      <div key={i} onClick={() => { navigate(res.path); setIsCommandOpen(false); }} className="flex items-center justify-between p-3 hover:bg-blue-50 rounded-xl cursor-pointer group">
+                      <div key={i} onClick={() => { history.push(res.path); setIsCommandOpen(false); }} className="flex items-center justify-between p-3 hover:bg-blue-50 rounded-xl cursor-pointer group">
                         <div className="flex items-center">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-3 ${res.type === 'Customer' ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>
                             {res.type === 'Customer' ? <Users className="w-4 h-4" /> : <Package className="w-4 h-4" />}

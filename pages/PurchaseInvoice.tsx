@@ -4,7 +4,7 @@ import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseItem } from '../types';
 import { Plus, Save, ArrowLeft, Trash2, Percent, PackagePlus, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useHistory } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 
 interface Props {
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export default function PurchaseInvoice({ type }: Props) {
-  const navigate = useNavigate();
+  const history = useHistory();
   const currency = db.getSettings().currency;
   const isReturn = type === 'RETURN';
   
@@ -74,7 +74,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const save = async () => {
     if (!selectedSupplier || cart.length === 0) return;
     const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn);
-    if (res.success) navigate('/inventory');
+    if (res.success) history.push('/inventory');
     else alert(res.message);
   };
 
@@ -83,7 +83,7 @@ export default function PurchaseInvoice({ type }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/inventory')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft className="w-5 h-5" /></button>
+        <button onClick={() => history.push('/inventory')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft className="w-5 h-5" /></button>
         <h1 className={`text-2xl font-bold ${isReturn ? 'text-red-600' : 'text-blue-600'}`}>
             {isReturn ? t('pur.return_title') : t('pur.title')}
         </h1>

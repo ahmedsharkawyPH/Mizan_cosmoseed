@@ -4,10 +4,10 @@ import { db } from '../services/db';
 import { Representative, Invoice, PaymentStatus } from '../types';
 import { t } from '../utils/t';
 import { Plus, Search, Edit2, Users, ClipboardList, Wallet, ArrowRight, Printer, Calendar } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useHistory } from 'react-router-dom';
 
 export default function Representatives() {
-  const navigate = useNavigate();
+  const history = useHistory();
   const [activeTab, setActiveTab] = useState<'LIST' | 'CLOSING'>('LIST');
   const [reps, setReps] = useState(db.getRepresentatives());
   const [search, setSearch] = useState('');
@@ -423,7 +423,7 @@ export default function Representatives() {
                                                     )}
                                                     {/* Return Goods Link */}
                                                     <button 
-                                                        onClick={() => navigate('/invoice/new')} // Currently just goes to new invoice, ideally would preload
+                                                        onClick={() => history.push('/invoice/new')} // Currently just goes to new invoice, ideally would preload
                                                         className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg text-xs font-bold border border-red-200"
                                                     >
                                                         Return

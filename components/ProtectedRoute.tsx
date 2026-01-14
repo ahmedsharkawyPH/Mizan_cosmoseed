@@ -1,8 +1,13 @@
+
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Redirect } from 'react-router-dom';
 import { authService } from '../services/auth';
 
-export const ProtectedRoute = () => {
+interface Props {
+  children: React.ReactNode;
+}
+
+export const ProtectedRoute = ({ children }: Props) => {
   const isAuth = authService.isAuthenticated();
-  return isAuth ? <Outlet /> : <Navigate to="/login" replace />;
+  return isAuth ? <>{children}</> : <Redirect to="/login" />;
 };

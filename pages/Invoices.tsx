@@ -1,9 +1,10 @@
+
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { Invoice, PaymentStatus } from '../types';
 import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle } from 'lucide-react';
 import { t } from '../utils/t';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 // @ts-ignore
 import html2canvas from 'html2canvas';
 // @ts-ignore
@@ -395,7 +396,7 @@ const InvoiceHalf = ({
 };
 
 const Invoices: React.FC = () => {
-  const navigate = useNavigate();
+  const history = useHistory();
   const location = useLocation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState('');
@@ -495,7 +496,7 @@ const Invoices: React.FC = () => {
                 />
             </div>
             <button 
-                onClick={() => navigate('/invoice/new')}
+                onClick={() => history.push('/invoice/new')}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-medium shadow-sm transition-colors flex items-center gap-2 shrink-0"
             >
                 <PlusCircle className="w-5 h-5" />
@@ -561,7 +562,7 @@ const Invoices: React.FC = () => {
                             </button>
                             {!isReturn && (
                                 <button 
-                                    onClick={() => navigate(`/invoice/edit/${inv.id}`)}
+                                    onClick={() => history.push(`/invoice/edit/${inv.id}`)}
                                     className="p-2 bg-blue-50 border border-blue-100 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors shadow-sm"
                                     title={t('list.edit')}
                                 >
