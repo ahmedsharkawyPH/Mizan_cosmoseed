@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useHistory, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
 import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag } from 'lucide-react';
@@ -12,7 +12,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const navigate = useNavigate();
+  const history = useHistory();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<string[]>(['user_mgmt']);
@@ -190,7 +190,7 @@ export default function Layout({ children }: LayoutProps) {
               <div className="max-h-[400px] overflow-y-auto p-2">
                  {searchResults.length > 0 ? (
                     searchResults.map((res, i) => (
-                      <div key={i} onClick={() => { navigate(res.path); setIsCommandOpen(false); }} className="flex items-center justify-between p-3 hover:bg-blue-50 rounded-xl cursor-pointer group">
+                      <div key={i} onClick={() => { history.push(res.path); setIsCommandOpen(false); }} className="flex items-center justify-between p-3 hover:bg-blue-50 rounded-xl cursor-pointer group">
                         <div className="flex items-center">
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-3 ${res.type === 'Customer' ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>
                             {res.type === 'Customer' ? <Users className="w-4 h-4" /> : <Package className="w-4 h-4" />}

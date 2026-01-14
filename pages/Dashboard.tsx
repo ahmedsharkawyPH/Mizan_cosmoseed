@@ -3,7 +3,7 @@ import { db } from '../services/db';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from 'recharts';
 import { TrendingUp, Users, Package, AlertTriangle, PlusCircle, FileText, UserPlus, PackagePlus, Coins, Truck, ArrowRight, Building2 } from 'lucide-react';
 import { t } from '../utils/t';
-import { useNavigate } from 'react-router-dom';
+import { useHistory } from 'react-router-dom';
 
 const StatCard: React.FC<{ title: string; value: string; icon: React.ElementType; color: string; subtext?: string }> = ({ title, value, icon: Icon, color, subtext }) => (
   <div className="bg-white rounded-2xl shadow-card border border-slate-100 p-6 flex flex-col justify-between hover:shadow-lg transition-shadow duration-300 relative overflow-hidden group">
@@ -36,7 +36,7 @@ const QuickAction: React.FC<{ label: string; icon: React.ElementType; color: str
 );
 
 const Dashboard: React.FC = () => {
-  const navigate = useNavigate();
+  const history = useHistory();
   const settings = db.getSettings();
   const currency = settings.currency;
   
@@ -86,7 +86,7 @@ const Dashboard: React.FC = () => {
              <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-sm font-bold border border-blue-100">
                  {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
              </div>
-             <button onClick={() => navigate('/settings')} className="text-xs text-slate-400 hover:text-blue-600 underline">
+             <button onClick={() => history.push('/settings')} className="text-xs text-slate-400 hover:text-blue-600 underline">
                  Edit Company Info
              </button>
           </div>
@@ -113,37 +113,37 @@ const Dashboard: React.FC = () => {
                 label={t('nav.new_invoice')} 
                 icon={PlusCircle} 
                 color="text-blue-600" 
-                onClick={() => navigate('/invoice/new')} 
+                onClick={() => history.push('/invoice/new')} 
             />
             <QuickAction 
                 label={t('cust.statement')} 
                 icon={FileText} 
                 color="text-indigo-600" 
-                onClick={() => navigate('/customers')} 
+                onClick={() => history.push('/customers')} 
             />
             <QuickAction 
                 label={t('stock.new')} 
                 icon={PackagePlus} 
                 color="text-emerald-600" 
-                onClick={() => navigate('/inventory', { state: { openAdd: true } })} 
+                onClick={() => history.push('/inventory', { openAdd: true })} 
             />
             <QuickAction 
                 label={t('nav.cash')} 
                 icon={Coins} 
                 color="text-amber-600" 
-                onClick={() => navigate('/cash')} 
+                onClick={() => history.push('/cash')} 
             />
             <QuickAction 
                 label={t('cust.add')} 
                 icon={UserPlus} 
                 color="text-purple-600" 
-                onClick={() => navigate('/customers', { state: { openAdd: true } })} 
+                onClick={() => history.push('/customers', { openAdd: true })} 
             />
              <QuickAction 
                 label={t('dash.supplier_stmt')} 
                 icon={Truck} 
                 color="text-orange-600" 
-                onClick={() => navigate('/suppliers')} 
+                onClick={() => history.push('/suppliers')} 
             />
         </div>
       </div>
@@ -188,7 +188,7 @@ const Dashboard: React.FC = () => {
              </div>
              
              <button 
-                onClick={() => navigate('/reports')} 
+                onClick={() => history.push('/reports')} 
                 className="relative z-10 w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-900/50 flex items-center justify-center gap-2 group"
              >
                  {t('dash.view_reports')} <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

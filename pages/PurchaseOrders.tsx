@@ -3,11 +3,11 @@ import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseOrder } from '../types';
 import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useHistory } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 
 export default function PurchaseOrders() {
-  const navigate = useNavigate();
+  const history = useHistory();
   const currency = db.getSettings().currency;
   
   const [activeTab, setActiveTab] = useState<'NEW' | 'LIST'>('NEW');
@@ -228,27 +228,4 @@ export default function PurchaseOrders() {
                                                   </button>
                                                   <button 
                                                       onClick={() => handleStatusUpdate(order.id, 'CANCELLED')}
-                                                      className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-                                                      title="Cancel Order"
-                                                  >
-                                                      <X className="w-4 h-4" />
-                                                  </button>
-                                              </div>
-                                          )}
-                                      </td>
-                                  </tr>
-                              );
-                          })}
-                          {orders.length === 0 && (
-                              <tr>
-                                  <td colSpan={6} className="p-8 text-center text-slate-400 italic">{t('list.no_data')}</td>
-                              </tr>
-                          )}
-                      </tbody>
-                  </table>
-              </div>
-          </div>
-      )}
-    </div>
-  );
-}
+                                                      className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-
