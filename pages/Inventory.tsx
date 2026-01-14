@@ -2,9 +2,10 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Clock } from 'lucide-react';
+import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Download, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
+import { readExcelFile, downloadInventoryTemplate } from '../utils/excel';
 
 const Inventory: React.FC = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const Inventory: React.FC = () => {
   const settings = db.getSettings();
   const currency = settings.currency;
   const [searchTerm, setSearchTerm] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
 
   const [transferModal, setTransferModal] = useState<{ isOpen: boolean; batch: Batch | null }>({ isOpen: false, batch: null });
   const [transferQty, setTransferQty] = useState(0);
@@ -55,6 +57,42 @@ const Inventory: React.FC = () => {
       setAddForm({ code: '', name: '', quantity: 1, purchase_price: 0, selling_price: 0, batch_number: 'AUTO', expiry_date: '2099-12-31' });
   };
 
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    
+    setIsImporting(true);
+    try {
+      const data = await readExcelFile<any>(e.target.files[0]);
+      
+      let importedCount = 0;
+      for (const row of data) {
+        // التحقق من الحقول الأساسية
+        if (row.name && row.code) {
+          await db.addProduct(
+            { code: String(row.code), name: String(row.name) },
+            {
+              quantity: Number(row.quantity) || 0,
+              purchase_price: Number(row.purchase_price) || 0,
+              selling_price: Number(row.selling_price) || 0,
+              batch_number: row.batch_number || 'AUTO',
+              expiry_date: row.expiry_date || '2099-12-31'
+            }
+          );
+          importedCount++;
+        }
+      }
+      
+      setProducts(db.getProductsWithBatches());
+      alert(t('common.success_import') + `: ${importedCount} items`);
+    } catch (err) {
+      console.error(err);
+      alert(t('common.error_excel'));
+    } finally {
+      setIsImporting(false);
+      e.target.value = ''; // Reset input
+    }
+  };
+
   const handleTransfer = async () => {
       if (!transferModal.batch || !targetWarehouse || transferQty <= 0) return;
       const res = await db.transferStock(transferModal.batch.id, targetWarehouse, transferQty);
@@ -73,24 +111,31 @@ const Inventory: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h1 className="text-2xl font-bold text-slate-800">{t('stock.title')}</h1>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2">
+            <button 
+              onClick={downloadInventoryTemplate}
+              className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-slate-50 shadow-sm"
+              title="تحميل نموذج الإكسيل"
+            >
+                <Download className="w-4 h-4 text-blue-500" />
+                <span className="hidden sm:inline">تحميل النموذج</span>
+            </button>
+
+            <label className={`cursor-pointer bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-emerald-100 ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
+                {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                <span className="hidden sm:inline">{t('stock.import')}</span>
+                <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImportExcel} disabled={isImporting} />
+            </label>
+
             <button onClick={() => setIsAddOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-blue-700">
-                <PackagePlus className="w-4 h-4" />{t('stock.new')}
+                <PlusCircle className="w-4 h-4" />{t('stock.new')}
             </button>
             
-            {/* Purchase Orders Section */}
             <div className="flex bg-purple-50 p-1 rounded-xl border border-purple-100 shadow-sm">
                 <button onClick={() => navigate('/purchase-orders')} className="bg-purple-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-all hover:bg-purple-700">
                     <ShoppingBag className="w-4 h-4" />{t('stock.order')}
                 </button>
             </div>
-
-            <button onClick={() => navigate('/purchases/new')} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-emerald-700">
-                <PlusCircle className="w-4 h-4" />{t('stock.purchase')}
-            </button>
-            <button onClick={() => navigate('/purchases/return')} className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-slate-50">
-                <RotateCcw className="w-4 h-4" />{t('stock.return')}
-            </button>
         </div>
       </div>
 
