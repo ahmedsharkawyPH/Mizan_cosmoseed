@@ -77,10 +77,10 @@ class DatabaseService {
       currency: dbData.currency || this.settings.currency,
       language: dbData.language || this.settings.language,
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
-      printerPapersize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
+      printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
       lowStockThreshold: dbData.lowstockthreshold || dbData.low_stock_threshold || this.settings.lowStockThreshold
-    } as any;
+    };
   }
 
   private mapToDb(s: SystemSettings): any {
@@ -101,13 +101,18 @@ class DatabaseService {
     };
   }
 
-  // Helper to execute a query safely without stopping the flow
-  private async safeFetch(query: Promise<any>) {
+  // Improved safeFetch for better logging and build stability
+  private async safeFetch(builder: any) {
     try {
-      const { data, error } = await query;
-      if (error) return null;
+      const { data, error } = await builder;
+      if (error) {
+          // Log detailed error instead of [object Object]
+          console.error('Supabase fetch error details:', JSON.stringify(error, null, 2));
+          return null;
+      }
       return data;
-    } catch (e) {
+    } catch (e: any) {
+      console.error('SafeFetch Exception:', e.message);
       return null;
     }
   }
@@ -300,8 +305,8 @@ class DatabaseService {
             id: `B${Date.now()}`, 
             product_id: pid, 
             warehouse_id: defaultWarehouseId,
-            batch_number: 'AUTO',
-            expiry_date: '2099-12-31',
+            batch_number: b.batch_number || 'AUTO',
+            expiry_date: b.expiry_date || '2099-12-31',
             status: BatchStatus.ACTIVE 
         };
         this.batches.push(batch);
@@ -356,8 +361,8 @@ class DatabaseService {
             id: newBatchId, 
             warehouse_id: targetWarehouseId, 
             quantity: quantity,
-            batch_number: 'AUTO',
-            expiry_date: '2099-12-31'
+            batch_number: sourceBatch.batch_number || 'AUTO',
+            expiry_date: sourceBatch.expiry_date || '2099-12-31'
         };
         this.batches.push(newBatch);
         try {
@@ -509,7 +514,7 @@ class DatabaseService {
         }
 
         for (const item of items) {
-            const bNo = 'AUTO';
+            const bNo = item.batch_number || 'AUTO';
             const existingBatch = this.batches.find(b => b.product_id === item.product_id && b.batch_number === bNo);
             
             if (existingBatch) {
@@ -527,7 +532,7 @@ class DatabaseService {
                     quantity: item.quantity,
                     purchase_price: item.cost_price,
                     selling_price: item.selling_price,
-                    expiry_date: '2099-12-31',
+                    expiry_date: item.expiry_date || '2099-12-31',
                     status: BatchStatus.ACTIVE
                 };
                 this.batches.push(newB);

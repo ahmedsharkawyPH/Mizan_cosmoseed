@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package } from 'lucide-react';
+import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
 
@@ -24,7 +24,15 @@ const Inventory: React.FC = () => {
   const [reason, setReason] = useState('');
 
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ code: '', name: '', quantity: 1, purchase_price: 0, selling_price: 0 });
+  const [addForm, setAddForm] = useState({ 
+    code: '', 
+    name: '', 
+    quantity: 1, 
+    purchase_price: 0, 
+    selling_price: 0,
+    batch_number: 'AUTO',
+    expiry_date: '2099-12-31'
+  });
 
   useEffect(() => {
     if (location.state && (location.state as any).openAdd) setIsAddOpen(true);
@@ -32,10 +40,19 @@ const Inventory: React.FC = () => {
 
   const handleManualAdd = async () => {
       if(!addForm.name || !addForm.code) return alert("Fill required fields");
-      await db.addProduct({ code: addForm.code, name: addForm.name }, { quantity: addForm.quantity, purchase_price: addForm.purchase_price, selling_price: addForm.selling_price });
+      await db.addProduct(
+        { code: addForm.code, name: addForm.name }, 
+        { 
+          quantity: addForm.quantity, 
+          purchase_price: addForm.purchase_price, 
+          selling_price: addForm.selling_price,
+          batch_number: addForm.batch_number,
+          expiry_date: addForm.expiry_date
+        }
+      );
       setProducts(db.getProductsWithBatches());
       setIsAddOpen(false);
-      setAddForm({ code: '', name: '', quantity: 1, purchase_price: 0, selling_price: 0 });
+      setAddForm({ code: '', name: '', quantity: 1, purchase_price: 0, selling_price: 0, batch_number: 'AUTO', expiry_date: '2099-12-31' });
   };
 
   const handleTransfer = async () => {
@@ -160,17 +177,23 @@ const Inventory: React.FC = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
                   <div className="flex justify-between items-center p-5 border-b"><h3 className="font-bold text-slate-800">{t('prod.new_title')}</h3><button onClick={() => setIsAddOpen(false)}><X className="w-5 h-5 text-slate-400" /></button></div>
-                  <div className="p-6 space-y-4">
-                      <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('prod.name')}</label><input className="w-full border p-2.5 rounded-lg" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} /></div>
+                  <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                      <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('prod.name')} *</label><input className="w-full border p-2.5 rounded-lg" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} /></div>
                       <div className="grid grid-cols-2 gap-4">
-                        <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('prod.code')}</label><input className="w-full border p-2.5 rounded-lg font-mono" value={addForm.code} onChange={e => setAddForm({...addForm, code: e.target.value})} /></div>
-                        <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('stock.qty')}</label><input type="number" className="w-full border p-2.5 rounded-lg" value={addForm.quantity} onChange={e => setAddForm({...addForm, quantity: +e.target.value})} /></div>
+                        <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('prod.code')} *</label><input className="w-full border p-2.5 rounded-lg font-mono uppercase" value={addForm.code} onChange={e => setAddForm({...addForm, code: e.target.value})} /></div>
+                        <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('stock.qty')}</label><input type="number" className="w-full border p-2.5 rounded-lg font-bold" value={addForm.quantity} onChange={e => setAddForm({...addForm, quantity: +e.target.value})} /></div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('stock.cost')}</label><input type="number" className="w-full border p-2.5 rounded-lg" value={addForm.purchase_price} onChange={e => setAddForm({...addForm, purchase_price: +e.target.value})} /></div>
                         <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('stock.price')}</label><input type="number" className="w-full border p-2.5 rounded-lg font-bold text-blue-600" value={addForm.selling_price} onChange={e => setAddForm({...addForm, selling_price: +e.target.value})} /></div>
                       </div>
-                      <button onClick={handleManualAdd} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg">{t('set.save')}</button>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div><label className="text-sm font-bold text-slate-700 mb-1 block flex items-center gap-1"><Hash className="w-3 h-3" /> {t('stock.batch')}</label><input className="w-full border p-2.5 rounded-lg font-mono text-sm" value={addForm.batch_number} onChange={e => setAddForm({...addForm, batch_number: e.target.value})} /></div>
+                        <div><label className="text-sm font-bold text-slate-700 mb-1 block flex items-center gap-1"><Calendar className="w-3 h-3" /> {t('stock.expiry')}</label><input type="date" className="w-full border p-2.5 rounded-lg text-sm" value={addForm.expiry_date} onChange={e => setAddForm({...addForm, expiry_date: e.target.value})} /></div>
+                      </div>
+                      <div className="pt-2">
+                        <button onClick={handleManualAdd} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-colors">{t('set.save')}</button>
+                      </div>
                   </div>
               </div>
           </div>
