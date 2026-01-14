@@ -66,6 +66,43 @@ class DatabaseService {
 
   constructor() {}
 
+  // Helper to map DB snake_case to App CamelCase
+  private mapFromDb(dbData: any): SystemSettings {
+    return {
+      companyName: dbData.company_name || this.settings.companyName,
+      companyAddress: dbData.company_address || this.settings.companyAddress,
+      companyPhone: dbData.company_phone || this.settings.companyPhone,
+      companyTaxNumber: dbData.company_tax_number || this.settings.companyTaxNumber,
+      companyCommercialRegister: dbData.company_commercial_register || this.settings.companyCommercialRegister,
+      companyLogo: dbData.company_logo || this.settings.companyLogo,
+      currency: dbData.currency || this.settings.currency,
+      language: dbData.language || this.settings.language,
+      invoiceTemplate: dbData.invoice_template || this.settings.invoiceTemplate,
+      printerPaperSize: dbData.printer_paper_size || this.settings.printerPaperSize,
+      expenseCategories: dbData.expense_categories || this.settings.expenseCategories,
+      lowStockThreshold: dbData.low_stock_threshold || this.settings.lowStockThreshold
+    };
+  }
+
+  // Helper to map App CamelCase to DB snake_case
+  private mapToDb(s: SystemSettings): any {
+    return {
+      id: 1,
+      company_name: s.companyName,
+      company_address: s.companyAddress,
+      company_phone: s.companyPhone,
+      company_tax_number: s.companyTaxNumber,
+      company_commercial_register: s.companyCommercialRegister,
+      company_logo: s.companyLogo,
+      currency: s.currency,
+      language: s.language,
+      invoice_template: s.invoiceTemplate,
+      printer_paper_size: s.printerPaperSize,
+      expense_categories: s.expenseCategories,
+      low_stock_threshold: s.lowStockThreshold
+    };
+  }
+
   async init() {
     if(this.isInitialized) return;
     
@@ -98,11 +135,11 @@ class DatabaseService {
         if (rep.data) this.representatives = rep.data;
         
         if (set.data) {
-            this.settings = { ...this.settings, ...set.data };
+            this.settings = this.mapFromDb(set.data);
         } else {
-            // If settings don't exist in DB, create them now with default ID 1
             console.log('Creating initial settings in cloud...');
-            await supabase.from('settings').insert({ id: 1, ...this.settings });
+            const dbPayload = this.mapToDb(this.settings);
+            await supabase.from('settings').insert(dbPayload);
         }
 
         if (this.warehouses.length === 0) {
@@ -205,23 +242,7 @@ class DatabaseService {
 
   async updateSettings(s: SystemSettings): Promise<boolean> {
     try {
-        // Only include standard fields to prevent 400 errors from DB mismatches
-        const dbPayload = {
-            id: 1,
-            companyName: s.companyName,
-            companyAddress: s.companyAddress,
-            companyPhone: s.companyPhone,
-            companyTaxNumber: s.companyTaxNumber,
-            companyCommercialRegister: s.companyCommercialRegister,
-            companyLogo: s.companyLogo,
-            currency: s.currency,
-            language: s.language,
-            invoiceTemplate: s.invoiceTemplate,
-            printerPaperSize: s.printerPaperSize,
-            expenseCategories: s.expenseCategories,
-            lowStockThreshold: s.lowStockThreshold
-        };
-
+        const dbPayload = this.mapToDb(s);
         const { error } = await supabase
             .from('settings')
             .upsert(dbPayload, { onConflict: 'id' });
