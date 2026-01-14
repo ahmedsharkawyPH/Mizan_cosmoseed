@@ -98,7 +98,6 @@ class DatabaseService {
         if (rep.data) this.representatives = rep.data;
         
         if (set.data) {
-            // Merge cloud settings but keep our new logo if cloud doesn't have one
             this.settings = { ...this.settings, ...set.data };
             if (!set.data.companyLogo) {
                 this.settings.companyLogo = 'https://drive.google.com/uc?export=download&id=1Ia9pYTGjFENkMj5TrkNmDJOjSmp5pltL';
@@ -157,8 +156,6 @@ class DatabaseService {
 
   getGeneralLedger(): JournalEntry[] {
       const entries: JournalEntry[] = [];
-      
-      // 1. Sales Invoices
       this.invoices.forEach(inv => {
           entries.push({
               id: `JE-S-${inv.id}`,
@@ -180,7 +177,6 @@ class DatabaseService {
           });
       });
 
-      // 2. Cash Transactions
       this.cashTransactions.forEach(tx => {
           const isReceipt = tx.type === CashTransactionType.RECEIPT;
           entries.push({
@@ -206,9 +202,16 @@ class DatabaseService {
       return entries.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
-  async updateSettings(s: SystemSettings) {
-    this.settings = s;
-    await supabase.from('settings').upsert({ id: 1, ...s });
+  async updateSettings(s: SystemSettings): Promise<boolean> {
+    try {
+        const { error } = await supabase.from('settings').upsert({ id: 1, ...s });
+        if (error) throw error;
+        this.settings = s;
+        return true;
+    } catch (e) {
+        console.error('Update Settings Error:', e);
+        return false;
+    }
   }
 
   async addExpenseCategory(name: string) {
