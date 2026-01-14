@@ -83,7 +83,7 @@ class DatabaseService {
             supabase.from('purchase_orders').select('*'),
             supabase.from('cash_transactions').select('*'),
             supabase.from('representatives').select('*'),
-            supabase.from('settings').select('*').single(),
+            supabase.from('settings').select('*').eq('id', 1).maybeSingle(),
         ]);
 
         if (p.data) this.products = p.data;
@@ -99,9 +99,10 @@ class DatabaseService {
         
         if (set.data) {
             this.settings = { ...this.settings, ...set.data };
-            if (!set.data.companyLogo) {
-                this.settings.companyLogo = 'https://drive.google.com/uc?export=download&id=1Ia9pYTGjFENkMj5TrkNmDJOjSmp5pltL';
-            }
+        } else {
+            // If settings don't exist in DB, create them now with default ID 1
+            console.log('Creating initial settings in cloud...');
+            await supabase.from('settings').insert({ id: 1, ...this.settings });
         }
 
         if (this.warehouses.length === 0) {
@@ -204,9 +205,30 @@ class DatabaseService {
 
   async updateSettings(s: SystemSettings): Promise<boolean> {
     try {
-        const { error } = await supabase.from('settings').upsert({ id: 1, ...s });
+        // Only include standard fields to prevent 400 errors from DB mismatches
+        const dbPayload = {
+            id: 1,
+            companyName: s.companyName,
+            companyAddress: s.companyAddress,
+            companyPhone: s.companyPhone,
+            companyTaxNumber: s.companyTaxNumber,
+            companyCommercialRegister: s.companyCommercialRegister,
+            companyLogo: s.companyLogo,
+            currency: s.currency,
+            language: s.language,
+            invoiceTemplate: s.invoiceTemplate,
+            printerPaperSize: s.printerPaperSize,
+            expenseCategories: s.expenseCategories,
+            lowStockThreshold: s.lowStockThreshold
+        };
+
+        const { error } = await supabase
+            .from('settings')
+            .upsert(dbPayload, { onConflict: 'id' });
+
         if (error) throw error;
-        this.settings = s;
+        
+        this.settings = { ...s };
         return true;
     } catch (e) {
         console.error('Update Settings Error:', e);
