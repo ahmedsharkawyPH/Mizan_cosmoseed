@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
@@ -203,7 +204,7 @@ export default function NewInvoice() {
         ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
         : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined);
       
-      if (result.success) history.push('/invoices', { autoPrintId: result.id });
+      if (result.success) history.push('/invoices', result.id ? { autoPrintId: result.id } : undefined);
       else setError(result.message);
     } catch (e: any) {
       setError(e.message);

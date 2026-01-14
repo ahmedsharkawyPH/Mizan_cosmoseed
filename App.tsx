@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { HashRouter, Switch, Route, Redirect } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -62,12 +63,8 @@ function App() {
                 <Route path="/inventory" component={Inventory} />
                 <Route path="/shortages" component={Shortages} />
                 
-                <Route path="/purchases/new">
-                    <PurchaseInvoice type="PURCHASE" />
-                </Route>
-                <Route path="/purchases/return">
-                    <PurchaseInvoice type="RETURN" />
-                </Route>
+                <Route path="/purchases/new" render={() => <PurchaseInvoice type="PURCHASE" />} />
+                <Route path="/purchases/return" render={() => <PurchaseInvoice type="RETURN" />} />
                 <Route path="/purchases/list" component={PurchaseList} />
                 <Route path="/purchase-orders" component={PurchaseOrders} />
                 

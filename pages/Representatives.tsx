@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representative, Invoice, PaymentStatus } from '../types';

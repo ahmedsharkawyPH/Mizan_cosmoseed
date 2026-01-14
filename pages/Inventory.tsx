@@ -1,11 +1,11 @@
+
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Clock, Upload, FileDown } from 'lucide-react';
+import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Clock, Upload } from 'lucide-react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
 import { readExcelFile } from '../utils/excel';
-import * as XLSX from 'xlsx';
 
 const Inventory: React.FC = () => {
   const history = useHistory();
@@ -54,24 +54,6 @@ const Inventory: React.FC = () => {
       setProducts(db.getProductsWithBatches());
       setIsAddOpen(false);
       setAddForm({ code: '', name: '', quantity: 1, purchase_price: 0, selling_price: 0, batch_number: 'AUTO', expiry_date: '2099-12-31' });
-  };
-
-  const handleDownloadTemplate = () => {
-      const templateData = [
-          {
-              "name": "اسم الصنف (Example)",
-              "code": "CODE-001",
-              "quantity": 100,
-              "purchase_price": 50,
-              "selling_price": 75,
-              "batch_number": "BATCH-001",
-              "expiry_date": "2025-12-31"
-          }
-      ];
-      const ws = XLSX.utils.json_to_sheet(templateData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Template");
-      XLSX.writeFile(wb, "inventory_template.xlsx");
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,20 +125,10 @@ const Inventory: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h1 className="text-2xl font-bold text-slate-800">{t('stock.title')}</h1>
         <div className="flex flex-wrap gap-3">
-            <div className="flex items-center gap-2">
-                <button 
-                    onClick={handleDownloadTemplate}
-                    className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-emerald-100 shadow-sm"
-                    title="تحميل نموذج إكسيل"
-                >
-                    <FileDown className="w-4 h-4" />
-                    <span className="hidden sm:inline">نموذج</span>
-                </button>
-                <label className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-emerald-700 cursor-pointer">
-                    <Upload className="w-4 h-4" />{t('stock.import')}
-                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImport} />
-                </label>
-            </div>
+            <label className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-emerald-700 cursor-pointer">
+                <Upload className="w-4 h-4" />{t('stock.import')}
+                <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImport} />
+            </label>
 
             <button onClick={() => setIsAddOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-blue-700">
                 <PackagePlus className="w-4 h-4" />{t('stock.new')}
@@ -206,7 +178,7 @@ const Inventory: React.FC = () => {
                                 <th className="px-6 py-3 text-right">{t('stock.cost')}</th>
                                 <th className="px-6 py-3 text-right">{t('stock.price')}</th>
                                 <th className="px-6 py-3 text-right">{t('stock.qty')}</th>
-                                <th className="px-6 py-4 text-center">{t('common.action')}</th>
+                                <th className="px-6 py-3 text-center">{t('common.action')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
