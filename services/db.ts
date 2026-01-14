@@ -101,40 +101,50 @@ class DatabaseService {
     };
   }
 
+  // Helper to execute a query safely without stopping the flow
+  private async safeFetch(query: Promise<any>) {
+    try {
+      const { data, error } = await query;
+      if (error) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
   async init() {
     if(this.isInitialized) return;
     
     try {
-        // We use try-catch around the fetch to prevent "Failed to fetch" from stopping the app
         const [
             p, b, c, s, w, inv, pur, po, cash, rep, set
         ] = await Promise.all([
-            supabase.from('products').select('*').catch(() => ({ data: null })),
-            supabase.from('batches').select('*').catch(() => ({ data: null })),
-            supabase.from('customers').select('*').catch(() => ({ data: null })),
-            supabase.from('suppliers').select('*').catch(() => ({ data: null })),
-            supabase.from('warehouses').select('*').catch(() => ({ data: null })),
-            supabase.from('invoices').select('*').catch(() => ({ data: null })),
-            supabase.from('purchase_invoices').select('*').catch(() => ({ data: null })),
-            supabase.from('purchase_orders').select('*').catch(() => ({ data: null })),
-            supabase.from('cash_transactions').select('*').catch(() => ({ data: null })),
-            supabase.from('representatives').select('*').catch(() => ({ data: null })),
-            supabase.from('settings').select('*').eq('id', 1).maybeSingle().catch(() => ({ data: null })),
+            this.safeFetch(supabase.from('products').select('*')),
+            this.safeFetch(supabase.from('batches').select('*')),
+            this.safeFetch(supabase.from('customers').select('*')),
+            this.safeFetch(supabase.from('suppliers').select('*')),
+            this.safeFetch(supabase.from('warehouses').select('*')),
+            this.safeFetch(supabase.from('invoices').select('*')),
+            this.safeFetch(supabase.from('purchase_invoices').select('*')),
+            this.safeFetch(supabase.from('purchase_orders').select('*')),
+            this.safeFetch(supabase.from('cash_transactions').select('*')),
+            this.safeFetch(supabase.from('representatives').select('*')),
+            this.safeFetch(supabase.from('settings').select('*').eq('id', 1).maybeSingle()),
         ]);
 
-        if (p?.data) this.products = p.data;
-        if (b?.data) this.batches = b.data;
-        if (c?.data) this.customers = c.data;
-        if (s?.data) this.suppliers = s.data;
-        if (w?.data) this.warehouses = w.data;
-        if (inv?.data) this.invoices = inv.data;
-        if (pur?.data) this.purchaseInvoices = pur.data;
-        if (po?.data) this.purchaseOrders = po.data;
-        if (cash?.data) this.cashTransactions = cash.data;
-        if (rep?.data) this.representatives = rep.data;
+        if (p) this.products = p;
+        if (b) this.batches = b;
+        if (c) this.customers = c;
+        if (s) this.suppliers = s;
+        if (w) this.warehouses = w;
+        if (inv) this.invoices = inv;
+        if (pur) this.purchaseInvoices = pur;
+        if (po) this.purchaseOrders = po;
+        if (cash) this.cashTransactions = cash;
+        if (rep) this.representatives = rep;
         
-        if (set?.data) {
-            this.settings = this.mapFromDb(set.data);
+        if (set) {
+            this.settings = this.mapFromDb(set);
         }
 
         if (this.warehouses.length === 0) {
@@ -142,7 +152,7 @@ class DatabaseService {
         }
 
     } catch (error: any) {
-        console.warn('Supabase not reachable, running in local memory mode:', error.message);
+        console.warn('Initialization issue:', error.message);
     } finally {
         this.isInitialized = true;
     }
@@ -189,7 +199,7 @@ class DatabaseService {
         if (error) throw error;
         return true;
     } catch (e: any) {
-        console.warn('Settings updated locally (Supabase unavailable)');
+        console.warn('Settings updated locally');
         return true;
     }
   }
@@ -208,39 +218,51 @@ class DatabaseService {
         credit_limit: c.credit_limit || 0 
     };
     this.customers.push(cust);
-    await supabase.from('customers').insert(cust).catch(() => {});
+    try {
+      await supabase.from('customers').insert(cust);
+    } catch (e) {}
   }
 
   async updateCustomer(id: string, updates: Partial<Customer>) {
       const index = this.customers.findIndex(c => c.id === id);
       if (index !== -1) {
           this.customers[index] = { ...this.customers[index], ...updates };
-          await supabase.from('customers').update(updates).eq('id', id).catch(() => {});
+          try {
+            await supabase.from('customers').update(updates).eq('id', id);
+          } catch (e) {}
       }
   }
 
   async deleteCustomer(id: string) {
       this.customers = this.customers.filter(c => c.id !== id);
-      await supabase.from('customers').delete().eq('id', id).catch(() => {});
+      try {
+        await supabase.from('customers').delete().eq('id', id);
+      } catch (e) {}
   }
 
   async addSupplier(s: any) {
     const supp: Supplier = { ...s, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
     this.suppliers.push(supp);
-    await supabase.from('suppliers').insert(supp).catch(() => {});
+    try {
+      await supabase.from('suppliers').insert(supp);
+    } catch (e) {}
   }
 
   async addRepresentative(r: any) {
       const rep: Representative = { ...r, id: `R${Date.now()}` };
       this.representatives.push(rep);
-      await supabase.from('representatives').insert(rep).catch(() => {});
+      try {
+        await supabase.from('representatives').insert(rep);
+      } catch (e) {}
   }
 
   async updateRepresentative(id: string, updates: Partial<Representative>) {
       const idx = this.representatives.findIndex(r => r.id === id);
       if (idx !== -1) {
           this.representatives[idx] = { ...this.representatives[idx], ...updates };
-          await supabase.from('representatives').update(updates).eq('id', id).catch(() => {});
+          try {
+            await supabase.from('representatives').update(updates).eq('id', id);
+          } catch (e) {}
       }
   }
 
@@ -248,14 +270,18 @@ class DatabaseService {
       const id = `W-${Date.now()}`;
       const w = { id, name, is_default: false };
       this.warehouses.push(w);
-      await supabase.from('warehouses').insert(w).catch(() => {});
+      try {
+        await supabase.from('warehouses').insert(w);
+      } catch (e) {}
   }
 
   async updateWarehouse(id: string, name: string) {
     const idx = this.warehouses.findIndex(w => w.id === id);
     if (idx !== -1) {
       this.warehouses[idx].name = name;
-      await supabase.from('warehouses').update({ name }).eq('id', id).catch(() => {});
+      try {
+        await supabase.from('warehouses').update({ name }).eq('id', id);
+      } catch (e) {}
     }
   }
 
@@ -263,7 +289,9 @@ class DatabaseService {
     const pid = `P${Date.now()}`;
     const product = { ...p, id: pid };
     this.products.push(product);
-    await supabase.from('products').insert(product).catch(() => {});
+    try {
+      await supabase.from('products').insert(product);
+    } catch (e) {}
     
     if (b) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
@@ -277,7 +305,9 @@ class DatabaseService {
             status: BatchStatus.ACTIVE 
         };
         this.batches.push(batch);
-        await supabase.from('batches').insert(batch).catch(() => {});
+        try {
+          await supabase.from('batches').insert(batch);
+        } catch (e) {}
     }
     return pid;
   }
@@ -286,7 +316,9 @@ class DatabaseService {
       const idx = this.batches.findIndex(b => b.id === batchId);
       if (idx !== -1) {
           this.batches[idx].quantity = newQuantity;
-          await supabase.from('batches').update({ quantity: newQuantity }).eq('id', batchId).catch(() => {});
+          try {
+            await supabase.from('batches').update({ quantity: newQuantity }).eq('id', batchId);
+          } catch (e) {}
           return { success: true, message: 'Stock Updated' };
       }
       return { success: false, message: 'Batch not found' };
@@ -299,7 +331,9 @@ class DatabaseService {
       
       const newQty = this.batches[idx].quantity - quantityToRemove;
       this.batches[idx].quantity = newQty;
-      await supabase.from('batches').update({ quantity: newQty }).eq('id', batchId).catch(() => {});
+      try {
+        await supabase.from('batches').update({ quantity: newQty }).eq('id', batchId);
+      } catch (e) {}
       return { success: true, message: `Spoilage recorded` };
   }
 
@@ -312,7 +346,9 @@ class DatabaseService {
         
         const newSourceQty = sourceBatch.quantity - quantity;
         sourceBatch.quantity = newSourceQty;
-        await supabase.from('batches').update({ quantity: newSourceQty }).eq('id', batchId).catch(() => {});
+        try {
+          await supabase.from('batches').update({ quantity: newSourceQty }).eq('id', batchId);
+        } catch (e) {}
 
         const newBatchId = `B${Date.now()}-T`;
         const newBatch = { 
@@ -324,7 +360,9 @@ class DatabaseService {
             expiry_date: '2099-12-31'
         };
         this.batches.push(newBatch);
-        await supabase.from('batches').insert(newBatch).catch(() => {});
+        try {
+          await supabase.from('batches').insert(newBatch);
+        } catch (e) {}
         
         return { success: true, message: 'Transfer successful' };
     } catch (e: any) {
@@ -337,7 +375,9 @@ class DatabaseService {
         const index = this.invoices.findIndex(i => i.id === id);
         if (index === -1) throw new Error("Invoice not found");
         this.invoices[index] = { ...this.invoices[index], customer_id: customerId, items: items };
-        await supabase.from('invoices').update({ customer_id: customerId, items: items }).eq('id', id).catch(() => {});
+        try {
+          await supabase.from('invoices').update({ customer_id: customerId, items: items }).eq('id', id);
+        } catch (e) {}
         return { success: true, message: 'Invoice updated', id };
     } catch (e: any) {
         return { success: false, message: e.message };
@@ -364,12 +404,16 @@ class DatabaseService {
             const totalQtyChange = item.quantity + (item.bonus_quantity || 0);
             const newQty = isReturn ? this.batches[batchIdx].quantity + totalQtyChange : this.batches[batchIdx].quantity - totalQtyChange;
             this.batches[batchIdx].quantity = newQty;
-            await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id).catch(() => {});
+            try {
+              await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id);
+            } catch (e) {}
         }
 
         const newBalance = isReturn ? this.customers[customerIdx].current_balance - netTotal : this.customers[customerIdx].current_balance + netTotal;
         this.customers[customerIdx].current_balance = newBalance;
-        await supabase.from('customers').update({ current_balance: newBalance }).eq('id', customerId).catch(() => {});
+        try {
+          await supabase.from('customers').update({ current_balance: newBalance }).eq('id', customerId);
+        } catch (e) {}
 
         const invoiceId = `INV-${Date.now()}`;
         const invoice: Invoice = {
@@ -384,7 +428,9 @@ class DatabaseService {
         };
         
         this.invoices.push(invoice);
-        await supabase.from('invoices').insert(invoice).catch(() => {});
+        try {
+          await supabase.from('invoices').insert(invoice);
+        } catch (e) {}
 
         if(cashPaid > 0) {
              await this.addCashTransaction({
@@ -413,7 +459,9 @@ class DatabaseService {
       if (customerIdx !== -1) {
           const newBal = this.customers[customerIdx].current_balance - amount;
           this.customers[customerIdx].current_balance = newBal;
-          await supabase.from('customers').update({ current_balance: newBal }).eq('id', invoice.customer_id).catch(() => {});
+          try {
+            await supabase.from('customers').update({ current_balance: newBal }).eq('id', invoice.customer_id);
+          } catch (e) {}
       }
 
       await this.addCashTransaction({
@@ -434,7 +482,9 @@ class DatabaseService {
       const id = `TX${Date.now()}`;
       const newTx = { ...tx, id };
       this.cashTransactions.push(newTx);
-      await supabase.from('cash_transactions').insert(newTx).catch(() => {});
+      try {
+        await supabase.from('cash_transactions').insert(newTx);
+      } catch (e) {}
   }
 
   getNextTransactionRef(type: CashTransactionType): string {
@@ -453,7 +503,9 @@ class DatabaseService {
             const balanceChange = isReturn ? -total : total;
             const newBal = this.suppliers[supplierIdx].current_balance + balanceChange;
             this.suppliers[supplierIdx].current_balance = newBal;
-            await supabase.from('suppliers').update({ current_balance: newBal }).eq('id', supplierId).catch(() => {});
+            try {
+              await supabase.from('suppliers').update({ current_balance: newBal }).eq('id', supplierId);
+            } catch (e) {}
         }
 
         for (const item of items) {
@@ -463,7 +515,9 @@ class DatabaseService {
             if (existingBatch) {
                 const newQty = isReturn ? existingBatch.quantity - item.quantity : existingBatch.quantity + item.quantity;
                 existingBatch.quantity = newQty;
-                await supabase.from('batches').update({ quantity: newQty }).eq('id', existingBatch.id).catch(() => {});
+                try {
+                  await supabase.from('batches').update({ quantity: newQty }).eq('id', existingBatch.id);
+                } catch (e) {}
             } else if (!isReturn) {
                 const newB = {
                     id: `B-${Date.now()}-${Math.floor(Math.random()*100)}`,
@@ -477,7 +531,9 @@ class DatabaseService {
                     status: BatchStatus.ACTIVE
                 };
                 this.batches.push(newB);
-                await supabase.from('batches').insert(newB).catch(() => {});
+                try {
+                  await supabase.from('batches').insert(newB);
+                } catch (e) {}
             }
         }
 
@@ -486,7 +542,9 @@ class DatabaseService {
             total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items
         };
         this.purchaseInvoices.push(inv);
-        await supabase.from('purchase_invoices').insert(inv).catch(() => {});
+        try {
+          await supabase.from('purchase_invoices').insert(inv);
+        } catch (e) {}
 
         return { success: true, message: 'Purchase saved' };
     } catch (e: any) {
@@ -501,7 +559,9 @@ class DatabaseService {
           status: 'PENDING', items
       };
       this.purchaseOrders.push(order);
-      await supabase.from('purchase_orders').insert(order).catch(() => {});
+      try {
+        await supabase.from('purchase_orders').insert(order);
+      } catch (e) {}
       return { success: true, message: 'Order saved' };
   }
 
@@ -509,7 +569,9 @@ class DatabaseService {
     const idx = this.purchaseOrders.findIndex(po => po.id === id);
     if (idx !== -1) {
       this.purchaseOrders[idx].status = status;
-      await supabase.from('purchase_orders').update({ status }).eq('id', id).catch(() => {});
+      try {
+        await supabase.from('purchase_orders').update({ status }).eq('id', id);
+      } catch (e) {}
     }
   }
 
@@ -578,22 +640,28 @@ class DatabaseService {
       this.customers.forEach(c => c.current_balance = c.opening_balance);
       this.suppliers.forEach(s => s.current_balance = s.opening_balance);
       
-      await Promise.all([
-          supabase.from('invoices').delete().neq('id', '0').catch(() => {}),
-          supabase.from('purchase_invoices').delete().neq('id', '0').catch(() => {}),
-          supabase.from('cash_transactions').delete().neq('id', '0').catch(() => {}),
-          supabase.from('purchase_orders').delete().neq('id', '0').catch(() => {})
-      ]);
+      try {
+        await Promise.all([
+          supabase.from('invoices').delete().neq('id', '0'),
+          supabase.from('purchase_invoices').delete().neq('id', '0'),
+          supabase.from('cash_transactions').delete().neq('id', '0'),
+          supabase.from('purchase_orders').delete().neq('id', '0')
+        ]);
+      } catch (e) {}
   }
   
   async clearCustomers() { 
       this.customers = [];
-      await supabase.from('customers').delete().neq('id', '0').catch(() => {}); 
+      try {
+        await supabase.from('customers').delete().neq('id', '0');
+      } catch (e) {}
   }
   async clearProducts() { 
       this.products = [];
       this.batches = [];
-      await supabase.from('products').delete().neq('id', '0').catch(() => {}); 
+      try {
+        await supabase.from('products').delete().neq('id', '0');
+      } catch (e) {}
   }
   
   async resetDatabase() {
