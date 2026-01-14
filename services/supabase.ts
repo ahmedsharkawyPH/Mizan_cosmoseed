@@ -17,9 +17,14 @@ const getEnv = (key: string): string => {
 const SUPABASE_URL = getEnv('VITE_SUPABASE_URL');
 const SUPABASE_KEY = getEnv('VITE_SUPABASE_ANON_KEY');
 
-// Use a safe fallback that won't trigger standard "Failed to fetch" on immediate load 
-// if the credentials are empty or purely placeholder strings
-const isConfigured = SUPABASE_URL && SUPABASE_URL.startsWith('http') && SUPABASE_KEY;
+// Strict check to avoid "Failed to fetch" on placeholder URLs
+const isConfigured = 
+  SUPABASE_URL && 
+  SUPABASE_URL.startsWith('http') && 
+  !SUPABASE_URL.includes('YOUR_PROJECT') && 
+  SUPABASE_KEY && 
+  SUPABASE_KEY !== 'your-anon-key';
+
 const finalUrl = isConfigured ? SUPABASE_URL : 'https://local-mode.supabase.co';
 const finalKey = isConfigured ? SUPABASE_KEY : 'local-placeholder';
 

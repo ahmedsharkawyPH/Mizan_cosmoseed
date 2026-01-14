@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info } from 'lucide-react';
+import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
@@ -81,9 +81,9 @@ export default function NewInvoice() {
     }
   }, [id]);
 
-  // تحديث الخصم التلقائي عند تغيير العميل
+  // تحديث الخصم التلقائي عند تغيير العميل (فقط للفواتير الجديدة)
   useEffect(() => {
-      if (selectedCustomer && !id) { // فقط في الفواتير الجديدة
+      if (selectedCustomer && !id) {
           const customer = customers.find(c => c.id === selectedCustomer);
           if (customer?.default_discount_percent) {
               setAdditionalDiscountPercent(customer.default_discount_percent);
@@ -100,6 +100,7 @@ export default function NewInvoice() {
     return prod.batches.find(b => b.warehouse_id === selectedWarehouse && (isReturnMode || b.quantity > 0)) || null;
   }, [selectedProduct, selectedWarehouse, products, isReturnMode]);
 
+  // جلب آخر سعر شراء من السجل
   const lastPurchasePrice = useMemo(() => {
     if (!selectedProduct) return 0;
     const history = db.getPurchaseInvoices();
@@ -199,7 +200,6 @@ export default function NewInvoice() {
     setIsSubmitting(true);
     const user = authService.getCurrentUser();
     try {
-      // إرسال إجمالي الخصم (المبلغ الثابت + مبلغ النسبة) ليتم حفظه في الفاتورة
       const result = id 
         ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
         : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined);
@@ -263,11 +263,11 @@ export default function NewInvoice() {
                     )}
                 </label>
                 <div className="relative">
-                    <div className="w-full bg-slate-50 border rounded-lg p-2.5 font-bold text-slate-800 flex justify-between items-center">
+                    <div className="w-full bg-slate-50 border rounded-lg p-2.5 font-bold text-slate-800 flex justify-between items-center min-h-[45px]">
                         <span>{availableBatch ? availableBatch.quantity : "-"}</span>
                         {showLastCost && (
-                            <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded animate-in fade-in slide-in-from-top-1">
-                                التكلفة: {currency}{lastPurchasePrice}
+                            <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full animate-in fade-in slide-in-from-top-1 flex items-center gap-1">
+                                <Tag className="w-2.5 h-2.5" /> {currency}{lastPurchasePrice.toFixed(2)}
                             </span>
                         )}
                     </div>
@@ -341,7 +341,7 @@ export default function NewInvoice() {
                 
                 <div className="space-y-3 pt-2">
                     <div className="flex items-center gap-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase flex-1">{t('inv.discount')} (%)</label>
+                        <label className="text-xs font-bold text-slate-500 uppercase flex-1">خصم العميل (%)</label>
                         <div className="relative w-24">
                             <input 
                                 type="number" 
