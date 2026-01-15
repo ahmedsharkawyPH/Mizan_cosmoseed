@@ -202,27 +202,48 @@ export default function Customers() {
 
   // --- DISTRIBUTION LINES MANAGEMENT ---
   const handleAddLine = async () => {
-      if (!newLineName.trim()) return;
-      if (settings.distributionLines.includes(newLineName.trim())) {
+      const name = newLineName.trim();
+      if (!name) return;
+      
+      // ضمان وجود المصفوفة قبل البحث فيها
+      const currentLines = settings.distributionLines || [];
+      
+      if (currentLines.includes(name)) {
           alert("هذا الخط موجود بالفعل");
           return;
       }
-      const updatedLines = [...settings.distributionLines, newLineName.trim()];
+      
+      const updatedLines = [...currentLines, name];
       const updatedSettings = { ...settings, distributionLines: updatedLines };
-      const success = await db.updateSettings(updatedSettings);
-      if (success) {
-          setSettings(updatedSettings);
-          setNewLineName('');
+      
+      try {
+          const success = await db.updateSettings(updatedSettings);
+          if (success) {
+              setSettings(updatedSettings);
+              setNewLineName('');
+          } else {
+              alert("فشل تحديث الإعدادات");
+          }
+      } catch (err) {
+          console.error("Error adding distribution line:", err);
+          alert("حدث خطأ أثناء الإضافة");
       }
   };
 
   const handleDeleteLine = async (line: string) => {
       if (!confirm(`هل أنت متأكد من حذف خط التوزيع "${line}"؟`)) return;
-      const updatedLines = settings.distributionLines.filter(l => l !== line);
+      
+      const currentLines = settings.distributionLines || [];
+      const updatedLines = currentLines.filter(l => l !== line);
       const updatedSettings = { ...settings, distributionLines: updatedLines };
-      const success = await db.updateSettings(updatedSettings);
-      if (success) {
-          setSettings(updatedSettings);
+      
+      try {
+          const success = await db.updateSettings(updatedSettings);
+          if (success) {
+              setSettings(updatedSettings);
+          }
+      } catch (err) {
+          console.error("Error deleting distribution line:", err);
       }
   };
 
@@ -533,7 +554,7 @@ export default function Customers() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {settings.distributionLines.map((line, idx) => (
+                      {(settings.distributionLines || []).map((line, idx) => (
                           <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 border border-slate-100 rounded-xl group hover:border-emerald-200 transition-colors">
                               <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-lg bg-white border flex items-center justify-center text-emerald-600 font-bold text-xs">
@@ -550,7 +571,7 @@ export default function Customers() {
                               </button>
                           </div>
                       ))}
-                      {settings.distributionLines.length === 0 && (
+                      {(!settings.distributionLines || settings.distributionLines.length === 0) && (
                           <div className="col-span-full py-10 text-center text-slate-400 border-2 border-dashed rounded-xl">
                               <Truck className="w-12 h-12 mx-auto mb-2 opacity-10" />
                               <p>لا توجد خطوط توزيع مسجلة حالياً</p>
@@ -596,7 +617,7 @@ export default function Customers() {
                     onChange={e => setForm({...form, distribution_line: e.target.value})} 
                 >
                     <option value="">-- اختر خط التوزيع --</option>
-                    {settings.distributionLines.map((line, i) => (
+                    {(settings.distributionLines || []).map((line, i) => (
                         <option key={i} value={line}>{line}</option>
                     ))}
                 </select>
