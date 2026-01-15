@@ -131,9 +131,16 @@ const Inventory: React.FC = () => {
                 <PlusCircle className="w-4 h-4" />{t('stock.new')}
             </button>
             
-            <div className="flex bg-purple-50 p-1 rounded-xl border border-purple-100 shadow-sm">
+            <div className="flex bg-purple-50 p-1 rounded-xl border border-purple-100 shadow-sm gap-2">
                 <button onClick={() => navigate('/purchase-orders')} className="bg-purple-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-all hover:bg-purple-700">
                     <ShoppingBag className="w-4 h-4" />{t('stock.order')}
+                </button>
+                <button 
+                  onClick={() => navigate('/purchases/new')}
+                  className="bg-cyan-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-cyan-700"
+                >
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>{t('stock.purchase')}</span>
                 </button>
             </div>
         </div>
