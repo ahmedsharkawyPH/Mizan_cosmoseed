@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { Representative, Invoice, PaymentStatus } from '../types';
 import { t } from '../utils/t';
-import { Plus, Search, Edit2, Users, ClipboardList, Wallet, ArrowRight, Printer, Calendar } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Users, ClipboardList, Wallet, ArrowRight, Printer, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Representatives() {
@@ -68,6 +68,13 @@ export default function Representatives() {
     } catch (e: any) {
         alert(e.message);
     }
+  };
+
+  const handleDelete = (id: string) => {
+      if (window.confirm("هل أنت متأكد من حذف هذا المندوب؟")) {
+          db.deleteRepresentative(id);
+          setReps(db.getRepresentatives());
+      }
   };
 
   // Quick Date Setters
@@ -272,9 +279,14 @@ export default function Representatives() {
                                 </span>
                             </td>
                             <td className="p-4 text-center">
-                                <button onClick={() => handleOpenEdit(r)} className="text-gray-500 hover:text-blue-600">
-                                    <Edit2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex justify-center gap-2">
+                                    <button onClick={() => handleOpenEdit(r)} className="text-gray-500 hover:text-blue-600 p-1.5 rounded hover:bg-blue-50 transition-colors" title={t('list.edit')}>
+                                        <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => handleDelete(r.id)} className="text-gray-500 hover:text-red-600 p-1.5 rounded hover:bg-red-50 transition-colors" title="حذف">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         ))}

@@ -240,6 +240,11 @@ class DatabaseService {
       }
   }
 
+  async deleteRepresentative(id: string) {
+    this.representatives = this.representatives.filter(r => r.id !== id);
+    if (isSupabaseConfigured) { try { await supabase.from('representatives').delete().eq('id', id); } catch (e) {} }
+  }
+
   async addWarehouse(name: string) {
       const id = `W-${Date.now()}`;
       const w = { id, name, is_default: false };
