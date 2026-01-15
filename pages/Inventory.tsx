@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Download, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Download, FileSpreadsheet, Loader2, Edit2, Save } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
 import { readExcelFile, downloadInventoryTemplate } from '../utils/excel';
@@ -16,6 +16,10 @@ const Inventory: React.FC = () => {
   const currency = settings.currency;
   const [searchTerm, setSearchTerm] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+
+  // Quick Edit State
+  const [editModal, setEditModal] = useState<{ isOpen: boolean; batch: Batch | null }>({ isOpen: false, batch: null });
+  const [editForm, setEditForm] = useState({ purchase_price: 0, selling_price: 0, quantity: 0 });
 
   const [transferModal, setTransferModal] = useState<{ isOpen: boolean; batch: Batch | null }>({ isOpen: false, batch: null });
   const [transferQty, setTransferQty] = useState(0);
@@ -43,7 +47,7 @@ const Inventory: React.FC = () => {
   const handleManualAdd = async () => {
       if(!addForm.name || !addForm.code) return alert("Fill required fields");
       await db.addProduct(
-        { code: addForm.code, name: addForm.name }, 
+        { code: String(addForm.code), name: addForm.name }, 
         { 
           quantity: addForm.quantity, 
           purchase_price: addForm.purchase_price, 
@@ -64,33 +68,56 @@ const Inventory: React.FC = () => {
     try {
       const data = await readExcelFile<any>(e.target.files[0]);
       
-      let importedCount = 0;
+      let processedCount = 0;
       for (const row of data) {
-        // التحقق من الحقول الأساسية
-        if (row.name && row.code) {
+        // دعم التسميات العربية والإنجليزية للأعمدة
+        const name = row.name || row['الاسم'] || row['اسم الصنف'];
+        const code = row.code || row['الكود'] || row['كود الصنف'] || row['الباركود'];
+        const qty = row.quantity || row['الكمية'] || row['الرصيد'] || 0;
+        const p_price = row.purchase_price || row['سعر الشراء'] || row['التكلفة'] || 0;
+        const s_price = row.selling_price || row['سعر البيع'] || row['السعر'] || 0;
+        const batch = row.batch_number || row['التشغيلة'] || 'AUTO';
+
+        if (name && code) {
           await db.addProduct(
-            { code: String(row.code), name: String(row.name) },
+            { code: String(code), name: String(name) },
             {
-              quantity: Number(row.quantity) || 0,
-              purchase_price: Number(row.purchase_price) || 0,
-              selling_price: Number(row.selling_price) || 0,
-              batch_number: row.batch_number || 'AUTO',
+              quantity: Number(qty),
+              purchase_price: Number(p_price),
+              selling_price: Number(s_price),
+              batch_number: String(batch),
               expiry_date: row.expiry_date || '2099-12-31'
             }
           );
-          importedCount++;
+          processedCount++;
         }
       }
       
       setProducts(db.getProductsWithBatches());
-      alert(t('common.success_import') + `: ${importedCount} items`);
+      alert(`تمت معالجة ${processedCount} صنف بنجاح.`);
     } catch (err) {
       console.error(err);
       alert(t('common.error_excel'));
     } finally {
       setIsImporting(false);
-      e.target.value = ''; // Reset input
+      e.target.value = ''; 
     }
+  };
+
+  const openQuickEdit = (batch: Batch) => {
+      setEditForm({ 
+          purchase_price: batch.purchase_price, 
+          selling_price: batch.selling_price, 
+          quantity: batch.quantity 
+      });
+      setEditModal({ isOpen: true, batch });
+  };
+
+  const handleQuickSave = async () => {
+      if (!editModal.batch) return;
+      await db.updateBatchPrices(editModal.batch.id, editForm.purchase_price, editForm.selling_price, editForm.quantity);
+      setProducts(db.getProductsWithBatches());
+      setEditModal({ isOpen: false, batch: null });
   };
 
   const handleTransfer = async () => {
@@ -186,7 +213,8 @@ const Inventory: React.FC = () => {
                                 <td className="px-6 py-4 text-right font-black text-slate-900">{batch.quantity}</td>
                                 <td className="px-6 py-4 text-center">
                                     <div className="flex justify-center gap-2">
-                                        <button onClick={() => { setTransferQty(0); setTargetWarehouse(''); setTransferModal({ isOpen: true, batch }); }} className="text-blue-600 p-2 rounded-lg hover:bg-blue-50 transition-colors"><ArrowRightLeft className="w-4 h-4" /></button>
+                                        <button onClick={() => openQuickEdit(batch)} className="text-blue-600 p-2 rounded-lg hover:bg-blue-50 transition-colors" title="تعديل سريع"><Edit2 className="w-4 h-4" /></button>
+                                        <button onClick={() => { setTransferQty(0); setTargetWarehouse(''); setTransferModal({ isOpen: true, batch }); }} className="text-slate-600 p-2 rounded-lg hover:bg-slate-50 transition-colors"><ArrowRightLeft className="w-4 h-4" /></button>
                                         <button onClick={() => { setDamagedQty(0); setReason(''); setSpoilageModal({ isOpen: true, batch }); }} className="text-amber-600 p-2 rounded-lg hover:bg-amber-50 transition-colors"><Trash2 className="w-4 h-4" /></button>
                                     </div>
                                 </td>
@@ -199,6 +227,33 @@ const Inventory: React.FC = () => {
           )
         })}
       </div>
+
+      {/* Quick Edit Prices Modal */}
+      {editModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200">
+                <div className="flex justify-between items-center p-5 border-b bg-blue-600 text-white font-bold">
+                    <h3>تعديل الأسعار والرصيد</h3>
+                    <button onClick={() => setEditModal({isOpen: false, batch: null})}><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase block mb-1">سعر التكلفة</label>
+                        <input type="number" className="w-full border p-2.5 rounded-lg font-bold" value={editForm.purchase_price} onChange={e => setEditForm({...editForm, purchase_price: +e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase block mb-1">سعر البيع</label>
+                        <input type="number" className="w-full border p-2.5 rounded-lg font-bold text-blue-600" value={editForm.selling_price} onChange={e => setEditForm({...editForm, selling_price: +e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase block mb-1">الرصيد الحالي</label>
+                        <input type="number" className="w-full border p-2.5 rounded-lg font-bold text-emerald-600" value={editForm.quantity} onChange={e => setEditForm({...editForm, quantity: +e.target.value})} />
+                    </div>
+                    <button onClick={handleQuickSave} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg"><Save className="w-4 h-4" /> حفظ التغييرات</button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Transfer Modal */}
       {transferModal.isOpen && (

@@ -102,28 +102,19 @@ class DatabaseService {
   }
 
   private async safeFetch(builder: any) {
-    // If Supabase isn't properly configured, don't even try the network request
     if (!isSupabaseConfigured) return null;
-    
     try {
       const { data, error } = await builder;
-      if (error) {
-          console.error('Supabase fetch error details:', JSON.stringify(error, null, 2));
-          return null;
-      }
+      if (error) return null;
       return data;
-    } catch (e: any) {
-      // This catches the "Failed to fetch" type errors
-      console.warn('Network issue during fetch:', e.message);
+    } catch (e) {
       return null;
     }
   }
 
   async init() {
     if(this.isInitialized) return;
-    
     try {
-        // Run fetches in parallel with error handling
         const results = await Promise.all([
             this.safeFetch(supabase.from('products').select('*')),
             this.safeFetch(supabase.from('batches').select('*')),
@@ -139,7 +130,6 @@ class DatabaseService {
         ]);
 
         const [p, b, c, s, w, inv, pur, po, cash, rep, set] = results;
-
         if (p) this.products = p;
         if (b) this.batches = b;
         if (c) this.customers = c;
@@ -150,17 +140,9 @@ class DatabaseService {
         if (po) this.purchaseOrders = po;
         if (cash) this.cashTransactions = cash;
         if (rep) this.representatives = rep;
-        
-        if (set) {
-            this.settings = this.mapFromDb(set);
-        }
-
-        if (this.warehouses.length === 0) {
-            this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
-        }
-
-    } catch (error: any) {
-        console.warn('Initialization partially failed, working in local mode:', error.message);
+        if (set) this.settings = this.mapFromDb(set);
+        if (this.warehouses.length === 0) this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
+    } catch (error) {
     } finally {
         this.isInitialized = true;
     }
@@ -201,14 +183,10 @@ class DatabaseService {
         this.settings = { ...s };
         if (!isSupabaseConfigured) return true;
         const dbPayload = this.mapToDb(s);
-        const { error } = await supabase
-            .from('settings')
-            .upsert(dbPayload, { onConflict: 'id' });
-
+        const { error } = await supabase.from('settings').upsert(dbPayload, { onConflict: 'id' });
         if (error) throw error;
         return true;
-    } catch (e: any) {
-        console.warn('Settings updated locally only');
+    } catch (e) {
         return true;
     }
   }
@@ -220,58 +198,41 @@ class DatabaseService {
   }
 
   async addCustomer(c: any) {
-    const cust: Customer = { 
-        ...c, 
-        id: `C${Date.now()}`, 
-        current_balance: c.opening_balance || 0,
-        credit_limit: c.credit_limit || 0 
-    };
+    const cust: Customer = { ...c, id: `C${Date.now()}`, current_balance: c.opening_balance || 0, credit_limit: c.credit_limit || 0 };
     this.customers.push(cust);
-    if (isSupabaseConfigured) {
-      try { await supabase.from('customers').insert(cust); } catch (e) {}
-    }
+    if (isSupabaseConfigured) { try { await supabase.from('customers').insert(cust); } catch (e) {} }
   }
 
   async updateCustomer(id: string, updates: Partial<Customer>) {
       const index = this.customers.findIndex(c => c.id === id);
       if (index !== -1) {
           this.customers[index] = { ...this.customers[index], ...updates };
-          if (isSupabaseConfigured) {
-            try { await supabase.from('customers').update(updates).eq('id', id); } catch (e) {}
-          }
+          if (isSupabaseConfigured) { try { await supabase.from('customers').update(updates).eq('id', id); } catch (e) {} }
       }
   }
 
   async deleteCustomer(id: string) {
       this.customers = this.customers.filter(c => c.id !== id);
-      if (isSupabaseConfigured) {
-        try { await supabase.from('customers').delete().eq('id', id); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('customers').delete().eq('id', id); } catch (e) {} }
   }
 
   async addSupplier(s: any) {
     const supp: Supplier = { ...s, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
     this.suppliers.push(supp);
-    if (isSupabaseConfigured) {
-      try { await supabase.from('suppliers').insert(supp); } catch (e) {}
-    }
+    if (isSupabaseConfigured) { try { await supabase.from('suppliers').insert(supp); } catch (e) {} }
   }
 
   async addRepresentative(r: any) {
       const rep: Representative = { ...r, id: `R${Date.now()}` };
       this.representatives.push(rep);
-      if (isSupabaseConfigured) {
-        try { await supabase.from('representatives').insert(rep); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('representatives').insert(rep); } catch (e) {} }
   }
 
   async updateRepresentative(id: string, updates: Partial<Representative>) {
       const idx = this.representatives.findIndex(r => r.id === id);
       if (idx !== -1) {
           this.representatives[idx] = { ...this.representatives[idx], ...updates };
-          if (isSupabaseConfigured) {
-            try { await supabase.from('representatives').update(updates).eq('id', id); } catch (e) {}
-          }
+          if (isSupabaseConfigured) { try { await supabase.from('representatives').update(updates).eq('id', id); } catch (e) {} }
       }
   }
 
@@ -279,55 +240,89 @@ class DatabaseService {
       const id = `W-${Date.now()}`;
       const w = { id, name, is_default: false };
       this.warehouses.push(w);
-      if (isSupabaseConfigured) {
-        try { await supabase.from('warehouses').insert(w); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('warehouses').insert(w); } catch (e) {} }
   }
 
   async updateWarehouse(id: string, name: string) {
     const idx = this.warehouses.findIndex(w => w.id === id);
     if (idx !== -1) {
       this.warehouses[idx].name = name;
-      if (isSupabaseConfigured) {
-        try { await supabase.from('warehouses').update({ name }).eq('id', id); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('warehouses').update({ name }).eq('id', id); } catch (e) {} }
     }
   }
 
+  /**
+   * دالة محسنة: تتحقق من وجود كود الصنف أولاً
+   */
   async addProduct(p: any, b?: any): Promise<string> {
-    const pid = `P${Date.now()}`;
-    const product = { ...p, id: pid };
-    this.products.push(product);
-    if (isSupabaseConfigured) {
-      try { await supabase.from('products').insert(product); } catch (e) {}
+    // 1. التحقق إذا كان الصنف موجود بالكود
+    const existingProduct = this.products.find(x => x.code === String(p.code));
+    let pid = existingProduct?.id;
+
+    if (!existingProduct) {
+        pid = `P${Date.now()}-${Math.floor(Math.random()*100)}`;
+        const product = { ...p, id: pid };
+        this.products.push(product);
+        if (isSupabaseConfigured) { try { await supabase.from('products').insert(product); } catch (e) {} }
+    } else {
+        // تحديث الاسم إذا تغير
+        const idx = this.products.findIndex(x => x.id === pid);
+        this.products[idx].name = p.name;
+        if (isSupabaseConfigured) { try { await supabase.from('products').update({ name: p.name }).eq('id', pid); } catch (e) {} }
     }
     
-    if (b) {
+    if (b && pid) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
-        const batch = { 
-            ...b, 
-            id: `B${Date.now()}`, 
-            product_id: pid, 
-            warehouse_id: defaultWarehouseId,
-            batch_number: b.batch_number || 'AUTO',
-            expiry_date: b.expiry_date || '2099-12-31',
-            status: BatchStatus.ACTIVE 
-        };
-        this.batches.push(batch);
-        if (isSupabaseConfigured) {
-          try { await supabase.from('batches').insert(batch); } catch (e) {}
+        
+        // التحقق إذا كان هناك تشغيلة موجودة بنفس الرقم لهذا المنتج
+        const bNo = b.batch_number || 'AUTO';
+        const existingBatchIdx = this.batches.findIndex(x => x.product_id === pid && x.batch_number === bNo);
+
+        if (existingBatchIdx !== -1) {
+            // تحديث التشغيلة الموجودة بالأسعار والكمية الجديدة
+            const updatedBatch = {
+                ...this.batches[existingBatchIdx],
+                quantity: b.quantity || 0,
+                purchase_price: b.purchase_price || 0,
+                selling_price: b.selling_price || 0
+            };
+            this.batches[existingBatchIdx] = updatedBatch;
+            if (isSupabaseConfigured) { try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) {} }
+        } else {
+            // إضافة تشغيلة جديدة
+            const batch = { 
+                ...b, 
+                id: `B${Date.now()}-${Math.floor(Math.random()*100)}`, 
+                product_id: pid, 
+                warehouse_id: defaultWarehouseId,
+                batch_number: bNo,
+                expiry_date: b.expiry_date || '2099-12-31',
+                status: BatchStatus.ACTIVE 
+            };
+            this.batches.push(batch);
+            if (isSupabaseConfigured) { try { await supabase.from('batches').insert(batch); } catch (e) {} }
         }
     }
-    return pid;
+    return pid || '';
+  }
+
+  async updateBatchPrices(batchId: string, purchase_price: number, selling_price: number, quantity: number) {
+      const idx = this.batches.findIndex(b => b.id === batchId);
+      if (idx !== -1) {
+          this.batches[idx].purchase_price = purchase_price;
+          this.batches[idx].selling_price = selling_price;
+          this.batches[idx].quantity = quantity;
+          if (isSupabaseConfigured) {
+              try { await supabase.from('batches').update({ purchase_price, selling_price, quantity }).eq('id', batchId); } catch (e) {}
+          }
+      }
   }
 
   async adjustStock(batchId: string, newQuantity: number): Promise<{ success: boolean; message: string }> {
       const idx = this.batches.findIndex(b => b.id === batchId);
       if (idx !== -1) {
           this.batches[idx].quantity = newQuantity;
-          if (isSupabaseConfigured) {
-            try { await supabase.from('batches').update({ quantity: newQuantity }).eq('id', batchId); } catch (e) {}
-          }
+          if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQuantity }).eq('id', batchId); } catch (e) {} }
           return { success: true, message: 'Stock Updated' };
       }
       return { success: false, message: 'Batch not found' };
@@ -337,12 +332,9 @@ class DatabaseService {
       const idx = this.batches.findIndex(b => b.id === batchId);
       if (idx === -1) return { success: false, message: 'Batch not found' };
       if (this.batches[idx].quantity < quantityToRemove) return { success: false, message: 'Insufficient quantity' };
-      
       const newQty = this.batches[idx].quantity - quantityToRemove;
       this.batches[idx].quantity = newQty;
-      if (isSupabaseConfigured) {
-        try { await supabase.from('batches').update({ quantity: newQty }).eq('id', batchId); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQty }).eq('id', batchId); } catch (e) {} }
       return { success: true, message: `Spoilage recorded` };
   }
 
@@ -352,27 +344,13 @@ class DatabaseService {
         if (sourceBatchIdx === -1) throw new Error("Source Batch Not Found");
         const sourceBatch = this.batches[sourceBatchIdx];
         if (sourceBatch.quantity < quantity) throw new Error("Insufficient Quantity");
-        
         const newSourceQty = sourceBatch.quantity - quantity;
         sourceBatch.quantity = newSourceQty;
-        if (isSupabaseConfigured) {
-          try { await supabase.from('batches').update({ quantity: newSourceQty }).eq('id', batchId); } catch (e) {}
-        }
-
+        if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newSourceQty }).eq('id', batchId); } catch (e) {} }
         const newBatchId = `B${Date.now()}-T`;
-        const newBatch = { 
-            ...sourceBatch, 
-            id: newBatchId, 
-            warehouse_id: targetWarehouseId, 
-            quantity: quantity,
-            batch_number: sourceBatch.batch_number || 'AUTO',
-            expiry_date: sourceBatch.expiry_date || '2099-12-31'
-        };
+        const newBatch = { ...sourceBatch, id: newBatchId, warehouse_id: targetWarehouseId, quantity: quantity };
         this.batches.push(newBatch);
-        if (isSupabaseConfigured) {
-          try { await supabase.from('batches').insert(newBatch); } catch (e) {}
-        }
-        
+        if (isSupabaseConfigured) { try { await supabase.from('batches').insert(newBatch); } catch (e) {} }
         return { success: true, message: 'Transfer successful' };
     } catch (e: any) {
         return { success: false, message: e.message };
@@ -384,9 +362,7 @@ class DatabaseService {
         const index = this.invoices.findIndex(i => i.id === id);
         if (index === -1) throw new Error("Invoice not found");
         this.invoices[index] = { ...this.invoices[index], customer_id: customerId, items: items };
-        if (isSupabaseConfigured) {
-          try { await supabase.from('invoices').update({ customer_id: customerId, items: items }).eq('id', id); } catch (e) {}
-        }
+        if (isSupabaseConfigured) { try { await supabase.from('invoices').update({ customer_id: customerId, items: items }).eq('id', id); } catch (e) {} }
         return { success: true, message: 'Invoice updated', id };
     } catch (e: any) {
         return { success: false, message: e.message };
@@ -397,7 +373,6 @@ class DatabaseService {
     try {
         const customerIdx = this.customers.findIndex(c => c.id === customerId);
         if (customerIdx === -1) throw new Error("Customer not found");
-
         let totalGross = 0;
         let totalItemDiscount = 0;
         for(const item of items) {
@@ -406,50 +381,32 @@ class DatabaseService {
              totalItemDiscount += (item.quantity * price * (item.discount_percentage / 100));
         }
         const netTotal = totalGross - totalItemDiscount - additionalDiscount;
-
         for(const item of items) {
             const batchIdx = this.batches.findIndex(b => b.id === item.batch.id);
             if(batchIdx === -1) continue;
             const totalQtyChange = item.quantity + (item.bonus_quantity || 0);
             const newQty = isReturn ? this.batches[batchIdx].quantity + totalQtyChange : this.batches[batchIdx].quantity - totalQtyChange;
             this.batches[batchIdx].quantity = newQty;
-            if (isSupabaseConfigured) {
-              try { await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id); } catch (e) {}
-            }
+            if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id); } catch (e) {} }
         }
-
         const newBalance = isReturn ? this.customers[customerIdx].current_balance - netTotal : this.customers[customerIdx].current_balance + netTotal;
         this.customers[customerIdx].current_balance = newBalance;
-        if (isSupabaseConfigured) {
-          try { await supabase.from('customers').update({ current_balance: newBalance }).eq('id', customerId); } catch (e) {}
-        }
-
+        if (isSupabaseConfigured) { try { await supabase.from('customers').update({ current_balance: newBalance }).eq('id', customerId); } catch (e) {} }
         const invoiceId = `INV-${Date.now()}`;
         const invoice: Invoice = {
-            id: invoiceId, invoice_number: `${Date.now()}`, customer_id: customerId, 
-            created_by: createdBy?.id, created_by_name: createdBy?.name,
-            date: new Date().toISOString(), total_before_discount: totalGross, 
-            total_discount: totalItemDiscount, additional_discount: additionalDiscount,
-            net_total: netTotal, previous_balance: this.customers[customerIdx].current_balance - (isReturn ? -netTotal : netTotal), 
-            final_balance: newBalance,
+            id: invoiceId, invoice_number: `${Date.now()}`, customer_id: customerId, created_by: createdBy?.id, created_by_name: createdBy?.name,
+            date: new Date().toISOString(), total_before_discount: totalGross, total_discount: totalItemDiscount, additional_discount: additionalDiscount,
+            net_total: netTotal, previous_balance: this.customers[customerIdx].current_balance - (isReturn ? -netTotal : netTotal), final_balance: newBalance,
             payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID,
             items: items, type: isReturn ? 'RETURN' : 'SALE'
         };
-        
         this.invoices.push(invoice);
-        if (isSupabaseConfigured) {
-          try { await supabase.from('invoices').insert(invoice); } catch (e) {}
-        }
-
+        if (isSupabaseConfigured) { try { await supabase.from('invoices').insert(invoice); } catch (e) {} }
         if(cashPaid > 0) {
              await this.addCashTransaction({
-                 type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, 
-                 category: 'CUSTOMER_PAYMENT',
-                 reference_id: invoiceId, 
-                 related_name: this.customers[customerIdx].name, 
-                 amount: cashPaid,
-                 date: new Date().toISOString(), 
-                 notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`
+                 type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT',
+                 reference_id: invoiceId, related_name: this.customers[customerIdx].name, amount: cashPaid,
+                 date: new Date().toISOString(), notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`
              });
         }
         return { success: true, message: isReturn ? 'Return Created' : 'Invoice Created', id: invoiceId };
@@ -461,18 +418,13 @@ class DatabaseService {
   async recordInvoicePayment(invoiceId: string, amount: number): Promise<{ success: boolean; message: string }> {
       const invIdx = this.invoices.findIndex(i => i.id === invoiceId);
       if (invIdx === -1) return { success: false, message: "Invoice not found" };
-      
       const invoice = this.invoices[invIdx];
       const customerIdx = this.customers.findIndex(c => c.id === invoice.customer_id);
-      
       if (customerIdx !== -1) {
           const newBal = this.customers[customerIdx].current_balance - amount;
           this.customers[customerIdx].current_balance = newBal;
-          if (isSupabaseConfigured) {
-            try { await supabase.from('customers').update({ current_balance: newBal }).eq('id', invoice.customer_id); } catch (e) {}
-          }
+          if (isSupabaseConfigured) { try { await supabase.from('customers').update({ current_balance: newBal }).eq('id', invoice.customer_id); } catch (e) {} }
       }
-
       await this.addCashTransaction({
           type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: invoiceId,
           related_name: this.customers[customerIdx]?.name, amount: amount, date: new Date().toISOString(),
@@ -491,9 +443,7 @@ class DatabaseService {
       const id = `TX${Date.now()}`;
       const newTx = { ...tx, id };
       this.cashTransactions.push(newTx);
-      if (isSupabaseConfigured) {
-        try { await supabase.from('cash_transactions').insert(newTx); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('cash_transactions').insert(newTx); } catch (e) {} }
   }
 
   getNextTransactionRef(type: CashTransactionType): string {
@@ -506,55 +456,33 @@ class DatabaseService {
     try {
         const id = `PUR-${Date.now()}`;
         const total = items.reduce((a,b)=>a+(b.quantity*b.cost_price),0);
-        
         const supplierIdx = this.suppliers.findIndex(s => s.id === supplierId);
         if (supplierIdx !== -1) {
             const balanceChange = isReturn ? -total : total;
             const newBal = this.suppliers[supplierIdx].current_balance + balanceChange;
             this.suppliers[supplierIdx].current_balance = newBal;
-            if (isSupabaseConfigured) {
-              try { await supabase.from('suppliers').update({ current_balance: newBal }).eq('id', supplierId); } catch (e) {}
-            }
+            if (isSupabaseConfigured) { try { await supabase.from('suppliers').update({ current_balance: newBal }).eq('id', supplierId); } catch (e) {} }
         }
-
         for (const item of items) {
             const bNo = item.batch_number || 'AUTO';
             const existingBatch = this.batches.find(b => b.product_id === item.product_id && b.batch_number === bNo);
-            
             if (existingBatch) {
                 const newQty = isReturn ? existingBatch.quantity - item.quantity : existingBatch.quantity + item.quantity;
                 existingBatch.quantity = newQty;
-                if (isSupabaseConfigured) {
-                  try { await supabase.from('batches').update({ quantity: newQty }).eq('id', existingBatch.id); } catch (e) {}
-                }
+                if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQty }).eq('id', existingBatch.id); } catch (e) {} }
             } else if (!isReturn) {
                 const newB = {
-                    id: `B-${Date.now()}-${Math.floor(Math.random()*100)}`,
-                    product_id: item.product_id,
-                    warehouse_id: item.warehouse_id,
-                    batch_number: bNo,
-                    quantity: item.quantity,
-                    purchase_price: item.cost_price,
-                    selling_price: item.selling_price,
-                    expiry_date: item.expiry_date || '2099-12-31',
-                    status: BatchStatus.ACTIVE
+                    id: `B-${Date.now()}-${Math.floor(Math.random()*100)}`, product_id: item.product_id, warehouse_id: item.warehouse_id,
+                    batch_number: bNo, quantity: item.quantity, purchase_price: item.cost_price, selling_price: item.selling_price,
+                    expiry_date: item.expiry_date || '2099-12-31', status: BatchStatus.ACTIVE
                 };
                 this.batches.push(newB);
-                if (isSupabaseConfigured) {
-                  try { await supabase.from('batches').insert(newB); } catch (e) {}
-                }
+                if (isSupabaseConfigured) { try { await supabase.from('batches').insert(newB); } catch (e) {} }
             }
         }
-
-        const inv: PurchaseInvoice = {
-            id, invoice_number: id, supplier_id: supplierId, date: new Date().toISOString(),
-            total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items
-        };
+        const inv: PurchaseInvoice = { id, invoice_number: id, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
         this.purchaseInvoices.push(inv);
-        if (isSupabaseConfigured) {
-          try { await supabase.from('purchase_invoices').insert(inv); } catch (e) {}
-        }
-
+        if (isSupabaseConfigured) { try { await supabase.from('purchase_invoices').insert(inv); } catch (e) {} }
         return { success: true, message: 'Purchase saved' };
     } catch (e: any) {
         return { success: false, message: e.message };
@@ -563,14 +491,9 @@ class DatabaseService {
 
   async createPurchaseOrder(supplierId: string, items: any[]): Promise<{ success: boolean; message: string }> {
       const id = `PO-${Date.now()}`;
-      const order: PurchaseOrder = {
-          id, order_number: id, supplier_id: supplierId, date: new Date().toISOString(),
-          status: 'PENDING', items
-      };
+      const order: PurchaseOrder = { id, order_number: id, supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items };
       this.purchaseOrders.push(order);
-      if (isSupabaseConfigured) {
-        try { await supabase.from('purchase_orders').insert(order); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('purchase_orders').insert(order); } catch (e) {} }
       return { success: true, message: 'Order saved' };
   }
 
@@ -578,9 +501,7 @@ class DatabaseService {
     const idx = this.purchaseOrders.findIndex(po => po.id === id);
     if (idx !== -1) {
       this.purchaseOrders[idx].status = status;
-      if (isSupabaseConfigured) {
-        try { await supabase.from('purchase_orders').update({ status }).eq('id', id); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('purchase_orders').update({ status }).eq('id', id); } catch (e) {} }
     }
   }
 
@@ -648,7 +569,6 @@ class DatabaseService {
       this.purchaseOrders = [];
       this.customers.forEach(c => c.current_balance = c.opening_balance);
       this.suppliers.forEach(s => s.current_balance = s.opening_balance);
-      
       if (isSupabaseConfigured) {
         try {
           await Promise.all([
@@ -663,16 +583,12 @@ class DatabaseService {
   
   async clearCustomers() { 
       this.customers = [];
-      if (isSupabaseConfigured) {
-        try { await supabase.from('customers').delete().neq('id', '0'); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('customers').delete().neq('id', '0'); } catch (e) {} }
   }
   async clearProducts() { 
       this.products = [];
       this.batches = [];
-      if (isSupabaseConfigured) {
-        try { await supabase.from('products').delete().neq('id', '0'); } catch (e) {}
-      }
+      if (isSupabaseConfigured) { try { await supabase.from('products').delete().neq('id', '0'); } catch (e) {} }
   }
   
   async resetDatabase() {
@@ -686,7 +602,6 @@ class DatabaseService {
   importDatabase(json: string): boolean { 
       try {
           const data = JSON.parse(json);
-          // logic to import
           return true;
       } catch(e) { return false; }
   }
@@ -696,45 +611,13 @@ class DatabaseService {
   getGeneralLedger(): JournalEntry[] {
     const entries: JournalEntry[] = [];
     this.invoices.forEach(inv => {
-        entries.push({
-            id: `JE-S-${inv.id}`,
-            date: inv.date,
-            description: `Sales Invoice #${inv.invoice_number}`,
-            reference: inv.id,
-            debit: inv.net_total,
-            credit: 0,
-            account: 'Accounts Receivable'
-        });
-        entries.push({
-            id: `JE-SR-${inv.id}`,
-            date: inv.date,
-            description: `Revenue for Invoice #${inv.invoice_number}`,
-            reference: inv.id,
-            debit: 0,
-            credit: inv.net_total,
-            account: 'Sales Revenue'
-        });
+        entries.push({ id: `JE-S-${inv.id}`, date: inv.date, description: `Sales Invoice #${inv.invoice_number}`, reference: inv.id, debit: inv.net_total, credit: 0, account: 'Accounts Receivable' });
+        entries.push({ id: `JE-SR-${inv.id}`, date: inv.date, description: `Revenue for Invoice #${inv.invoice_number}`, reference: inv.id, debit: 0, credit: inv.net_total, account: 'Sales Revenue' });
     });
     this.cashTransactions.forEach(tx => {
         const isReceipt = tx.type === CashTransactionType.RECEIPT;
-        entries.push({
-            id: `JE-C-${tx.id}`,
-            date: tx.date,
-            description: tx.notes || `${tx.type} - ${tx.category}`,
-            reference: tx.id,
-            debit: isReceipt ? tx.amount : 0,
-            credit: isReceipt ? 0 : tx.amount,
-            account: 'Cash Account'
-        });
-        entries.push({
-            id: `JE-CO-${tx.id}`,
-            date: tx.date,
-            description: tx.notes || `${tx.type} - ${tx.category}`,
-            reference: tx.id,
-            debit: isReceipt ? 0 : tx.amount,
-            credit: isReceipt ? tx.amount : 0,
-            account: tx.category === 'CUSTOMER_PAYMENT' ? 'Accounts Receivable' : tx.category
-        });
+        entries.push({ id: `JE-C-${tx.id}`, date: tx.date, description: tx.notes || `${tx.type} - ${tx.category}`, reference: tx.id, debit: isReceipt ? tx.amount : 0, credit: isReceipt ? 0 : tx.amount, account: 'Cash Account' });
+        entries.push({ id: `JE-CO-${tx.id}`, date: tx.date, description: tx.notes || `${tx.type} - ${tx.category}`, reference: tx.id, debit: isReceipt ? 0 : tx.amount, credit: isReceipt ? tx.amount : 0, account: tx.category === 'CUSTOMER_PAYMENT' ? 'Accounts Receivable' : tx.category });
     });
     return entries.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
