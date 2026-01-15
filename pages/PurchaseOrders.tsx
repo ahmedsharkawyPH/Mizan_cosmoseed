@@ -25,6 +25,7 @@ export default function PurchaseOrders() {
   const [selProd, setSelProd] = useState('');
   const [qty, setQty] = useState(1);
   const [cost, setCost] = useState(0); 
+  const [sellingPrice, setSellingPrice] = useState(0); // حقل سعر البيع الجديد
   const [prodStats, setProdStats] = useState<{lastPrices: number[], monthlyAvg: number, currentStock: number} | null>(null);
 
   // --- QUICK ADD PRODUCT STATE ---
@@ -82,10 +83,17 @@ export default function PurchaseOrders() {
               const monthlyAvg = getMonthlyAvg(selProd);
               setProdStats({ lastPrices, monthlyAvg, currentStock });
               setCost(lastPrices[0] || 0);
+              // جلب سعر البيع الافتراضي من آخر تشغيلة
+              if (p.batches.length > 0) {
+                  setSellingPrice(p.batches[p.batches.length - 1].selling_price);
+              } else {
+                  setSellingPrice(0);
+              }
           }
       } else {
           setProdStats(null);
           setCost(0);
+          setSellingPrice(0);
       }
   }, [selProd, products]);
 
@@ -98,6 +106,7 @@ export default function PurchaseOrders() {
           product: p,
           quantity: qty,
           cost_price: cost,
+          selling_price: sellingPrice,
           last_cost: prodStats?.lastPrices[0] || 0,
           current_stock: prodStats?.currentStock || 0,
           monthly_avg: prodStats?.monthlyAvg || 0
@@ -106,6 +115,7 @@ export default function PurchaseOrders() {
       setSelProd('');
       setQty(1);
       setCost(0);
+      setSellingPrice(0);
       setProdStats(null);
   };
 
@@ -120,6 +130,7 @@ export default function PurchaseOrders() {
           product_id: item.product.id,
           quantity: item.quantity,
           cost_price: item.cost_price,
+          selling_price: item.selling_price,
           last_cost: item.last_cost,
           current_stock: item.current_stock,
           monthly_avg: item.monthly_avg
@@ -153,8 +164,8 @@ export default function PurchaseOrders() {
       setReviewOrder(order);
       const mappedItems: PurchaseItem[] = order.items.map(item => {
           const p = products.find(prod => prod.id === item.product_id);
-          let sellingPrice = 0;
-          if (p && p.batches.length > 0) {
+          let sellingPrice = item.selling_price || 0;
+          if (!sellingPrice && p && p.batches.length > 0) {
               sellingPrice = p.batches[p.batches.length - 1].selling_price;
           }
 
@@ -291,6 +302,15 @@ export default function PurchaseOrders() {
                                 />
                             </div>
                             <div className="w-32">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">{t('pur.sell')}</label>
+                                <input 
+                                    type="number" 
+                                    className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-emerald-700"
+                                    value={sellingPrice}
+                                    onChange={e => setSellingPrice(Number(e.target.value))}
+                                />
+                            </div>
+                            <div className="w-32">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('stock.qty')}</label>
                                 <input 
                                     type="number" 
@@ -356,9 +376,10 @@ export default function PurchaseOrders() {
                                     <div key={idx} className="bg-gray-50 p-3 rounded-lg border border-gray-100 flex justify-between items-center group">
                                         <div>
                                             <div className="font-bold text-gray-800">{item.product.name}</div>
-                                            <div className="text-xs text-gray-500 mt-1 flex gap-2">
+                                            <div className="text-xs text-blue-600 font-bold mb-1">سعر الشراء: {currency}{item.cost_price}</div>
+                                            <div className="text-xs text-gray-500 flex gap-2">
                                                 <span>{t('stock.qty')}: <b>{item.quantity}</b></span>
-                                                <span className="text-purple-600">Cost: {item.cost_price}</span>
+                                                {item.selling_price > 0 && <span className="text-emerald-600">بيع: {currency}{item.selling_price}</span>}
                                             </div>
                                         </div>
                                         <button onClick={() => handleRemoveItem(idx)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -1,4 +1,5 @@
 
+
 // Domain Model (STRICT)
 
 export enum BatchStatus {
@@ -137,6 +138,8 @@ export interface PurchaseOrder {
       product_id: string;
       quantity: number;
       cost_price: number; 
+      /* Fix: Added selling_price to items definition to resolve property missing error in PurchaseOrders.tsx */
+      selling_price?: number;
       last_cost?: number; 
       current_stock?: number;
       monthly_avg?: number;

@@ -1,4 +1,5 @@
 
+
 import { supabase, isSupabaseConfigured } from './supabase';
 import { GoogleGenAI } from "@google/genai";
 
@@ -33,20 +34,18 @@ export const sendAiMessage = async (message: string, context: string): Promise<s
   // WARNING: This method exposes the API Key in the browser network tab.
   // Acceptable for localhost/demo, but strictly discouraged for production.
   try {
-      const apiKey = process.env.API_KEY;
-      if (!apiKey) {
-          return "Configuration Error: API_KEY is missing from environment variables. Please check your .env file.";
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
+      /* Fix: Initialize with direct reference to process.env.API_KEY and named parameter as per guidelines */
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          /* Fix: Using gemini-3-pro-preview for complex reasoning tasks (financial advisor) */
+          model: 'gemini-3-pro-preview',
           contents: message,
           config: {
               systemInstruction: context,
           }
       });
       
+      /* Fix: Access the .text property directly instead of calling it as a method */
       return response.text || "I processed the data but couldn't generate a text response.";
   } catch (error: any) {
       console.error("AI Service Error:", error);
