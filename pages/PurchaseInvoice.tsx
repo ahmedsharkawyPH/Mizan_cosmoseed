@@ -30,6 +30,10 @@ export default function PurchaseInvoice({ type }: Props) {
   const [cost, setCost] = useState(0);
   const [sell, setSell] = useState(0);
 
+  // --- Quick Add Product State ---
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newProdForm, setNewProdForm] = useState({ name: '', sellingPrice: 0 });
+
   const productRef = useRef<SearchableSelectRef>(null);
   const costRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
@@ -47,6 +51,9 @@ export default function PurchaseInvoice({ type }: Props) {
         const lastBatch = p.batches[p.batches.length-1];
         setCost(lastBatch.purchase_price);
         setSell(lastBatch.selling_price);
+      } else {
+        setCost(0);
+        setSell(0);
       }
     }
   }, [selProd, products]);
@@ -69,6 +76,36 @@ export default function PurchaseInvoice({ type }: Props) {
     setCost(0);
     setSell(0);
     setTimeout(() => productRef.current?.focus(), 100);
+  };
+
+  const handleQuickAddProduct = async () => {
+    if (!newProdForm.name) return alert("يرجى إدخال اسم الصنف");
+
+    // توليد كود تلقائي
+    const allProds = db.getProductsWithBatches();
+    const codes = allProds.map(p => parseInt(p.code)).filter(c => !isNaN(c));
+    const nextCode = (codes.length > 0 ? Math.max(...codes) + 1 : 1001).toString();
+
+    // إضافة الصنف للقاعدة (بدون كمية ابتدائية، فقط تعريف صنف)
+    const pid = await db.addProduct(
+        { code: nextCode, name: newProdForm.name },
+        { 
+            quantity: 0, 
+            purchase_price: 0, 
+            selling_price: newProdForm.sellingPrice,
+            batch_number: 'AUTO',
+            expiry_date: '2099-12-31'
+        }
+    );
+
+    if (pid) {
+        setProducts(db.getProductsWithBatches());
+        setSelProd(pid);
+        setIsAddModalOpen(false);
+        setNewProdForm({ name: '', sellingPrice: 0 });
+        // توجيه التركيز لسعر التكلفة بعد إضافة الصنف الجديد
+        setTimeout(() => costRef.current?.focus(), 100);
+    }
   };
 
   const save = async () => {
@@ -98,9 +135,18 @@ export default function PurchaseInvoice({ type }: Props) {
           <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
             <div className="flex justify-between items-center border-b pb-2">
                 <h3 className="font-bold">{t('pur.add_item')}</h3>
-                <select className="text-sm border p-1 rounded" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="text-blue-600 hover:text-blue-700 text-sm font-bold flex items-center gap-1 px-3 py-1 bg-blue-50 rounded-lg transition-colors border border-blue-100"
+                    >
+                        <PackagePlus className="w-4 h-4" />
+                        صنف جديد
+                    </button>
+                    <select className="text-sm border p-1 rounded" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -130,6 +176,49 @@ export default function PurchaseInvoice({ type }: Props) {
             <button onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-emerald-700 transition-all">{t('pur.submit')}</button>
         </div>
       </div>
+
+      {/* QUICK ADD PRODUCT MODAL */}
+      {isAddModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                  <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
+                      <h3 className="font-bold flex items-center gap-2"><PackagePlus className="w-5 h-5 text-blue-600" /> إضافة صنف سريع</h3>
+                      <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-1">اسم الصنف *</label>
+                          <input 
+                              className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                              value={newProdForm.name}
+                              onChange={e => setNewProdForm({...newProdForm, name: e.target.value})}
+                              placeholder="أدخل اسم المنتج"
+                              autoFocus
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-1">سعر البيع الافتراضي</label>
+                          <input 
+                              type="number"
+                              className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                              value={newProdForm.sellingPrice}
+                              onChange={e => setNewProdForm({...newProdForm, sellingPrice: parseFloat(e.target.value) || 0})}
+                              placeholder="0.00"
+                          />
+                      </div>
+                      <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-600">
+                          سيتم إنشاء كود الصنف تلقائياً وتحديده في الفاتورة فور الحفظ.
+                      </div>
+                      <button 
+                          onClick={handleQuickAddProduct}
+                          className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors"
+                      >
+                          حفظ الصنف
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 }
