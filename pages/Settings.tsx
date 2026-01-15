@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { authService, PERMISSIONS } from '../services/auth';
-import { Save, RefreshCw, Building2, FileText, Settings as SettingsIcon, Users, Plus, Edit2, Trash2, X, Shield, Key, CheckSquare, Printer, Upload, Image as ImageIcon, Database, Download, AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2 } from 'lucide-react';
+import { Save, RefreshCw, Building2, FileText, Settings as SettingsIcon, Users, Plus, Edit2, Trash2, X, Shield, Key, CheckSquare, Printer, Upload, Image as ImageIcon, Database, Download, AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, Monitor, Layout, FileType } from 'lucide-react';
 import { t } from '../utils/t';
 
 export default function Settings() {
@@ -215,6 +215,107 @@ export default function Settings() {
             </div>
         )}
 
+        {activeTab === 'invoice' && (
+            <div className="space-y-6 animate-in fade-in">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2 border-b pb-2"><Layout className="w-5 h-5 text-blue-600" /> {t('set.select_template')}</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {[1, 2, 3].map((num) => (
+                        <div 
+                            key={num}
+                            onClick={() => setSettings({...settings, invoiceTemplate: String(num) as any})}
+                            className={`cursor-pointer border-2 rounded-xl overflow-hidden transition-all relative group ${settings.invoiceTemplate === String(num) ? 'border-blue-600 shadow-md ring-2 ring-blue-100' : 'border-gray-200 hover:border-gray-300'}`}
+                        >
+                            <div className="bg-slate-50 h-32 flex items-center justify-center p-4">
+                                <FileText className={`w-12 h-12 ${settings.invoiceTemplate === String(num) ? 'text-blue-600' : 'text-gray-400'}`} />
+                            </div>
+                            <div className="p-3 text-center font-bold text-sm bg-white border-t">
+                                Template {num}
+                            </div>
+                            {settings.invoiceTemplate === String(num) && (
+                                <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1 shadow-sm">
+                                    <CheckSquare className="w-4 h-4" />
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+                <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} className="bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 shadow-sm hover:bg-blue-700"><Save className="w-4 h-4" /> {t('set.save')}</button></div>
+            </div>
+        )}
+
+        {activeTab === 'printer' && (
+            <div className="space-y-6 animate-in fade-in">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2 border-b pb-2"><Printer className="w-5 h-5 text-blue-600" /> {t('set.tab_printer')}</h3>
+                <div className="space-y-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('set.paper_size')}</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {[
+                            { id: 'A4', label: t('set.paper_a4'), icon: FileType },
+                            { id: 'A5', label: t('set.paper_a5'), icon: Layout },
+                            { id: 'THERMAL', label: t('set.paper_thermal'), icon: Monitor }
+                        ].map((paper) => (
+                            <div 
+                                key={paper.id}
+                                onClick={() => setSettings({...settings, printerPaperSize: paper.id as any})}
+                                className={`flex items-center gap-4 p-4 border-2 rounded-xl cursor-pointer transition-all ${settings.printerPaperSize === paper.id ? 'border-blue-600 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'}`}
+                            >
+                                <div className={`p-2 rounded-lg ${settings.printerPaperSize === paper.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                    <paper.icon className="w-5 h-5" />
+                                </div>
+                                <span className="font-bold text-sm text-gray-700">{paper.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} className="bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 shadow-sm hover:bg-blue-700"><Save className="w-4 h-4" /> {t('set.save')}</button></div>
+            </div>
+        )}
+
+        {activeTab === 'users' && (
+            <div className="space-y-6 animate-in fade-in">
+                <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><Shield className="w-5 h-5 text-blue-600" /> {t('user.mgmt_title')}</h3>
+                    <button onClick={() => handleOpenUserModal()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-blue-700 transition-colors">
+                        <Plus className="w-4 h-4" /> {t('user.add')}
+                    </button>
+                </div>
+                
+                <div className="border rounded-xl overflow-hidden shadow-sm">
+                    <table className="w-full text-sm text-left rtl:text-right">
+                        <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                            <tr>
+                                <th className="p-4">{t('user.fullname')}</th>
+                                <th className="p-4">{t('user.username')}</th>
+                                <th className="p-4">{t('user.role')}</th>
+                                <th className="p-4 text-center">{t('common.action')}</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {users.map(u => (
+                                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="p-4 font-bold text-gray-800">{u.name}</td>
+                                    <td className="p-4 text-gray-600">@{u.username}</td>
+                                    <td className="p-4">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                            {u.role === 'ADMIN' ? t('role.admin') : t('role.user')}
+                                        </span>
+                                    </td>
+                                    <td className="p-4 text-center">
+                                        <div className="flex justify-center gap-2">
+                                            <button onClick={() => handleOpenUserModal(u)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                                            {u.username !== 'admin' && (
+                                                <button onClick={() => handleDeleteUser(u.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        )}
+
         {activeTab === 'backup' && (
             <div className="space-y-6 animate-in fade-in">
                 <div className="border-b pb-4"><h3 className="font-bold text-gray-800 flex items-center gap-2 mb-2"><Database className="w-5 h-5 text-blue-600" /> {t('set.backup_mgmt')}</h3><p className="text-sm text-gray-500">{t('set.backup_desc')}</p></div>
@@ -272,6 +373,70 @@ export default function Settings() {
             </div>
         )}
       </div>
+
+      {/* User Management Modal */}
+      {isUserModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative flex flex-col max-h-[90vh]">
+                <button onClick={() => setIsUserModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                    <X className="w-5 h-5" />
+                </button>
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <Key className="w-5 h-5 text-blue-600" />
+                    {userForm.id ? t('user.edit') : t('user.add')}
+                </h3>
+                
+                <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.fullname')}</label>
+                        <input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.username')}</label>
+                            <input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.role')}</label>
+                            <select className="w-full border p-2 rounded-lg" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as any})}>
+                                <option value="USER">User</option>
+                                <option value="ADMIN">Administrator</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.password')} {userForm.id && <span className="text-gray-400 font-normal text-xs">(Blank to keep)</span>}</label>
+                        <input type="password" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
+                    </div>
+
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                            <Shield className="w-4 h-4" /> {t('user.permissions')}
+                        </h4>
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 grid grid-cols-1 gap-2">
+                            {PERMISSIONS.map(perm => (
+                                <label key={perm.id} className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-white rounded transition-colors">
+                                    <input 
+                                        type="checkbox" 
+                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                                        checked={userForm.role === 'ADMIN' || userForm.permissions.includes(perm.id)}
+                                        disabled={userForm.role === 'ADMIN'}
+                                        onChange={() => togglePermission(perm.id)}
+                                    />
+                                    <span className="text-sm text-gray-700">{t(`perm.${perm.id}`) !== `perm.${perm.id}` ? t(`perm.${perm.id}`) : perm.label}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="pt-4 mt-4 border-t flex justify-end gap-2">
+                    <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('common.cancel')}</button>
+                    <button onClick={handleSaveUser} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 shadow-sm">{t('user.save')}</button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 }
