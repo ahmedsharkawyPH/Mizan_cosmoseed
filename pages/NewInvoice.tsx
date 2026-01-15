@@ -97,8 +97,17 @@ export default function NewInvoice() {
     if (!selectedProduct || !selectedWarehouse) return null;
     const prod = products.find(p => p.id === selectedProduct);
     if (!prod) return null;
-    return prod.batches.find(b => b.warehouse_id === selectedWarehouse && (isReturnMode || b.quantity > 0)) || null;
-  }, [selectedProduct, selectedWarehouse, products, isReturnMode]);
+    
+    // البحث عن تشغيلة في المخزن المحدد أولاً (حتى لو الكمية صفر) لجلب السعر
+    let batch = prod.batches.find(b => b.warehouse_id === selectedWarehouse);
+    
+    // إذا لم توجد تشغيلة في هذا المخزن، نأخذ أول تشغيلة متوفرة للمنتج للحصول على السعر
+    if (!batch && prod.batches.length > 0) {
+        batch = prod.batches[0];
+    }
+    
+    return batch || null;
+  }, [selectedProduct, selectedWarehouse, products]);
 
   // جلب آخر سعر شراء من السجل
   const lastPurchasePrice = useMemo(() => {
@@ -133,11 +142,7 @@ export default function NewInvoice() {
     const prod = products.find(p => p.id === selectedProduct);
     if (!prod) return;
     
-    const totalQty = qty + bonus;
-    if (!isReturnMode && totalQty > availableBatch.quantity) {
-      alert(`${t('inv.insufficient_stock')}! ${t('stock.total')}: ${availableBatch.quantity}`);
-      return;
-    }
+    // تمت إزالة التحقق من الرصيد للسماح بالبيع بدون رصيد
 
     const finalPrice = invoiceConfig.enableManualPrice ? manualPrice : availableBatch.selling_price;
     const finalDiscount = invoiceConfig.enableDiscount ? discount : 0;
