@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseOrder, PurchaseItem } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
 
@@ -13,7 +13,7 @@ export default function PurchaseOrders() {
   
   const [activeTab, setActiveTab] = useState<'NEW' | 'LOG'>('NEW');
   const [suppliers] = useState(db.getSuppliers());
-  const [products] = useState(db.getProductsWithBatches());
+  const [products, setProducts] = useState(db.getProductsWithBatches());
   const [warehouses] = useState(db.getWarehouses());
   const [orders, setOrders] = useState<PurchaseOrder[]>(db.getPurchaseOrders());
 
@@ -24,8 +24,12 @@ export default function PurchaseOrders() {
   // Item Entry State
   const [selProd, setSelProd] = useState('');
   const [qty, setQty] = useState(1);
-  const [cost, setCost] = useState(0); // Added: Purchase Price Input
+  const [cost, setCost] = useState(0); 
   const [prodStats, setProdStats] = useState<{lastPrices: number[], monthlyAvg: number, currentStock: number} | null>(null);
+
+  // --- QUICK ADD PRODUCT STATE ---
+  const [isAddProdModalOpen, setIsAddProdModalOpen] = useState(false);
+  const [newProdForm, setNewProdForm] = useState({ code: '', name: '' });
 
   // --- REVIEW MODAL STATE ---
   const [reviewOrder, setReviewOrder] = useState<PurchaseOrder | null>(null);
@@ -39,7 +43,7 @@ export default function PurchaseOrders() {
 
   // --- HELPERS ---
   const getLastTwoPrices = (prodId: string): number[] => {
-      const history = (db as any).purchaseInvoices || [];
+      const history = db.getPurchaseInvoices() || [];
       const prices: {date: string, price: number}[] = [];
       
       history.forEach((inv: any) => {
@@ -77,13 +81,13 @@ export default function PurchaseOrders() {
               const lastPrices = getLastTwoPrices(selProd);
               const monthlyAvg = getMonthlyAvg(selProd);
               setProdStats({ lastPrices, monthlyAvg, currentStock });
-              setCost(lastPrices[0] || 0); // Auto-fill cost with last purchase price
+              setCost(lastPrices[0] || 0);
           }
       } else {
           setProdStats(null);
           setCost(0);
       }
-  }, [selProd]);
+  }, [selProd, products]);
 
   const handleAddItem = () => {
       if (!selProd || qty <= 0) return;
@@ -93,7 +97,7 @@ export default function PurchaseOrders() {
       setCart([...cart, {
           product: p,
           quantity: qty,
-          cost_price: cost, // Save Cost
+          cost_price: cost,
           last_cost: prodStats?.lastPrices[0] || 0,
           current_stock: prodStats?.currentStock || 0,
           monthly_avg: prodStats?.monthlyAvg || 0
@@ -109,14 +113,13 @@ export default function PurchaseOrders() {
       setCart(cart.filter((_, i) => i !== idx));
   };
 
-  // Added fix: Marked handleSaveOrder as async and added await to db.createPurchaseOrder
   const handleSaveOrder = async () => {
       if (!selectedSupplier || cart.length === 0) return;
       
       const itemsPayload = cart.map(item => ({
           product_id: item.product.id,
           quantity: item.quantity,
-          cost_price: item.cost_price, // Persist cost price
+          cost_price: item.cost_price,
           last_cost: item.last_cost,
           current_stock: item.current_stock,
           monthly_avg: item.monthly_avg
@@ -132,13 +135,24 @@ export default function PurchaseOrders() {
       }
   };
 
+  // --- QUICK PRODUCT ADD LOGIC ---
+  const handleQuickProductSave = async () => {
+      if (!newProdForm.name || !newProdForm.code) return alert("Please fill all fields");
+      const pid = await db.addProduct({ code: newProdForm.code, name: newProdForm.name });
+      if (pid) {
+          // تحديث القائمة المحلية فوراً ليظهر الصنف الجديد في الاختيارات
+          setProducts(db.getProductsWithBatches());
+          setIsAddProdModalOpen(false);
+          setNewProdForm({ code: '', name: '' });
+          setSelProd(pid); // اختياره تلقائياً بعد الإضافة
+      }
+  };
+
   // --- REVIEW LOGIC ---
   const handleOpenReview = (order: PurchaseOrder) => {
       setReviewOrder(order);
-      // Transform PO items to PurchaseInvoiceItems (adding missing fields)
       const mappedItems: PurchaseItem[] = order.items.map(item => {
           const p = products.find(prod => prod.id === item.product_id);
-          // Try to find last selling price
           let sellingPrice = 0;
           if (p && p.batches.length > 0) {
               sellingPrice = p.batches[p.batches.length - 1].selling_price;
@@ -147,11 +161,11 @@ export default function PurchaseOrders() {
           return {
               product_id: item.product_id,
               warehouse_id: defaultWarehouseId,
-              batch_number: `BATCH-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`, // Auto gen
+              batch_number: `BATCH-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
               quantity: item.quantity,
-              cost_price: item.cost_price || item.last_cost || 0, // Use recorded cost
+              cost_price: item.cost_price || item.last_cost || 0,
               selling_price: sellingPrice,
-              expiry_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0] // Default +1 year
+              expiry_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
           };
       });
       setReviewItems(mappedItems);
@@ -173,22 +187,14 @@ export default function PurchaseOrders() {
           alert("Order is empty!");
           return;
       }
-
-      // Basic validation
       for (const item of reviewItems) {
           if (!item.batch_number || !item.expiry_date || item.quantity <= 0 || item.cost_price < 0) {
               alert(`Invalid data for item. Please check Batch, Expiry, Qty and Cost.`);
               return;
           }
       }
-
-      const totalAmount = reviewItems.reduce((acc, item) => acc + (item.quantity * item.cost_price), 0);
-
-      // Create Purchase Invoice
-      const res = await db.createPurchaseInvoice(reviewOrder.supplier_id, reviewItems, 0, false); // 0 paid initially? User can pay later or we can add input. Assuming Credit for now.
-      
+      const res = await db.createPurchaseInvoice(reviewOrder.supplier_id, reviewItems, 0, false);
       if (res.success) {
-          // Update Order Status
           db.updatePurchaseOrderStatus(reviewOrder.id, 'COMPLETED');
           alert(t('pur.convert_success'));
           setOrders(db.getPurchaseOrders());
@@ -243,7 +249,6 @@ export default function PurchaseOrders() {
 
         {activeTab === 'NEW' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
-                {/* Left Column: Form */}
                 <div className="lg:col-span-2 space-y-6">
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                         <h3 className="font-bold text-gray-700 mb-4">{t('pur.select_supplier')}</h3>
@@ -256,9 +261,18 @@ export default function PurchaseOrders() {
                     </div>
 
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <h3 className="font-bold text-gray-700 mb-4">{t('pur.add_item')}</h3>
-                        <div className="flex gap-4 items-end mb-4">
-                            <div className="flex-1">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-700">{t('pur.add_item')}</h3>
+                            <button 
+                                onClick={() => setIsAddProdModalOpen(true)}
+                                className="text-blue-600 hover:text-blue-700 text-sm font-bold flex items-center gap-1 px-3 py-1 bg-blue-50 rounded-lg transition-colors"
+                            >
+                                <PackagePlus className="w-4 h-4" />
+                                إضافة صنف جديد
+                            </button>
+                        </div>
+                        <div className="flex flex-wrap md:flex-nowrap gap-4 items-end mb-4">
+                            <div className="flex-1 min-w-[200px]">
                                 <SearchableSelect 
                                     options={productOptions}
                                     value={selProd}
@@ -296,7 +310,6 @@ export default function PurchaseOrders() {
                             </button>
                         </div>
 
-                        {/* SMART INFO BOX */}
                         {prodStats && (
                             <div className="bg-purple-50 border border-purple-100 p-4 rounded-xl flex flex-wrap gap-4 text-sm animate-in zoom-in duration-200">
                                 <div className="flex-1 min-w-[120px]">
@@ -328,7 +341,6 @@ export default function PurchaseOrders() {
                     </div>
                 </div>
 
-                {/* Right Column: Cart */}
                 <div className="lg:col-span-1">
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-purple-100 h-full flex flex-col">
                         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -414,13 +426,45 @@ export default function PurchaseOrders() {
                                     </tr>
                                 );
                             })}
-                            {orders.length === 0 && (
-                                <tr>
-                                    <td colSpan={6} className="p-8 text-center text-gray-400">{t('list.no_data')}</td>
-                                </tr>
-                            )}
                         </tbody>
                     </table>
+                </div>
+            </div>
+        )}
+
+        {/* QUICK ADD PRODUCT MODAL */}
+        {isAddProdModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                    <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
+                        <h3 className="font-bold flex items-center gap-2"><PackagePlus className="w-5 h-5 text-blue-600" /> إضافة صنف جديد</h3>
+                        <button onClick={() => setIsAddProdModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">{t('prod.name')} *</label>
+                            <input 
+                                className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                value={newProdForm.name}
+                                onChange={e => setNewProdForm({...newProdForm, name: e.target.value})}
+                                autoFocus
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">{t('prod.code')} *</label>
+                            <input 
+                                className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                                value={newProdForm.code}
+                                onChange={e => setNewProdForm({...newProdForm, code: e.target.value})}
+                            />
+                        </div>
+                        <button 
+                            onClick={handleQuickProductSave}
+                            className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors"
+                        >
+                            حفظ الصنف
+                        </button>
+                    </div>
                 </div>
             </div>
         )}
@@ -429,7 +473,6 @@ export default function PurchaseOrders() {
         {reviewOrder && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
-                    {/* Modal Header */}
                     <div className="px-6 py-4 border-b flex justify-between items-center bg-slate-50">
                         <div>
                             <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -443,7 +486,6 @@ export default function PurchaseOrders() {
                         </button>
                     </div>
 
-                    {/* Modal Body (Table) */}
                     <div className="flex-1 overflow-auto p-6 bg-gray-50/50">
                         <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
                             <div className="overflow-x-auto">
@@ -530,7 +572,6 @@ export default function PurchaseOrders() {
                         </div>
                     </div>
 
-                    {/* Modal Footer */}
                     <div className="px-6 py-4 bg-white border-t flex justify-between items-center">
                         <div className="text-sm text-slate-500">
                             Total: <span className="font-bold text-slate-800 text-lg ml-2">{currency}{reviewItems.reduce((a,b) => a + (b.quantity * b.cost_price), 0).toLocaleString()}</span>
