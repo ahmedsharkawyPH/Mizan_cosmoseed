@@ -33,6 +33,7 @@ export interface SystemSettings {
   invoiceTemplate: '1' | '2' | '3';
   printerPaperSize: 'A4' | 'A5' | 'THERMAL';
   expenseCategories: string[];
+  distributionLines: string[]; // الحقل الجديد لخطوط التوزيع
   lowStockThreshold: number;
 }
 
@@ -59,6 +60,7 @@ class DatabaseService {
     invoiceTemplate: '1',
     printerPaperSize: 'A4',
     expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'RENT', 'MAINTENANCE', 'OTHER'],
+    distributionLines: [], // القيمة الافتراضية
     lowStockThreshold: 10
   };
 
@@ -79,6 +81,7 @@ class DatabaseService {
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
       printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
+      distributionLines: dbData.distributionlines || dbData.distribution_lines || this.settings.distributionLines,
       lowStockThreshold: dbData.lowstockthreshold || dbData.low_stock_threshold || this.settings.lowStockThreshold
     };
   }
@@ -97,6 +100,7 @@ class DatabaseService {
       invoicetemplate: s.invoiceTemplate,
       printerpapersize: s.printerPaperSize,
       expensecategories: s.expenseCategories,
+      distributionlines: s.distributionLines,
       lowstockthreshold: s.lowStockThreshold
     };
   }
