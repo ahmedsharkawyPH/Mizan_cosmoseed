@@ -74,8 +74,18 @@ export default function Customers() {
   const openAddModal = () => {
       setIsEditMode(false);
       setCurrentCustomerId(null);
+      
+      // حساب الكود التلقائي القادم (يبدأ من 1001)
+      const allCustomers = db.getCustomers();
+      const numericCodes = allCustomers
+        .map(c => parseInt(c.code))
+        .filter(c => !isNaN(c));
+      
+      const maxCode = numericCodes.length > 0 ? Math.max(...numericCodes) : 1000;
+      const nextCode = (maxCode + 1).toString();
+
       setForm({ 
-          code: '', 
+          code: nextCode, 
           name: '', 
           phone: '', 
           area: '',
@@ -452,7 +462,11 @@ export default function Customers() {
             </button>
            <h3 className="font-bold text-lg">{isEditMode ? 'Edit Customer' : t('cust.add')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input placeholder={t('cust.code')} className="border p-2 rounded" value={form.code} onChange={e => setForm({...form, code: e.target.value})} disabled={isEditMode} />
+            <div className="col-span-1 md:col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">{t('cust.code')}</label>
+                <input placeholder={t('cust.code')} className="w-full border p-2 rounded bg-gray-50 font-mono font-bold text-blue-600" value={form.code} readOnly disabled />
+                <p className="text-[10px] text-gray-400 mt-1 italic">Generated automatically starting from 1001</p>
+            </div>
             <input placeholder={t('cust.name')} className="border p-2 rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
             <input placeholder={t('cust.phone')} className="border p-2 rounded" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
             <div className="col-span-1">
@@ -507,7 +521,7 @@ export default function Customers() {
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.action')}</button>
+            <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.cancel')}</button>
             <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">{t('set.save')}</button>
           </div>
         </div>
