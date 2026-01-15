@@ -25,7 +25,7 @@ export default function PurchaseOrders() {
   const [selProd, setSelProd] = useState('');
   const [qty, setQty] = useState(1);
   const [cost, setCost] = useState(0); 
-  const [sellingPrice, setSellingPrice] = useState(0); // حقل سعر البيع الجديد
+  const [sellingPrice, setSellingPrice] = useState(0); 
   const [prodStats, setProdStats] = useState<{lastPrices: number[], monthlyAvg: number, currentStock: number} | null>(null);
 
   // --- QUICK ADD PRODUCT STATE ---
@@ -82,7 +82,15 @@ export default function PurchaseOrders() {
               const lastPrices = getLastTwoPrices(selProd);
               const monthlyAvg = getMonthlyAvg(selProd);
               setProdStats({ lastPrices, monthlyAvg, currentStock });
-              setCost(lastPrices[0] || 0);
+              
+              // --- التعديل المطلوب: جلب سعر التكلفة من المخزون في حال عدم وجود فواتير سابقة ---
+              let initialCost = lastPrices[0];
+              if (initialCost === undefined && p.batches.length > 0) {
+                  // إذا لم تتوفر فواتير، نأخذ سعر الشراء من آخر تشغيلة في المخزن
+                  initialCost = p.batches[p.batches.length - 1].purchase_price;
+              }
+              setCost(initialCost || 0);
+              
               // جلب سعر البيع الافتراضي من آخر تشغيلة
               if (p.batches.length > 0) {
                   setSellingPrice(p.batches[p.batches.length - 1].selling_price);
@@ -146,20 +154,17 @@ export default function PurchaseOrders() {
       }
   };
 
-  // --- QUICK PRODUCT ADD LOGIC ---
   const handleQuickProductSave = async () => {
       if (!newProdForm.name || !newProdForm.code) return alert("Please fill all fields");
       const pid = await db.addProduct({ code: newProdForm.code, name: newProdForm.name });
       if (pid) {
-          // تحديث القائمة المحلية فوراً ليظهر الصنف الجديد في الاختيارات
           setProducts(db.getProductsWithBatches());
           setIsAddProdModalOpen(false);
           setNewProdForm({ code: '', name: '' });
-          setSelProd(pid); // اختياره تلقائياً بعد الإضافة
+          setSelProd(pid); 
       }
   };
 
-  // --- REVIEW LOGIC ---
   const handleOpenReview = (order: PurchaseOrder) => {
       setReviewOrder(order);
       const mappedItems: PurchaseItem[] = order.items.map(item => {
@@ -453,7 +458,6 @@ export default function PurchaseOrders() {
             </div>
         )}
 
-        {/* QUICK ADD PRODUCT MODAL */}
         {isAddProdModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
@@ -490,7 +494,6 @@ export default function PurchaseOrders() {
             </div>
         )}
 
-        {/* REVIEW ORDER MODAL */}
         {reviewOrder && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden">
