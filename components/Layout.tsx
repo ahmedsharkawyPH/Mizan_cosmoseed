@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, Layout as LayoutIcon } from 'lucide-react';
+import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
@@ -10,7 +10,7 @@ import AiAssistant from './AiAssistant';
 export default function Layout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState<string[]>(['sales_mgmt', 'purchase_mgmt', 'storage_mgmt', 'user_mgmt']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['sales_mgmt', 'purchase_mgmt', 'product_mgmt', 'user_mgmt']);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const user = authService.getCurrentUser();
@@ -64,14 +64,24 @@ export default function Layout() {
         ]
     },
     {
-        key: 'storage_mgmt',
-        label: t('nav.storage'),
-        icon: Package,
+        key: 'product_mgmt',
+        label: t('nav.products'),
+        icon: LayoutGrid,
         perm: 'MANAGE_INVENTORY',
         roles: ['ADMIN', 'TELESALES'],
         children: [
-            { label: t('nav.inventory'), path: '/inventory', icon: Package },
+            { label: t('nav.all_items'), path: '/inventory', icon: Package },
             { label: t('nav.inventory_analysis'), path: '/inventory/analysis', icon: Activity },
+            { label: t('nav.shortages'), path: '/shortages', icon: AlertTriangle }
+        ]
+    },
+    {
+        key: 'storage_mgmt',
+        label: t('nav.storage'),
+        icon: WarehouseIcon,
+        perm: 'MANAGE_WAREHOUSES',
+        roles: ['ADMIN'],
+        children: [
             { label: t('ware.title'), path: '/warehouses', icon: WarehouseIcon }
         ]
     },
@@ -89,7 +99,6 @@ export default function Layout() {
         ]
     },
     { label: t('nav.cash'), path: '/cash', icon: NAV_ITEMS[5].icon, perm: 'MANAGE_CASH', roles: ['ADMIN', 'REP', 'TELESALES'] },
-    { label: t('nav.shortages'), path: '/shortages', icon: AlertTriangle, perm: 'VIEW_REPORTS', roles: ['ADMIN', 'TELESALES'] },
     { label: t('nav.reports'), path: '/reports', icon: TrendingUp, perm: 'VIEW_REPORTS', roles: ['ADMIN'] },
     { label: t('nav.settings'), path: '/settings', icon: NAV_ITEMS[6].icon, perm: 'MANAGE_SETTINGS', roles: ['ADMIN'] },
   ];
