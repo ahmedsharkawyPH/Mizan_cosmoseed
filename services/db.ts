@@ -78,6 +78,7 @@ class DatabaseService {
       details: details || {}
     };
     this.logs.push(log);
+    // طباعة السجل في وحدة التحكم للتطوير والمراقبة
     console.log(`[DB] ${action}`, details);
   }
 
@@ -133,6 +134,7 @@ class DatabaseService {
       currency: dbData.currency || this.settings.currency,
       language: dbData.language || this.settings.language,
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
+      // تصحيح الخطأ المطبعي هنا:
       printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
       distributionLines: dbData.distributionlines || dbData.distribution_lines || this.settings.distributionLines,
@@ -194,7 +196,8 @@ class DatabaseService {
         if (this.warehouses.length === 0) {
             this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
         }
-        this.logAction('INIT_SUCCESS', { recordCounts: { products: this.products.length, customers: this.customers.length } });
+        
+        this.logAction('INIT_SUCCESS', { count: this.products.length });
     } catch (error) {
         this.logAction('INIT_ERROR', { error });
         console.error("Database initialization failed:", error);
@@ -240,13 +243,14 @@ class DatabaseService {
   async updateSettings(s: SystemSettings): Promise<boolean> {
     try {
         this.settings = { ...s };
+        this.logAction('UPDATE_SETTINGS');
         if (!isSupabaseConfigured) return true;
         const dbPayload = this.mapToDb(s);
         const { error } = await supabase.from('settings').upsert(dbPayload, { onConflict: 'id' });
         if (error) throw error;
-        this.logAction('UPDATE_SETTINGS');
         return true;
     } catch (e) {
+        this.logAction('UPDATE_SETTINGS_ERROR', { error: e });
         console.error("Update settings failed:", e);
         return true; 
     }
@@ -254,10 +258,10 @@ class DatabaseService {
 
   async resetSettings() {
     this.settings = { ...DEFAULT_SETTINGS };
+    this.logAction('RESET_SETTINGS');
     if (isSupabaseConfigured) {
         try {
             await supabase.from('settings').delete().eq('id', 1);
-            this.logAction('RESET_SETTINGS');
         } catch (e) {
             console.error("Failed to reset remote settings:", e);
         }
@@ -276,7 +280,7 @@ class DatabaseService {
     if (!name) throw new Error("Customer name is required");
     const cust: Customer = { ...c, name, id: `C${Date.now()}`, current_balance: c.opening_balance || 0, credit_limit: c.credit_limit || 0 };
     this.customers.push(cust);
-    this.logAction('ADD_CUSTOMER', { id: cust.id, name: cust.name });
+    this.logAction('ADD_CUSTOMER', { name: cust.name });
     if (isSupabaseConfigured) { try { await supabase.from('customers').insert(cust); } catch (e) { console.error(e); } }
   }
 
@@ -284,7 +288,7 @@ class DatabaseService {
       const index = this.customers.findIndex(c => c.id === id);
       if (index !== -1) {
           this.customers[index] = { ...this.customers[index], ...updates };
-          this.logAction('UPDATE_CUSTOMER', { id, updates });
+          this.logAction('UPDATE_CUSTOMER', { id });
           if (isSupabaseConfigured) { try { await supabase.from('customers').update(updates).eq('id', id); } catch (e) { console.error(e); } }
       }
   }
@@ -300,14 +304,14 @@ class DatabaseService {
     if (!name) throw new Error("Supplier name is required");
     const supp: Supplier = { ...s, name, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
     this.suppliers.push(supp);
-    this.logAction('ADD_SUPPLIER', { id: supp.id, name: supp.name });
+    this.logAction('ADD_SUPPLIER', { name: supp.name });
     if (isSupabaseConfigured) { try { await supabase.from('suppliers').insert(supp); } catch (e) { console.error(e); } }
   }
 
   async addRepresentative(r: any) {
       const rep: Representative = { ...r, id: `R${Date.now()}` };
       this.representatives.push(rep);
-      this.logAction('ADD_REP', { id: rep.id, name: rep.name });
+      this.logAction('ADD_REPRESENTATIVE', { name: rep.name });
       if (isSupabaseConfigured) { try { await supabase.from('representatives').insert(rep); } catch (e) { console.error(e); } }
   }
 
@@ -315,14 +319,14 @@ class DatabaseService {
       const idx = this.representatives.findIndex(r => r.id === id);
       if (idx !== -1) {
           this.representatives[idx] = { ...this.representatives[idx], ...updates };
-          this.logAction('UPDATE_REP', { id, updates });
+          this.logAction('UPDATE_REPRESENTATIVE', { id });
           if (isSupabaseConfigured) { try { await supabase.from('representatives').update(updates).eq('id', id); } catch (e) { console.error(e); } }
       }
   }
 
   async deleteRepresentative(id: string) {
     this.representatives = this.representatives.filter(r => r.id !== id);
-    this.logAction('DELETE_REP', { id });
+    this.logAction('DELETE_REPRESENTATIVE', { id });
     if (isSupabaseConfigured) { try { await supabase.from('representatives').delete().eq('id', id); } catch (e) { console.error(e); } }
   }
 
@@ -332,7 +336,7 @@ class DatabaseService {
       const id = `W-${Date.now()}`;
       const w = { id, name: sanitizedName, is_default: false };
       this.warehouses.push(w);
-      this.logAction('ADD_WAREHOUSE', { id, name: sanitizedName });
+      this.logAction('ADD_WAREHOUSE', { name: sanitizedName });
       if (isSupabaseConfigured) { try { await supabase.from('warehouses').insert(w); } catch (e) { console.error(e); } }
   }
 
@@ -362,7 +366,7 @@ class DatabaseService {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
         const product: Product = { id: pid, code: codeStr, name: productName, selling_price: s_price, purchase_price: p_price };
         this.products.push(product);
-        this.logAction('ADD_PRODUCT', { id: pid, name: productName });
+        this.logAction('ADD_PRODUCT', { name: productName });
         if (isSupabaseConfigured) { try { await supabase.from('products').insert(product); } catch (e) { console.error(e); } }
     } else {
         const updates: Partial<Product> = {
@@ -371,7 +375,7 @@ class DatabaseService {
             name: productName
         };
         this.products[existingIdx] = { ...this.products[existingIdx], ...updates };
-        this.logAction('UPDATE_PRODUCT', { id: pid, updates });
+        this.logAction('UPDATE_PRODUCT', { id: pid });
         if (isSupabaseConfigured) { try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) { console.error(e); } }
     }
     
@@ -402,8 +406,9 @@ class DatabaseService {
           this.batches[idx].purchase_price = purchase_price;
           this.batches[idx].selling_price = selling_price;
           this.batches[idx].quantity = quantity;
-          this.logAction('UPDATE_BATCH', { id: batchId, purchase_price, selling_price, quantity });
           
+          this.logAction('UPDATE_BATCH', { id: batchId });
+
           const pIdx = this.products.findIndex(p => p.id === pid);
           if (pIdx !== -1) {
               this.products[pIdx].selling_price = selling_price;
@@ -419,7 +424,7 @@ class DatabaseService {
       if (idx !== -1) {
           this.products[idx].selling_price = selling_price;
           this.products[idx].purchase_price = purchase_price;
-          this.logAction('UPDATE_PRODUCT_PRICES', { id: productId, purchase_price, selling_price });
+          this.logAction('UPDATE_PRODUCT_PRICES', { id: productId });
           if (isSupabaseConfigured) { try { await supabase.from('products').update({ selling_price, purchase_price }).eq('id', productId); } catch (e) {} }
       }
   }
@@ -441,7 +446,7 @@ class DatabaseService {
       if (this.batches[idx].quantity < quantityToRemove) return { success: false, message: 'Insufficient quantity' };
       const newQty = this.batches[idx].quantity - quantityToRemove;
       this.batches[idx].quantity = newQty;
-      this.logAction('REPORT_SPOILAGE', { batchId, quantityToRemove, reason });
+      this.logAction('REPORT_SPOILAGE', { batchId, qty: quantityToRemove, reason });
       if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQty }).eq('id', batchId); } catch (e) {} }
       return { success: true, message: `Spoilage recorded` };
   }
@@ -463,7 +468,7 @@ class DatabaseService {
         const newBatchId = `B${Date.now()}-T`;
         const newBatch = { ...sourceBatch, id: newBatchId, warehouse_id: targetWarehouseId, quantity: quantity };
         this.batches.push(newBatch);
-        this.logAction('TRANSFER_STOCK', { fromBatch: batchId, toWarehouse: targetWarehouseId, qty: quantity });
+        this.logAction('TRANSFER_STOCK', { from: batchId, to: targetWarehouseId, qty: quantity });
         if (isSupabaseConfigured) { try { await supabase.from('batches').insert(newBatch); } catch (e) {} }
         return { success: true, message: 'Transfer successful' };
     } catch (e: any) {
@@ -476,7 +481,7 @@ class DatabaseService {
         const index = this.invoices.findIndex(i => i.id === id);
         if (index === -1) throw new Error("Invoice not found");
         this.invoices[index] = { ...this.invoices[index], customer_id: customerId, items: items };
-        this.logAction('UPDATE_INVOICE', { id, customerId, itemCount: items.length });
+        this.logAction('UPDATE_INVOICE', { id });
         if (isSupabaseConfigured) { try { await supabase.from('invoices').update({ customer_id: customerId, items: items }).eq('id', id); } catch (e) {} }
         return { success: true, message: 'Invoice updated', id };
     } catch (e: any) {
@@ -521,16 +526,15 @@ class DatabaseService {
             items: items, type: isReturn ? 'RETURN' : 'SALE'
         };
         this.invoices.push(invoice);
-        this.logAction('CREATE_INVOICE', { id: invoiceId, type: invoice.type, customerId, netTotal });
+        this.logAction('CREATE_INVOICE', { id: invoiceId, customer: customerId, total: netTotal });
         
         if(cashPaid > 0) {
              await this.addCashTransaction({
                  type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, 
                  category: 'CUSTOMER_PAYMENT',
-                 reference_id: customerId, // استخدام ID العميل للتتبع في كشف حسابه
+                 reference_id: customerId, 
                  related_name: this.customers[customerIdx].name, amount: cashPaid,
-                 date: new Date().toISOString(), 
-                 notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`,
+                 date: new Date().toISOString(), notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`,
                  ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT)
              });
         }
@@ -547,52 +551,47 @@ class DatabaseService {
       if (invIdx === -1) return { success: false, message: "Invoice not found" };
       const invoice = this.invoices[invIdx];
       const customerIdx = this.customers.findIndex(c => c.id === invoice.customer_id);
-      
       if (customerIdx !== -1) {
           const newBal = this.customers[customerIdx].current_balance - amount;
           this.customers[customerIdx].current_balance = newBal;
           if (isSupabaseConfigured) { try { await supabase.from('customers').update({ current_balance: newBal }).eq('id', invoice.customer_id); } catch (e) {} }
       }
-      
       await this.addCashTransaction({
-          type: CashTransactionType.RECEIPT, 
-          category: 'CUSTOMER_PAYMENT', 
-          reference_id: invoice.customer_id, // العودة إلى ID العميل لربط السند بكشف الحساب
-          related_name: this.customers[customerIdx]?.name, 
-          amount: amount, 
-          date: new Date().toISOString(),
+          type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: invoice.customer_id,
+          related_name: this.customers[customerIdx]?.name, amount: amount, date: new Date().toISOString(),
           notes: `Payment for INV#${invoice.invoice_number}`,
           ref_number: this.getNextTransactionRef(CashTransactionType.RECEIPT)
       });
-      
       return { success: true, message: "Payment recorded" };
     }
 
   getInvoicePaidAmount(invoiceId: string): number {
       return this.cashTransactions
-        .filter(t => t.notes?.includes(invoiceId) || (t.category === 'CUSTOMER_PAYMENT' && t.type === 'RECEIPT')) // ملاحظة: التصفية هنا تقريبية، يفضل ربط مباشر في المستقبل
+        .filter(t => t.notes?.includes(invoiceId) && t.category === 'CUSTOMER_PAYMENT' && t.type === 'RECEIPT')
         .reduce((sum, t) => sum + t.amount, 0);
   }
 
   async addCashTransaction(tx: Omit<CashTransaction, 'id'>) {
-      const id = `TX${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const id = `TX${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const now = new Date().toISOString();
       const newTx: CashTransaction = { 
           ...tx, 
-          id, 
-          created_at: now, 
-          updated_at: now 
+          id,
+          created_at: now,
+          updated_at: now
       };
       this.cashTransactions.push(newTx);
-      this.logAction('ADD_CASH_TX', { type: tx.type, amount: tx.amount, category: tx.category });
+      this.logAction('ADD_CASH_TX', { type: tx.type, amount: tx.amount });
       if (isSupabaseConfigured) { try { await supabase.from('cash_transactions').insert(newTx); } catch (e) {} }
   }
 
   getNextTransactionRef(type: CashTransactionType): string {
     const prefix = type === CashTransactionType.RECEIPT ? 'REC' : 'PAY';
-    const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, ''); // YYMMDD
-    const count = this.cashTransactions.filter(t => t.type === type && t.ref_number?.startsWith(`${prefix}-${dateStr}`)).length + 1;
-    return `${prefix}-${dateStr}-${count.toString().padStart(3, '0')}`;
+    const date = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    const count = this.cashTransactions
+        .filter(t => t.type === type && t.ref_number?.startsWith(`${prefix}-${date}`))
+        .length + 1;
+    return `${prefix}-${date}-${count.toString().padStart(3, '0')}`;
   }
 
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean): Promise<{ success: boolean; message: string }> {
@@ -626,7 +625,7 @@ class DatabaseService {
         }
         const inv: PurchaseInvoice = { id, invoice_number: id, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
         this.purchaseInvoices.push(inv);
-        this.logAction('CREATE_PURCHASE', { id, supplierId, total });
+        this.logAction('CREATE_PURCHASE', { id, total });
         if (isSupabaseConfigured) { try { await supabase.from('purchase_invoices').insert(inv); } catch (e) {} }
         return { success: true, message: 'Purchase saved' };
     } catch (e: any) {
@@ -638,7 +637,7 @@ class DatabaseService {
       const id = `PO-${Date.now()}`;
       const order: PurchaseOrder = { id, order_number: id, supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items };
       this.purchaseOrders.push(order);
-      this.logAction('CREATE_PO', { id, supplierId, itemCount: items.length });
+      this.logAction('CREATE_PURCHASE_ORDER', { id });
       if (isSupabaseConfigured) { try { await supabase.from('purchase_orders').insert(order); } catch (e) {} }
       return { success: true, message: 'Order saved' };
   }
@@ -755,9 +754,9 @@ class DatabaseService {
   }
 
   exportDatabase(): string { 
-    const backup = {
+    const data = {
         meta: {
-            version: '1.2',
+            version: '1.0',
             exportedAt: new Date().toISOString(),
             recordCounts: {
                 products: this.products.length,
@@ -783,45 +782,46 @@ class DatabaseService {
             settings: this.settings 
         }
     };
-    this.logAction('EXPORT_DB');
-    return JSON.stringify(backup, null, 2); 
+    this.logAction('EXPORT_DATABASE');
+    return JSON.stringify(data, null, 2); 
   }
 
-  async importDatabase(json: string): Promise<{ success: boolean; message: string; importedCounts?: any }> { 
+  async importDatabase(json: string): Promise<{success: boolean; message: string; importedCounts?: any}> { 
       try {
           const data = JSON.parse(json);
-          if (!data.data || !data.meta) {
-              throw new Error("Invalid backup format: Missing data or meta wrapper.");
+          
+          if (!data.data) {
+              throw new Error("Invalid backup format: Missing data field.");
           }
           
           const d = data.data;
-          if (d.products) this.products = d.products;
-          if (d.batches) this.batches = d.batches;
-          if (d.customers) this.customers = d.customers;
-          if (d.suppliers) this.suppliers = d.suppliers;
-          if (d.representatives) this.representatives = d.representatives;
-          if (d.warehouses) this.warehouses = d.warehouses;
-          if (d.invoices) this.invoices = d.invoices;
-          if (d.purchaseInvoices) this.purchaseInvoices = d.purchaseInvoices;
-          if (d.purchaseOrders) this.purchaseOrders = d.purchaseOrders;
-          if (d.cashTransactions) this.cashTransactions = d.cashTransactions;
-          if (d.stockMovements) this.stockMovements = d.stockMovements;
-          if (d.settings) this.settings = d.settings;
+          this.products = d.products || [];
+          this.batches = d.batches || [];
+          this.customers = d.customers || [];
+          this.suppliers = d.suppliers || [];
+          this.representatives = d.representatives || [];
+          this.warehouses = d.warehouses || [];
+          this.invoices = d.invoices || [];
+          this.purchaseInvoices = d.purchaseInvoices || [];
+          this.purchaseOrders = d.purchaseOrders || [];
+          this.cashTransactions = d.cashTransactions || [];
+          this.stockMovements = d.stockMovements || [];
+          this.settings = d.settings || this.settings;
           
-          this.logAction('IMPORT_DB', { meta: data.meta });
-          
+          this.logAction('IMPORT_DATABASE', { meta: data.meta });
+
           if (isSupabaseConfigured) {
-              console.warn("Bulk import only applied to local memory. Refresh recommended.");
+              console.warn("Manual import only updates memory. Refresh recommended.");
           }
+          
           return { 
               success: true, 
-              message: 'Database imported successfully.', 
-              importedCounts: data.meta.recordCounts 
+              message: 'Database imported successfully in local memory.',
+              importedCounts: data.meta?.recordCounts
           };
       } catch(e: any) { 
-          this.logAction('IMPORT_DB_ERROR', { error: e.message });
-          console.error("Import failed:", e);
-          return { success: false, message: e.message }; 
+          this.logAction('IMPORT_DATABASE_ERROR', { error: e.message });
+          return { success: false, message: e.message || 'Import failed' }; 
       }
   }
   
