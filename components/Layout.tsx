@@ -10,7 +10,8 @@ import AiAssistant from './AiAssistant';
 export default function Layout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState<string[]>(['sales_mgmt', 'purchase_mgmt', 'product_mgmt', 'user_mgmt']);
+  // التعديل: جعل القوائم مغلقة افتراضياً عبر تعيين المصفوفة كفارغة
+  const [openMenus, setOpenMenus] = useState<string[]>([]);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const user = authService.getCurrentUser();
@@ -125,15 +126,15 @@ export default function Layout() {
             if (item.children) {
                 const isOpen = openMenus.includes(item.key);
                 return (
-                    <div key={item.key} className="space-y-1">
-                        <button onClick={() => toggleMenu(item.key)} className={`flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 group font-medium text-slate-400 hover:bg-slate-800 hover:text-white`}>
+                    <div key={item.key} className={`space-y-1 rounded-xl transition-all duration-300 ${isOpen ? 'bg-slate-800/40 pb-2' : ''}`}>
+                        <button onClick={() => toggleMenu(item.key)} className={`flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isOpen ? 'text-white bg-slate-800/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                             <div className="flex items-center"><item.icon className="w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0" />{item.label}</div>
                             {isOpen ? <ChevronDown className="w-4 h-4" /> : isRTL() ? <ChevronDown className="w-4 h-4 rotate-90" /> : <ChevronRight className="w-4 h-4" />}
                         </button>
                         {isOpen && (
-                            <div className={`space-y-1 ${isRTL() ? 'pr-4 border-r border-slate-700' : 'pl-4 border-l border-slate-700'} ml-3 mr-3`}>
+                            <div className={`space-y-1 ${isRTL() ? 'pr-4 border-r border-slate-600' : 'pl-4 border-l border-slate-600'} ml-3 mr-3 mt-1`}>
                                 {item.children.map((child: any) => (
-                                    <NavLink key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-2.5 rounded-lg transition-all duration-200 text-sm ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+                                    <NavLink key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-2 rounded-lg transition-all duration-200 text-sm ${isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
                                         <child.icon className="w-4 h-4 ltr:mr-3 rtl:ml-3 shrink-0" />{child.label}
                                     </NavLink>
                                 ))}
