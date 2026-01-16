@@ -261,18 +261,19 @@ class DatabaseService {
   }
 
   async addProduct(p: any, b?: any): Promise<string> {
-    // توليد كود تلقائي إذا كان الكود مفقوداً
-    let codeStr = p.code ? String(p.code).trim() : `AUTO-${Date.now().toString().slice(-6)}`;
+    // توليد كود تلقائي إذا كان الكود مفقوداً أو فارغاً
+    let codeStr = (p.code && String(p.code).trim()) ? String(p.code).trim() : `AUTO-${Date.now().toString().slice(-6)}`;
     
     // البحث عن المنتج إذا كان موجوداً مسبقاً (بالاسم أو بالكود إذا توفر)
-    let existingProduct = this.products.find(x => (p.code && x.code === codeStr) || x.name === p.name);
-    let pid = existingProduct?.id;
+    // نستخدم findIndex بدلاً من find للحصول على المرجع الصحيح في المصفوفة
+    let existingIdx = this.products.findIndex(x => (p.code && x.code === codeStr) || x.name === p.name);
+    let pid = existingIdx !== -1 ? this.products[existingIdx].id : null;
 
-    const s_price = isNaN(Number(b?.selling_price)) ? (p.selling_price || 0) : Number(b.selling_price);
-    const p_price = isNaN(Number(b?.purchase_price)) ? (p.purchase_price || 0) : Number(b.purchase_price);
+    const s_price = isNaN(Number(b?.selling_price)) ? (Number(p.selling_price) || 0) : Number(b.selling_price);
+    const p_price = isNaN(Number(b?.purchase_price)) ? (Number(p.purchase_price) || 0) : Number(b.purchase_price);
 
     // 1. إدارة المنتج وحفظ الأسعار في جدول المنتج مباشرة
-    if (!existingProduct) {
+    if (existingIdx === -1) {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
         const product: Product = { 
             id: pid, 
@@ -286,15 +287,14 @@ class DatabaseService {
             try { await supabase.from('products').insert(product); } catch (e) {} 
         }
     } else {
-        const idx = this.products.findIndex(x => x.id === pid);
         const updates: Partial<Product> = {
-            selling_price: s_price > 0 ? s_price : this.products[idx].selling_price,
-            purchase_price: p_price > 0 ? p_price : this.products[idx].purchase_price,
+            selling_price: s_price > 0 ? s_price : this.products[existingIdx].selling_price,
+            purchase_price: p_price > 0 ? p_price : this.products[existingIdx].purchase_price,
         };
 
-        if (this.products[idx].name !== p.name) updates.name = p.name;
+        if (this.products[existingIdx].name !== p.name) updates.name = p.name;
 
-        this.products[idx] = { ...this.products[idx], ...updates };
+        this.products[existingIdx] = { ...this.products[existingIdx], ...updates };
         if (isSupabaseConfigured) { 
             try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) {} 
         }
