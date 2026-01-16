@@ -59,8 +59,8 @@ export default function Suppliers() {
     
     const items: any[] = [];
     
-    // 1. Purchase Invoices (Credit -> Increase Balance) & Returns (Debit -> Decrease Balance)
-    const purchases = (db as any).purchaseInvoices.filter((p: any) => p.supplier_id === statementSupplier.id);
+    // fix: Changed direct access to private 'purchaseInvoices' to use 'getPurchaseInvoices()'
+    const purchases = db.getPurchaseInvoices().filter((p: any) => p.supplier_id === statementSupplier.id);
     purchases.forEach((inv: any) => {
       if (inv.type === 'RETURN') {
          items.push({
