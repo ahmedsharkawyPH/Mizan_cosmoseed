@@ -26,7 +26,7 @@ export interface Warehouse {
 
 export interface Product {
   id: string;
-  code?: string; // التعديل: جعل الكود اختيارياً
+  code?: string; 
   name: string;
   package_type?: string; 
   items_per_package?: number;
@@ -163,6 +163,8 @@ export interface CashTransaction {
   amount: number;
   date: string;
   notes: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type StockMovementType = 'SALE' | 'PURCHASE' | 'RETURN_IN' | 'RETURN_OUT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'ADJUSTMENT' | 'SPOILAGE' | 'INITIAL';
@@ -177,6 +179,7 @@ export interface StockMovement {
     quantity: number; 
     reference_id?: string; 
     notes?: string;
+    created_at?: string;
 }
 
 // Accounting Types
