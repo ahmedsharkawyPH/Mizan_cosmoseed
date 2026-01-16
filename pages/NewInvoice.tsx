@@ -374,8 +374,8 @@ export default function NewInvoice() {
 
             <div className="space-y-4 pt-4">
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.cash_paid')}</label><input ref={cashRef} type="number" className="w-full border rounded-lg p-2.5 text-lg font-bold text-emerald-600" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} /></div>
-                <button onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
-                <button onClick={handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
+                <button onClick={() => { handleCheckout(true); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
+                <button onClick={() => { handleCheckout(false); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
             </div>
             {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4" />{error}</div>}
         </div>
