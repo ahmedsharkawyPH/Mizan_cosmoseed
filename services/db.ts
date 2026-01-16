@@ -261,43 +261,46 @@ class DatabaseService {
   }
 
   /**
-   * دالة محسنة جداً لإضافة المنتج والباتش.
-   * صممت لتتحمل الرفع المكثف (Bulk Upload)
+   * دالة محسنة لإضافة المنتج والباتش.
+   * تدعم حفظ الأسعار الافتراضية في سطر المنتج.
    */
   async addProduct(p: any, b?: any): Promise<string> {
     const codeStr = String(p.code);
     const existingProduct = this.products.find(x => x.code === codeStr);
     let pid = existingProduct?.id;
 
-    // 1. إدارة المنتج
+    const s_price = isNaN(Number(b?.selling_price)) ? (p.selling_price || 0) : Number(b.selling_price);
+    const p_price = isNaN(Number(b?.purchase_price)) ? (p.purchase_price || 0) : Number(b.purchase_price);
+
+    // 1. إدارة المنتج وحفظ الأسعار الافتراضية
     if (!existingProduct) {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
-        const product = { id: pid, code: codeStr, name: p.name };
+        const product: Product = { id: pid, code: codeStr, name: p.name, selling_price: s_price, purchase_price: p_price };
         this.products.push(product);
         if (isSupabaseConfigured) { 
             try { await supabase.from('products').upsert(product, { onConflict: 'code' }); } catch (e) {} 
         }
     } else {
         const idx = this.products.findIndex(x => x.id === pid);
-        if (this.products[idx].name !== p.name) {
-            this.products[idx].name = p.name;
+        const updates: Partial<Product> = {};
+        if (this.products[idx].name !== p.name) updates.name = p.name;
+        if (s_price > 0) updates.selling_price = s_price;
+        if (p_price > 0) updates.purchase_price = p_price;
+
+        if (Object.keys(updates).length > 0) {
+            this.products[idx] = { ...this.products[idx], ...updates };
             if (isSupabaseConfigured) { 
-                try { await supabase.from('products').update({ name: p.name }).eq('id', pid); } catch (e) {} 
+                try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) {} 
             }
         }
     }
     
-    // 2. إدارة الباتش (حتى لو الكمية صفر)
-    if (b && pid) {
+    // 2. إدارة الباتش (إذا تم توفير بيانات كمية)
+    if (b && pid && !isNaN(Number(b.quantity)) && Number(b.quantity) > 0) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
         const bNo = String(b.batch_number || 'AUTO');
-        
-        // البحث عن باتش موجود لنفس المنتج والباركود في نفس المخزن
         const existingBatchIdx = this.batches.findIndex(x => x.product_id === pid && x.batch_number === bNo);
-
-        const qty = isNaN(Number(b.quantity)) ? 0 : Number(b.quantity);
-        const p_price = isNaN(Number(b.purchase_price)) ? 0 : Number(b.purchase_price);
-        const s_price = isNaN(Number(b.selling_price)) ? 0 : Number(b.selling_price);
+        const qty = Number(b.quantity);
 
         if (existingBatchIdx !== -1) {
             const updatedBatch = {
@@ -336,11 +339,34 @@ class DatabaseService {
   async updateBatchPrices(batchId: string, purchase_price: number, selling_price: number, quantity: number) {
       const idx = this.batches.findIndex(b => b.id === batchId);
       if (idx !== -1) {
+          const pid = this.batches[idx].product_id;
           this.batches[idx].purchase_price = purchase_price;
           this.batches[idx].selling_price = selling_price;
           this.batches[idx].quantity = quantity;
+          
+          // تحديث السعر الافتراضي للمنتج أيضاً عند تعديل آخر تشغيلة
+          const pIdx = this.products.findIndex(p => p.id === pid);
+          if (pIdx !== -1) {
+              this.products[pIdx].selling_price = selling_price;
+              this.products[pIdx].purchase_price = purchase_price;
+              if (isSupabaseConfigured) {
+                  try { await supabase.from('products').update({ selling_price, purchase_price }).eq('id', pid); } catch (e) {}
+              }
+          }
+
           if (isSupabaseConfigured) {
               try { await supabase.from('batches').update({ purchase_price, selling_price, quantity }).eq('id', batchId); } catch (e) {}
+          }
+      }
+  }
+
+  async updateProductPrices(productId: string, purchase_price: number, selling_price: number) {
+      const idx = this.products.findIndex(p => p.id === productId);
+      if (idx !== -1) {
+          this.products[idx].selling_price = selling_price;
+          this.products[idx].purchase_price = purchase_price;
+          if (isSupabaseConfigured) {
+              try { await supabase.from('products').update({ selling_price, purchase_price }).eq('id', productId); } catch (e) {}
           }
       }
   }
@@ -403,19 +429,25 @@ class DatabaseService {
         let totalGross = 0;
         let totalItemDiscount = 0;
         for(const item of items) {
-             const price = item.unit_price !== undefined ? item.unit_price : item.batch.selling_price;
+             const price = item.unit_price !== undefined ? item.unit_price : (item.batch?.selling_price || item.product.selling_price || 0);
              totalGross += (item.quantity * price);
              totalItemDiscount += (item.quantity * price * (item.discount_percentage / 100));
         }
         const netTotal = totalGross - totalItemDiscount - additionalDiscount;
+        
         for(const item of items) {
-            const batchIdx = this.batches.findIndex(b => b.id === item.batch.id);
-            if(batchIdx === -1) continue;
-            const totalQtyChange = item.quantity + (item.bonus_quantity || 0);
-            const newQty = isReturn ? this.batches[batchIdx].quantity + totalQtyChange : this.batches[batchIdx].quantity - totalQtyChange;
-            this.batches[batchIdx].quantity = newQty;
-            if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id); } catch (e) {} }
+            if (item.batch) {
+                const batchIdx = this.batches.findIndex(b => b.id === item.batch?.id);
+                if(batchIdx === -1) continue;
+                const totalQtyChange = item.quantity + (item.bonus_quantity || 0);
+                const newQty = isReturn ? this.batches[batchIdx].quantity + totalQtyChange : this.batches[batchIdx].quantity - totalQtyChange;
+                this.batches[batchIdx].quantity = newQty;
+                if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id); } catch (e) {} }
+            } else if (!isReturn) {
+                // في حالة بيع منتج ليس له تشغيلة، يمكن لاحقاً إضافة منطق لإنشاء تشغيلة سالبة أو مجرد تجاهل الخصم المخزني
+            }
         }
+
         const newBalance = isReturn ? this.customers[customerIdx].current_balance - netTotal : this.customers[customerIdx].current_balance + netTotal;
         this.customers[customerIdx].current_balance = newBalance;
         if (isSupabaseConfigured) { try { await supabase.from('customers').update({ current_balance: newBalance }).eq('id', customerId); } catch (e) {} }
@@ -506,6 +538,9 @@ class DatabaseService {
                 this.batches.push(newB);
                 if (isSupabaseConfigured) { try { await supabase.from('batches').insert(newB); } catch (e) {} }
             }
+            
+            // تحديث السعر الافتراضي للمنتج أيضاً
+            await this.updateProductPrices(item.product_id, item.cost_price, item.selling_price);
         }
         const inv: PurchaseInvoice = { id, invoice_number: id, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
         this.purchaseInvoices.push(inv);
@@ -537,7 +572,7 @@ class DatabaseService {
       let totalCost = 0;
       invoice.items.forEach(item => {
           const totalQty = item.quantity + (item.bonus_quantity || 0);
-          const cost = item.batch ? item.batch.purchase_price : 0;
+          const cost = item.batch ? item.batch.purchase_price : (item.product.purchase_price || 0);
           totalCost += (totalQty * cost);
       });
       const profit = invoice.net_total - totalCost;
@@ -549,7 +584,7 @@ class DatabaseService {
       let totalRevenue = 0;
       this.invoices.filter(i => i.type === 'SALE').forEach(inv => {
           inv.items.forEach(item => {
-              const price = item.unit_price || item.batch.selling_price;
+              const price = item.unit_price || (item.batch?.selling_price || item.product.selling_price || 0);
               const revenue = item.quantity * price * (1 - (item.discount_percentage / 100));
               productRevenue[item.product.id] = (productRevenue[item.product.id] || 0) + revenue;
               totalRevenue += revenue;
@@ -582,8 +617,8 @@ class DatabaseService {
           const totalValue = batches.reduce((sum, b) => sum + (b.quantity * b.purchase_price), 0);
           return {
               id: p.id, name: p.name, code: p.code,
-              totalQty, totalValue, wac: totalQty > 0 ? totalValue / totalQty : 0,
-              latestCost: batches.length > 0 ? batches[batches.length-1].purchase_price : 0,
+              totalQty, totalValue, wac: totalQty > 0 ? totalValue / totalQty : (p.purchase_price || 0),
+              latestCost: batches.length > 0 ? batches[batches.length-1].purchase_price : (p.purchase_price || 0),
               turnoverRate: '0'
           };
       });

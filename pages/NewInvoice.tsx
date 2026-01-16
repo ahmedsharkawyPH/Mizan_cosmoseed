@@ -81,7 +81,6 @@ export default function NewInvoice() {
     }
   }, [id]);
 
-  // تحديث الخصم التلقائي عند تغيير العميل (فقط للفواتير الجديدة)
   useEffect(() => {
       if (selectedCustomer && !id) {
           const customer = customers.find(c => c.id === selectedCustomer);
@@ -93,23 +92,21 @@ export default function NewInvoice() {
       }
   }, [selectedCustomer, customers, id]);
 
-  const availableBatch = useMemo(() => {
-    if (!selectedProduct || !selectedWarehouse) return null;
-    const prod = products.find(p => p.id === selectedProduct);
-    if (!prod) return null;
-    
-    // البحث عن تشغيلة في المخزن المحدد أولاً (حتى لو الكمية صفر) لجلب السعر
-    let batch = prod.batches.find(b => b.warehouse_id === selectedWarehouse);
-    
-    // إذا لم توجد تشغيلة في هذا المخزن، نأخذ أول تشغيلة متوفرة للمنتج للحصول على السعر
-    if (!batch && prod.batches.length > 0) {
-        batch = prod.batches[0];
-    }
-    
-    return batch || null;
-  }, [selectedProduct, selectedWarehouse, products]);
+  const currentProduct = useMemo(() => {
+    return products.find(p => p.id === selectedProduct);
+  }, [selectedProduct, products]);
 
-  // جلب آخر سعر شراء من السجل
+  const availableBatch = useMemo(() => {
+    if (!currentProduct || !selectedWarehouse) return null;
+    return currentProduct.batches.find(b => b.warehouse_id === selectedWarehouse) || null;
+  }, [currentProduct, selectedWarehouse]);
+
+  const currentSellingPrice = useMemo(() => {
+      if (availableBatch) return availableBatch.selling_price;
+      if (currentProduct) return currentProduct.selling_price || 0;
+      return 0;
+  }, [availableBatch, currentProduct]);
+
   const lastPurchasePrice = useMemo(() => {
     if (!selectedProduct) return 0;
     const history = db.getPurchaseInvoices();
@@ -123,40 +120,36 @@ export default function NewInvoice() {
             }
         }
     }
-    return latestCost || (availableBatch?.purchase_price || 0);
-  }, [selectedProduct, availableBatch]);
+    return latestCost || (availableBatch?.purchase_price || currentProduct?.purchase_price || 0);
+  }, [selectedProduct, availableBatch, currentProduct]);
 
   useEffect(() => {
-      if (availableBatch) {
-          setManualPrice(availableBatch.selling_price);
+      if (currentProduct) {
+          setManualPrice(currentSellingPrice);
           setShowLastCost(false);
           setTimeout(() => {
               if (invoiceConfig.enableManualPrice) priceRef.current?.focus();
               else qtyRef.current?.focus();
           }, 50);
       }
-  }, [availableBatch, invoiceConfig.enableManualPrice]);
+  }, [currentProduct, currentSellingPrice, invoiceConfig.enableManualPrice]);
 
   const addItemToCart = () => {
-    if (!availableBatch) return;
-    const prod = products.find(p => p.id === selectedProduct);
-    if (!prod) return;
-    
-    // تمت إزالة التحقق من الرصيد للسماح بالبيع بدون رصيد
+    if (!currentProduct) return;
 
-    const finalPrice = invoiceConfig.enableManualPrice ? manualPrice : availableBatch.selling_price;
+    const finalPrice = invoiceConfig.enableManualPrice ? manualPrice : currentSellingPrice;
     const finalDiscount = invoiceConfig.enableDiscount ? discount : 0;
 
     const newItem: CartItem = {
-      product: prod,
-      batch: availableBatch,
+      product: currentProduct,
+      batch: availableBatch || undefined,
       quantity: qty,
       bonus_quantity: bonus,
       discount_percentage: finalDiscount,
       unit_price: finalPrice
     };
 
-    if (!isReturnMode && finalPrice * (1 - finalDiscount / 100) < availableBatch.purchase_price) {
+    if (!isReturnMode && finalPrice * (1 - finalDiscount / 100) < lastPurchasePrice) {
         setOverrideModal({ isOpen: true, pendingItem: newItem });
         return;
     }
@@ -179,7 +172,7 @@ export default function NewInvoice() {
     let totalGross = 0;
     let totalItemDiscount = 0;
     cart.forEach(item => {
-      const price = item.unit_price !== undefined ? item.unit_price : item.batch.selling_price;
+      const price = item.unit_price !== undefined ? item.unit_price : (item.batch?.selling_price || item.product.selling_price || 0);
       const gross = item.quantity * price;
       totalGross += gross;
       totalItemDiscount += gross * (item.discount_percentage / 100);
@@ -269,7 +262,7 @@ export default function NewInvoice() {
                 </label>
                 <div className="relative">
                     <div className="w-full bg-slate-50 border rounded-lg p-2.5 font-bold text-slate-800 flex justify-between items-center min-h-[45px]">
-                        <span>{availableBatch ? availableBatch.quantity : "-"}</span>
+                        <span>{availableBatch ? availableBatch.quantity : "0"}</span>
                         {showLastCost && (
                             <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full animate-in fade-in slide-in-from-top-1 flex items-center gap-1">
                                 <Tag className="w-2.5 h-2.5" /> {currency}{lastPurchasePrice.toFixed(2)}
@@ -300,7 +293,7 @@ export default function NewInvoice() {
               </div>
               )}
               <div className="col-span-12 md:col-span-3 flex items-end">
-                  <button onClick={addItemToCart} disabled={!availableBatch} className="w-full h-[45px] bg-blue-600 text-white rounded-lg font-bold shadow-md hover:bg-blue-700 transition-all flex items-center justify-center">
+                  <button onClick={addItemToCart} disabled={!selectedProduct} className="w-full h-[45px] bg-blue-600 text-white rounded-lg font-bold shadow-md hover:bg-blue-700 transition-all flex items-center justify-center">
                     <Plus className="w-5 h-5 mr-2" /> {t('inv.add_btn')}
                   </button>
               </div>
@@ -321,7 +314,7 @@ export default function NewInvoice() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {cart.map((item, idx) => {
-                  const price = item.unit_price !== undefined ? item.unit_price : item.batch.selling_price;
+                  const price = item.unit_price !== undefined ? item.unit_price : (item.batch?.selling_price || item.product.selling_price || 0);
                   const total = (item.quantity * price) * (1 - item.discount_percentage / 100);
                   return (
                     <tr key={idx} className="hover:bg-slate-50">
@@ -382,7 +375,7 @@ export default function NewInvoice() {
             <div className="space-y-4 pt-4">
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.cash_paid')}</label><input ref={cashRef} type="number" className="w-full border rounded-lg p-2.5 text-lg font-bold text-emerald-600" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} /></div>
                 <button onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
-                <button onClick={() => handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
+                <button onClick={handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
             </div>
             {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2"><AlertCircle className="w-4 h-4" />{error}</div>}
         </div>

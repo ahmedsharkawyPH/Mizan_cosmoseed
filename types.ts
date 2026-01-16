@@ -1,5 +1,4 @@
 
-
 // Domain Model (STRICT)
 
 export enum BatchStatus {
@@ -30,7 +29,9 @@ export interface Product {
   code: string;
   name: string;
   package_type?: string; 
-  items_per_package?: number; 
+  items_per_package?: number;
+  selling_price?: number; // السعر الافتراضي للبيع
+  purchase_price?: number; // السعر الافتراضي للشراء
 }
 
 export interface Batch {
@@ -138,7 +139,6 @@ export interface PurchaseOrder {
       product_id: string;
       quantity: number;
       cost_price: number; 
-      /* Fix: Added selling_price to items definition to resolve property missing error in PurchaseOrders.tsx */
       selling_price?: number;
       last_cost?: number; 
       current_stock?: number;
@@ -197,7 +197,7 @@ export interface ProductWithBatches extends Product {
 
 export interface CartItem {
   product: Product;
-  batch: Batch;
+  batch?: Batch; // جعل الباتش اختيارياً للسماح بالبيع من الكتالوج
   quantity: number;
   bonus_quantity: number;
   discount_percentage: number;
