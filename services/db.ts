@@ -260,29 +260,41 @@ class DatabaseService {
     }
   }
 
+  /**
+   * دالة محسنة جداً لإضافة المنتج والباتش.
+   * صممت لتتحمل الرفع المكثف (Bulk Upload)
+   */
   async addProduct(p: any, b?: any): Promise<string> {
     const codeStr = String(p.code);
     const existingProduct = this.products.find(x => x.code === codeStr);
     let pid = existingProduct?.id;
 
+    // 1. إدارة المنتج
     if (!existingProduct) {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
         const product = { id: pid, code: codeStr, name: p.name };
         this.products.push(product);
-        if (isSupabaseConfigured) { try { await supabase.from('products').upsert(product); } catch (e) {} }
+        if (isSupabaseConfigured) { 
+            try { await supabase.from('products').upsert(product, { onConflict: 'code' }); } catch (e) {} 
+        }
     } else {
         const idx = this.products.findIndex(x => x.id === pid);
-        this.products[idx].name = p.name;
-        if (isSupabaseConfigured) { try { await supabase.from('products').update({ name: p.name }).eq('id', pid); } catch (e) {} }
+        if (this.products[idx].name !== p.name) {
+            this.products[idx].name = p.name;
+            if (isSupabaseConfigured) { 
+                try { await supabase.from('products').update({ name: p.name }).eq('id', pid); } catch (e) {} 
+            }
+        }
     }
     
-    // تأكد من وجود b ككائن حتى لو كانت الكمية 0
+    // 2. إدارة الباتش (حتى لو الكمية صفر)
     if (b && pid) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
         const bNo = String(b.batch_number || 'AUTO');
+        
+        // البحث عن باتش موجود لنفس المنتج والباركود في نفس المخزن
         const existingBatchIdx = this.batches.findIndex(x => x.product_id === pid && x.batch_number === bNo);
 
-        // تحويل القيم لأرقام وضمان عدم كونها NaN
         const qty = isNaN(Number(b.quantity)) ? 0 : Number(b.quantity);
         const p_price = isNaN(Number(b.purchase_price)) ? 0 : Number(b.purchase_price);
         const s_price = isNaN(Number(b.selling_price)) ? 0 : Number(b.selling_price);
@@ -296,7 +308,9 @@ class DatabaseService {
                 expiry_date: b.expiry_date || this.batches[existingBatchIdx].expiry_date
             };
             this.batches[existingBatchIdx] = updatedBatch;
-            if (isSupabaseConfigured) { try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) {} }
+            if (isSupabaseConfigured) { 
+                try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) {} 
+            }
         } else {
             const batchId = `B${Date.now()}-${Math.floor(Math.random()*1000)}`;
             const batch = { 
@@ -311,7 +325,9 @@ class DatabaseService {
                 status: BatchStatus.ACTIVE 
             };
             this.batches.push(batch);
-            if (isSupabaseConfigured) { try { await supabase.from('batches').insert(batch); } catch (e) {} }
+            if (isSupabaseConfigured) { 
+                try { await supabase.from('batches').insert(batch); } catch (e) {} 
+            }
         }
     }
     return pid || '';

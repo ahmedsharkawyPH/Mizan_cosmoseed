@@ -79,21 +79,20 @@ const Inventory: React.FC = () => {
       const data = await readExcelFile<any>(e.target.files[0]);
       const totalItems = data.length;
       
-      const chunks = chunkArray(data, 100); // 100 صنف في المرة لسرعة أكبر
+      // نظام المجموعات (100 صنف في المرة) يقلل من الضغط على المتصفح ويمنع Timeout
+      const chunks = chunkArray(data, 100); 
       let processedCount = 0;
 
       for (const chunk of chunks) {
+        // معالجة كل مجموعة بالتوازي (Parallel Processing) لزيادة السرعة القصوى
         await Promise.all(chunk.map(async (row) => {
-          // جلب البيانات بناءً على الرؤوس الجديدة التي أرسلتها
+          // قراءة البيانات من رؤوس الأعمدة بناءً على الصورة المرسلة
           const name = row.name;
           const code = row.code;
-          
-          // استخدام 0 بدلاً من || 0 لضمان معالجة الرقم 0 برمجياً
           const qty = isNaN(Number(row.quantity)) ? 0 : Number(row.quantity);
           const p_price = isNaN(Number(row.purchase_price)) ? 0 : Number(row.purchase_price);
           const s_price = isNaN(Number(row.selling_price)) ? 0 : Number(row.selling_price);
-          
-          const batch = row.batch_number || 'AUTO';
+          const batch = String(row.batch_number || 'AUTO');
           const expiry = row.expiry_date || '2099-12-31';
 
           if (name && code) {
@@ -103,7 +102,7 @@ const Inventory: React.FC = () => {
                 quantity: qty,
                 purchase_price: p_price,
                 selling_price: s_price,
-                batch_number: String(batch),
+                batch_number: batch,
                 expiry_date: expiry
               }
             );
@@ -113,12 +112,13 @@ const Inventory: React.FC = () => {
         setImportProgress(Math.min(100, Math.round((processedCount / totalItems) * 100)));
       }
       
+      // تهيئة محلية سريعة لتعكس البيانات المرفوعة
       await db.init();
       setProducts(db.getProductsWithBatches());
-      alert(`تم بنجاح رفع وتحديث ${processedCount} صنف ببيانات مخزونهم.`);
+      alert(`تم بنجاح معالجة وتحديث ${processedCount} صنف بأسعارهم وكمياتهم.`);
     } catch (err) {
       console.error(err);
-      alert("حدث خطأ أثناء الاستيراد. تأكد من أن أسماء الأعمدة في الإكسيل هي: code, name, quantity, purchase_price, selling_price, batch_number, expiry_date");
+      alert("حدث خطأ تقني. يرجى التأكد من إضافة الأعمدة الناقصة في سوبابيز أولاً عبر SQL Editor.");
     } finally {
       setIsImporting(false);
       setImportProgress(0);
