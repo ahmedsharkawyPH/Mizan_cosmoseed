@@ -62,7 +62,6 @@ const Inventory: React.FC = () => {
       setAddForm({ code: '', name: '', quantity: 1, purchase_price: 0, selling_price: 0, batch_number: 'AUTO', expiry_date: '2099-12-31' });
   };
 
-  // دالة المساعدة لتقسيم المصفوفة إلى مجموعات
   const chunkArray = (array: any[], size: number) => {
     const result = [];
     for (let i = 0; i < array.length; i += size) {
@@ -80,42 +79,46 @@ const Inventory: React.FC = () => {
       const data = await readExcelFile<any>(e.target.files[0]);
       const totalItems = data.length;
       
-      // نقوم بمعالجة 50 صنف في المرة الواحدة لضمان أقصى سرعة دون حظر المتصفح
-      const chunks = chunkArray(data, 50);
+      const chunks = chunkArray(data, 100); // 100 صنف في المرة لسرعة أكبر
       let processedCount = 0;
 
       for (const chunk of chunks) {
         await Promise.all(chunk.map(async (row) => {
-          const name = row.name || row['الاسم'] || row['اسم الصنف'];
-          const code = row.code || row['الكود'] || row['كود الصنف'] || row['الباركود'];
-          const qty = row.quantity || row['الكمية'] || row['الرصيد'] || 0;
-          const p_price = row.purchase_price || row['سعر الشراء'] || row['التكلفة'] || 0;
-          const s_price = row.selling_price || row['سعر البيع'] || row['السعر'] || 0;
-          const batch = row.batch_number || row['التشغيلة'] || 'AUTO';
+          // جلب البيانات بناءً على الرؤوس الجديدة التي أرسلتها
+          const name = row.name;
+          const code = row.code;
+          
+          // استخدام 0 بدلاً من || 0 لضمان معالجة الرقم 0 برمجياً
+          const qty = isNaN(Number(row.quantity)) ? 0 : Number(row.quantity);
+          const p_price = isNaN(Number(row.purchase_price)) ? 0 : Number(row.purchase_price);
+          const s_price = isNaN(Number(row.selling_price)) ? 0 : Number(row.selling_price);
+          
+          const batch = row.batch_number || 'AUTO';
+          const expiry = row.expiry_date || '2099-12-31';
 
           if (name && code) {
             await db.addProduct(
               { code: String(code), name: String(name) },
               {
-                quantity: Number(qty),
-                purchase_price: Number(p_price),
-                selling_price: Number(s_price),
+                quantity: qty,
+                purchase_price: p_price,
+                selling_price: s_price,
                 batch_number: String(batch),
-                expiry_date: row.expiry_date || '2099-12-31'
+                expiry_date: expiry
               }
             );
           }
         }));
         processedCount += chunk.length;
-        setImportProgress(Math.round((processedCount / totalItems) * 100));
+        setImportProgress(Math.min(100, Math.round((processedCount / totalItems) * 100)));
       }
       
-      await db.init(); // إعادة تحميل البيانات محلياً من السيرفر
+      await db.init();
       setProducts(db.getProductsWithBatches());
-      alert(`تمت معالجة ${processedCount} صنف بنجاح.`);
+      alert(`تم بنجاح رفع وتحديث ${processedCount} صنف ببيانات مخزونهم.`);
     } catch (err) {
       console.error(err);
-      alert("خطأ أثناء الاستيراد. تأكد من أن قاعدة البيانات تحتوي على أعمدة الكمية وسعر الشراء.");
+      alert("حدث خطأ أثناء الاستيراد. تأكد من أن أسماء الأعمدة في الإكسيل هي: code, name, quantity, purchase_price, selling_price, batch_number, expiry_date");
     } finally {
       setIsImporting(false);
       setImportProgress(0);

@@ -267,7 +267,7 @@ class DatabaseService {
 
     if (!existingProduct) {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
-        const product = { ...p, id: pid, code: codeStr };
+        const product = { id: pid, code: codeStr, name: p.name };
         this.products.push(product);
         if (isSupabaseConfigured) { try { await supabase.from('products').upsert(product); } catch (e) {} }
     } else {
@@ -276,17 +276,23 @@ class DatabaseService {
         if (isSupabaseConfigured) { try { await supabase.from('products').update({ name: p.name }).eq('id', pid); } catch (e) {} }
     }
     
+    // تأكد من وجود b ككائن حتى لو كانت الكمية 0
     if (b && pid) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
         const bNo = String(b.batch_number || 'AUTO');
         const existingBatchIdx = this.batches.findIndex(x => x.product_id === pid && x.batch_number === bNo);
 
+        // تحويل القيم لأرقام وضمان عدم كونها NaN
+        const qty = isNaN(Number(b.quantity)) ? 0 : Number(b.quantity);
+        const p_price = isNaN(Number(b.purchase_price)) ? 0 : Number(b.purchase_price);
+        const s_price = isNaN(Number(b.selling_price)) ? 0 : Number(b.selling_price);
+
         if (existingBatchIdx !== -1) {
             const updatedBatch = {
                 ...this.batches[existingBatchIdx],
-                quantity: Number(b.quantity || 0),
-                purchase_price: Number(b.purchase_price || 0),
-                selling_price: Number(b.selling_price || 0),
+                quantity: qty,
+                purchase_price: p_price,
+                selling_price: s_price,
                 expiry_date: b.expiry_date || this.batches[existingBatchIdx].expiry_date
             };
             this.batches[existingBatchIdx] = updatedBatch;
@@ -298,9 +304,9 @@ class DatabaseService {
                 product_id: pid, 
                 warehouse_id: defaultWarehouseId,
                 batch_number: bNo,
-                quantity: Number(b.quantity || 0),
-                purchase_price: Number(b.purchase_price || 0),
-                selling_price: Number(b.selling_price || 0),
+                quantity: qty,
+                purchase_price: p_price,
+                selling_price: s_price,
                 expiry_date: b.expiry_date || '2099-12-31',
                 status: BatchStatus.ACTIVE 
             };
