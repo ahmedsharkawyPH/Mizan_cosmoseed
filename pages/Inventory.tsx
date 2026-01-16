@@ -16,6 +16,7 @@ const Inventory: React.FC = () => {
   const currency = settings.currency;
   const [searchTerm, setSearchTerm] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   // Quick Edit State
   const [editModal, setEditModal] = useState<{ isOpen: boolean; batch: Batch | null }>({ isOpen: false, batch: null });
@@ -61,45 +62,63 @@ const Inventory: React.FC = () => {
       setAddForm({ code: '', name: '', quantity: 1, purchase_price: 0, selling_price: 0, batch_number: 'AUTO', expiry_date: '2099-12-31' });
   };
 
+  // دالة المساعدة لتقسيم المصفوفة إلى مجموعات
+  const chunkArray = (array: any[], size: number) => {
+    const result = [];
+    for (let i = 0; i < array.length; i += size) {
+      result.push(array.slice(i, i + size));
+    }
+    return result;
+  };
+
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.[0]) return;
     
     setIsImporting(true);
+    setImportProgress(0);
     try {
       const data = await readExcelFile<any>(e.target.files[0]);
+      const totalItems = data.length;
       
+      // نقوم بمعالجة 50 صنف في المرة الواحدة لضمان أقصى سرعة دون حظر المتصفح
+      const chunks = chunkArray(data, 50);
       let processedCount = 0;
-      for (const row of data) {
-        // دعم التسميات العربية والإنجليزية للأعمدة
-        const name = row.name || row['الاسم'] || row['اسم الصنف'];
-        const code = row.code || row['الكود'] || row['كود الصنف'] || row['الباركود'];
-        const qty = row.quantity || row['الكمية'] || row['الرصيد'] || 0;
-        const p_price = row.purchase_price || row['سعر الشراء'] || row['التكلفة'] || 0;
-        const s_price = row.selling_price || row['سعر البيع'] || row['السعر'] || 0;
-        const batch = row.batch_number || row['التشغيلة'] || 'AUTO';
 
-        if (name && code) {
-          await db.addProduct(
-            { code: String(code), name: String(name) },
-            {
-              quantity: Number(qty),
-              purchase_price: Number(p_price),
-              selling_price: Number(s_price),
-              batch_number: String(batch),
-              expiry_date: row.expiry_date || '2099-12-31'
-            }
-          );
-          processedCount++;
-        }
+      for (const chunk of chunks) {
+        await Promise.all(chunk.map(async (row) => {
+          const name = row.name || row['الاسم'] || row['اسم الصنف'];
+          const code = row.code || row['الكود'] || row['كود الصنف'] || row['الباركود'];
+          const qty = row.quantity || row['الكمية'] || row['الرصيد'] || 0;
+          const p_price = row.purchase_price || row['سعر الشراء'] || row['التكلفة'] || 0;
+          const s_price = row.selling_price || row['سعر البيع'] || row['السعر'] || 0;
+          const batch = row.batch_number || row['التشغيلة'] || 'AUTO';
+
+          if (name && code) {
+            await db.addProduct(
+              { code: String(code), name: String(name) },
+              {
+                quantity: Number(qty),
+                purchase_price: Number(p_price),
+                selling_price: Number(s_price),
+                batch_number: String(batch),
+                expiry_date: row.expiry_date || '2099-12-31'
+              }
+            );
+          }
+        }));
+        processedCount += chunk.length;
+        setImportProgress(Math.round((processedCount / totalItems) * 100));
       }
       
+      await db.init(); // إعادة تحميل البيانات محلياً من السيرفر
       setProducts(db.getProductsWithBatches());
       alert(`تمت معالجة ${processedCount} صنف بنجاح.`);
     } catch (err) {
       console.error(err);
-      alert(t('common.error_excel'));
+      alert("خطأ أثناء الاستيراد. تأكد من أن قاعدة البيانات تحتوي على أعمدة الكمية وسعر الشراء.");
     } finally {
       setIsImporting(false);
+      setImportProgress(0);
       e.target.value = ''; 
     }
   };
@@ -142,17 +161,23 @@ const Inventory: React.FC = () => {
             <button 
               onClick={downloadInventoryTemplate}
               className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-slate-50 shadow-sm"
-              title="تحميل نموذج الإكسيل"
             >
                 <Download className="w-4 h-4 text-blue-500" />
                 <span className="hidden sm:inline">تحميل النموذج</span>
             </button>
 
-            <label className={`cursor-pointer bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-emerald-100 ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
-                {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-                <span className="hidden sm:inline">{t('stock.import')}</span>
-                <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImportExcel} disabled={isImporting} />
-            </label>
+            <div className="relative">
+                <label className={`cursor-pointer bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all hover:bg-emerald-700 ${isImporting ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                    <span className="hidden sm:inline">{isImporting ? `جاري الرفع ${importProgress}%` : t('stock.import')}</span>
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImportExcel} disabled={isImporting} />
+                </label>
+                {isImporting && (
+                    <div className="absolute -bottom-2 left-0 w-full h-1 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${importProgress}%` }}></div>
+                    </div>
+                )}
+            </div>
 
             <button onClick={() => setIsAddOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-sm transition-all hover:bg-blue-700">
                 <PlusCircle className="w-4 h-4" />{t('stock.new')}
@@ -297,7 +322,7 @@ const Inventory: React.FC = () => {
       {isAddOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
-                  <div className="flex justify-between items-center p-5 border-b"><h3 className="font-bold text-slate-800">{t('prod.new_title')}</h3><button onClick={() => setIsAddOpen(false)}><X className="w-5 h-5 text-slate-400" /></button></div>
+                  <div className="flex justify-between items-center p-5 border-b"><h3 className="font-bold text-slate-800">{t('prod.new_title')}</h3><button onClick={() => setIsAddOpen(false)} className="text-slate-400 w-5 h-5 text-slate-400" /></div>
                   <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                       <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('prod.name')} *</label><input className="w-full border p-2.5 rounded-lg" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} /></div>
                       <div className="grid grid-cols-2 gap-4">

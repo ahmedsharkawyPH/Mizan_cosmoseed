@@ -33,7 +33,7 @@ export interface SystemSettings {
   invoiceTemplate: '1' | '2' | '3';
   printerPaperSize: 'A4' | 'A5' | 'THERMAL';
   expenseCategories: string[];
-  distributionLines: string[]; // الحقل الجديد لخطوط التوزيع
+  distributionLines: string[];
   lowStockThreshold: number;
 }
 
@@ -60,7 +60,7 @@ class DatabaseService {
     invoiceTemplate: '1',
     printerPaperSize: 'A4',
     expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'RENT', 'MAINTENANCE', 'OTHER'],
-    distributionLines: [], // القيمة الافتراضية
+    distributionLines: [],
     lowStockThreshold: 10
   };
 
@@ -260,21 +260,17 @@ class DatabaseService {
     }
   }
 
-  /**
-   * دالة محسنة: تتحقق من وجود كود الصنف أولاً
-   */
   async addProduct(p: any, b?: any): Promise<string> {
-    // 1. التحقق إذا كان الصنف موجود بالكود
-    const existingProduct = this.products.find(x => x.code === String(p.code));
+    const codeStr = String(p.code);
+    const existingProduct = this.products.find(x => x.code === codeStr);
     let pid = existingProduct?.id;
 
     if (!existingProduct) {
-        pid = `P${Date.now()}-${Math.floor(Math.random()*100)}`;
-        const product = { ...p, id: pid };
+        pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
+        const product = { ...p, id: pid, code: codeStr };
         this.products.push(product);
-        if (isSupabaseConfigured) { try { await supabase.from('products').insert(product); } catch (e) {} }
+        if (isSupabaseConfigured) { try { await supabase.from('products').upsert(product); } catch (e) {} }
     } else {
-        // تحديث الاسم إذا تغير
         const idx = this.products.findIndex(x => x.id === pid);
         this.products[idx].name = p.name;
         if (isSupabaseConfigured) { try { await supabase.from('products').update({ name: p.name }).eq('id', pid); } catch (e) {} }
@@ -282,29 +278,29 @@ class DatabaseService {
     
     if (b && pid) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
-        
-        // التحقق إذا كان هناك تشغيلة موجودة بنفس الرقم لهذا المنتج
-        const bNo = b.batch_number || 'AUTO';
+        const bNo = String(b.batch_number || 'AUTO');
         const existingBatchIdx = this.batches.findIndex(x => x.product_id === pid && x.batch_number === bNo);
 
         if (existingBatchIdx !== -1) {
-            // تحديث التشغيلة الموجودة بالأسعار والكمية الجديدة
             const updatedBatch = {
                 ...this.batches[existingBatchIdx],
-                quantity: b.quantity || 0,
-                purchase_price: b.purchase_price || 0,
-                selling_price: b.selling_price || 0
+                quantity: Number(b.quantity || 0),
+                purchase_price: Number(b.purchase_price || 0),
+                selling_price: Number(b.selling_price || 0),
+                expiry_date: b.expiry_date || this.batches[existingBatchIdx].expiry_date
             };
             this.batches[existingBatchIdx] = updatedBatch;
             if (isSupabaseConfigured) { try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) {} }
         } else {
-            // إضافة تشغيلة جديدة
+            const batchId = `B${Date.now()}-${Math.floor(Math.random()*1000)}`;
             const batch = { 
-                ...b, 
-                id: `B${Date.now()}-${Math.floor(Math.random()*100)}`, 
+                id: batchId, 
                 product_id: pid, 
                 warehouse_id: defaultWarehouseId,
                 batch_number: bNo,
+                quantity: Number(b.quantity || 0),
+                purchase_price: Number(b.purchase_price || 0),
+                selling_price: Number(b.selling_price || 0),
                 expiry_date: b.expiry_date || '2099-12-31',
                 status: BatchStatus.ACTIVE 
             };
