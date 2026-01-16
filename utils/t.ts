@@ -5,6 +5,7 @@ const translations: Record<string, Record<string, string>> = {
     // Navigation
     'nav.dashboard': 'Dashboard',
     'nav.sales': 'Sales',
+    'nav.purchases': 'Purchases',
     'nav.new_invoice': 'New Invoice',
     'nav.invoices': 'Invoices',
     'nav.inventory': 'Inventory',
@@ -438,6 +439,7 @@ const translations: Record<string, Record<string, string>> = {
     // Navigation
     'nav.dashboard': 'لوحة التحكم',
     'nav.sales': 'المبيعات',
+    'nav.purchases': 'المشتريات',
     'nav.new_invoice': 'فاتورة بيع',
     'nav.invoices': 'سجل المبيعات',
     'nav.inventory': 'المخزون',

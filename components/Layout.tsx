@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag } from 'lucide-react';
+import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
@@ -10,7 +10,7 @@ import AiAssistant from './AiAssistant';
 export default function Layout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState<string[]>(['sales_mgmt', 'user_mgmt']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['sales_mgmt', 'purchase_mgmt', 'user_mgmt']);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const user = authService.getCurrentUser();
@@ -47,16 +47,26 @@ export default function Layout() {
         perm: 'MANAGE_SALES',
         roles: ['ADMIN', 'REP', 'TELESALES'],
         children: [
-            { label: t('nav.new_invoice'), path: '/invoice/new', icon: ShoppingCart },
+            { label: t('nav.new_invoice'), path: '/invoice/new', icon: PlusCircle },
             { label: t('nav.invoices'), path: '/invoices', icon: FileText }
         ]
     },
-    { label: t('pur.list_title'), path: '/purchases/list', icon: FileText, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
-    { label: t('stock.order'), path: '/purchase-orders', icon: ShoppingBag, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
+    {
+        key: 'purchase_mgmt',
+        label: t('nav.purchases'),
+        icon: ShoppingBag,
+        perm: 'MANAGE_INVENTORY',
+        roles: ['ADMIN', 'TELESALES'],
+        children: [
+            { label: t('stock.purchase'), path: '/purchases/new', icon: PlusCircle },
+            { label: t('pur.list_title'), path: '/purchases/list', icon: FileText },
+            { label: t('stock.order'), path: '/purchase-orders', icon: Truck }
+        ]
+    },
     { label: t('nav.inventory'), path: '/inventory', icon: Package, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
     { label: t('nav.inventory_analysis'), path: '/inventory/analysis', icon: Activity, perm: 'MANAGE_INVENTORY', roles: ['ADMIN'] },
     { label: t('cust.title'), path: '/customers', icon: NAV_ITEMS[4].icon, perm: 'MANAGE_CUSTOMERS', roles: ['ADMIN', 'REP', 'TELESALES'] },
-    { label: t('supp.title'), path: '/suppliers', icon: Truck, perm: 'MANAGE_SUPPLIERS', roles: ['ADMIN'] },
+    { label: t('supp.title'), path: '/suppliers', icon: Users, perm: 'MANAGE_SUPPLIERS', roles: ['ADMIN'] },
     {
         key: 'user_mgmt',
         label: t('nav.user_management'),
