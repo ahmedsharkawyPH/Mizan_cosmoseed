@@ -2,10 +2,10 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Download, FileSpreadsheet, Loader2, Edit2, Save } from 'lucide-react';
+import { PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, Trash2, AlertOctagon, Package, Calendar, Hash, ShoppingBag, Download, FileSpreadsheet, Loader2, Edit2, Save, FileOutput } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch } from '../types';
-import { readExcelFile, downloadInventoryTemplate } from '../utils/excel';
+import { readExcelFile, downloadInventoryTemplate, exportAllProductsToExcel } from '../utils/excel';
 
 const Inventory: React.FC = () => {
   const navigate = useNavigate();
@@ -79,14 +79,11 @@ const Inventory: React.FC = () => {
       const data = await readExcelFile<any>(e.target.files[0]);
       const totalItems = data.length;
       
-      // نظام المجموعات (100 صنف في المرة) يقلل من الضغط على المتصفح ويمنع Timeout
       const chunks = chunkArray(data, 100); 
       let processedCount = 0;
 
       for (const chunk of chunks) {
-        // معالجة كل مجموعة بالتوازي (Parallel Processing) لزيادة السرعة القصوى
         await Promise.all(chunk.map(async (row) => {
-          // قراءة البيانات من رؤوس الأعمدة بناءً على الصورة المرسلة
           const name = row.name;
           const code = row.code;
           const qty = isNaN(Number(row.quantity)) ? 0 : Number(row.quantity);
@@ -112,7 +109,6 @@ const Inventory: React.FC = () => {
         setImportProgress(Math.min(100, Math.round((processedCount / totalItems) * 100)));
       }
       
-      // تهيئة محلية سريعة لتعكس البيانات المرفوعة
       await db.init();
       setProducts(db.getProductsWithBatches());
       alert(`تم بنجاح معالجة وتحديث ${processedCount} صنف بأسعارهم وكمياتهم.`);
@@ -124,6 +120,14 @@ const Inventory: React.FC = () => {
       setImportProgress(0);
       e.target.value = ''; 
     }
+  };
+
+  const handleExportData = () => {
+    if (products.length === 0) {
+      alert("لا توجد أصناف لتصديرها");
+      return;
+    }
+    exportAllProductsToExcel(products);
   };
 
   const openQuickEdit = (batch: Batch) => {
@@ -161,6 +165,14 @@ const Inventory: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h1 className="text-2xl font-bold text-slate-800">{t('stock.title')}</h1>
         <div className="flex flex-wrap gap-2">
+            <button 
+              onClick={handleExportData}
+              className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all hover:bg-indigo-700"
+            >
+                <FileOutput className="w-4 h-4" />
+                <span className="hidden sm:inline">تصدير الأصناف</span>
+            </button>
+
             <button 
               onClick={downloadInventoryTemplate}
               className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 transition-all hover:bg-slate-50 shadow-sm"
@@ -325,7 +337,7 @@ const Inventory: React.FC = () => {
       {isAddOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
-                  <div className="flex justify-between items-center p-5 border-b"><h3 className="font-bold text-slate-800">{t('prod.new_title')}</h3><button onClick={() => setIsAddOpen(false)} className="text-slate-400 w-5 h-5 text-slate-400" /></div>
+                  <div className="flex justify-between items-center p-5 border-b"><h3 className="font-bold text-slate-800">{t('prod.new_title')}</h3><button onClick={() => setIsAddOpen(false)} className="text-slate-400 w-5 h-5" /></div>
                   <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                       <div><label className="text-sm font-bold text-slate-700 mb-1 block">{t('prod.name')} *</label><input className="w-full border p-2.5 rounded-lg" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} /></div>
                       <div className="grid grid-cols-2 gap-4">
