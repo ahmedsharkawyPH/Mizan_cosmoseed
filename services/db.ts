@@ -66,7 +66,6 @@ class DatabaseService {
   private stockMovements: StockMovement[] = [];
   private settings: SystemSettings = { ...DEFAULT_SETTINGS };
   
-  // تحسينات الأداء: الفهارس الذكية
   private batchesByProductId: Map<string, Batch[]> = new Map();
   private productsMap: Map<string, Product> = new Map();
   private _cashBalance: number = 0;
@@ -130,10 +129,7 @@ class DatabaseService {
   }
 
   private rebuildIndexes() {
-      // فهرسة الأصناف للوصول السريع O(1)
       this.productsMap = new Map(this.products.map(p => [p.id, p]));
-      
-      // فهرسة التشغيلات حسب الصنف لتجنب البحث المتكرر O(N) في كل مرة
       this.batchesByProductId = new Map();
       this.batches.forEach(batch => {
           if (!this.batchesByProductId.has(batch.product_id)) {
@@ -141,19 +137,108 @@ class DatabaseService {
           }
           this.batchesByProductId.get(batch.product_id)!.push(batch);
       });
-
-      // حساب رصيد الخزينة مرة واحدة عند البدء
       this._cashBalance = this.cashTransactions.reduce((acc, t) => {
         return t.type === CashTransactionType.RECEIPT ? acc + t.amount : acc - t.amount;
       }, 0);
   }
 
   getProductsWithBatches(): ProductWithBatches[] {
-    // استخدام Map يجعل العملية O(N) بدلاً من O(N*M)
     return this.products.map(p => ({
       ...p,
       batches: this.batchesByProductId.get(p.id) || []
     }));
+  }
+
+  // --- دوال تحسين الأداء الجديدة ---
+  
+  getProductsPaginated(options: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    filters?: {
+      lowStockOnly?: boolean;
+      outOfStockOnly?: boolean;
+    };
+    sortBy?: 'name' | 'code' | 'totalStock';
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    let products = this.getProductsWithBatches();
+    
+    // الفلترة حسب الحالة
+    if (options.filters?.lowStockOnly) {
+      const threshold = this.settings.lowStockThreshold || 10;
+      products = products.filter(p => {
+        const total = p.batches.reduce((sum, b) => sum + b.quantity, 0);
+        return total > 0 && total <= threshold;
+      });
+    }
+    
+    if (options.filters?.outOfStockOnly) {
+      products = products.filter(p => 
+        p.batches.reduce((sum, b) => sum + b.quantity, 0) === 0
+      );
+    }
+
+    // البحث النصي
+    if (options.search) {
+      const searchLower = options.search.toLowerCase();
+      products = products.filter(p => 
+        p.name.toLowerCase().includes(searchLower) ||
+        (p.code && p.code.toLowerCase().includes(searchLower))
+      );
+    }
+    
+    // الفرز
+    if (options.sortBy) {
+      products.sort((a, b) => {
+        let valA, valB;
+        if (options.sortBy === 'totalStock') {
+          valA = a.batches.reduce((sum, b) => sum + b.quantity, 0);
+          valB = b.batches.reduce((sum, b) => sum + b.quantity, 0);
+        } else {
+          // @ts-ignore
+          valA = (a[options.sortBy] || '').toString().toLowerCase();
+          // @ts-ignore
+          valB = (b[options.sortBy] || '').toString().toLowerCase();
+        }
+        
+        if (valA < valB) return options.sortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return options.sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    
+    const total = products.length;
+    const start = (options.page - 1) * options.pageSize;
+    const paginatedProducts = products.slice(0, start + options.pageSize); // إرجاع القائمة تراكمياً لسهولة العرض
+    
+    return {
+      products: paginatedProducts,
+      total,
+      hasMore: total > paginatedProducts.length
+    };
+  }
+
+  searchProducts(options: {
+    query: string;
+    limit?: number;
+    filters?: {
+      lowStockOnly?: boolean;
+      outOfStockOnly?: boolean;
+    };
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    // هذه الدالة تستدعي التجزئة مع الصفحة الأولى
+    return this.getProductsPaginated({
+      page: 1,
+      pageSize: options.limit || 100,
+      search: options.query,
+      filters: options.filters,
+      // @ts-ignore
+      sortBy: options.sortBy,
+      sortOrder: options.sortOrder
+    });
   }
 
   getProductById(id: string): Product | undefined {
@@ -168,15 +253,11 @@ class DatabaseService {
       const id = `TX${Date.now()}`;
       const newTx: CashTransaction = { ...tx, id, created_at: new Date().toISOString() };
       this.cashTransactions.push(newTx);
-      
-      // تحديث الرصيد التراكمي فوراً دون إعادة الحساب O(1)
       if (tx.type === CashTransactionType.RECEIPT) this._cashBalance += tx.amount;
       else this._cashBalance -= tx.amount;
-
       if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(newTx);
   }
 
-  // --- دوال المساعدة الواجب توفرها للواجهة ---
   getInvoices(): Invoice[] { return [...this.invoices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }
   getCustomers(): Customer[] { return [...this.customers]; }
   getSuppliers(): Supplier[] { return [...this.suppliers]; }
@@ -221,14 +302,11 @@ class DatabaseService {
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `INV${Date.now()}`;
     const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
-    
     const invoice: Invoice = { id: invoiceId, invoice_number: `${Date.now()}`, customer_id: customerId, date: new Date().toISOString(), total_before_discount: netTotal + addDisc, total_discount: 0, additional_discount: addDisc, net_total: netTotal, previous_balance: 0, final_balance: 0, payment_status: PaymentStatus.PAID, items, type: isReturn ? 'RETURN' : 'SALE' };
     this.invoices.push(invoice);
-    
     if (cashPaid > 0) {
         await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` });
     }
-
     if (isSupabaseConfigured) await supabase.from('invoices').insert(invoice);
     return { success: true, message: 'Done', id: invoiceId };
   }

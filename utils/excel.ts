@@ -62,50 +62,50 @@ export const downloadInventoryTemplate = () => {
  * تصدير كافة المنتجات الحالية بالبيانات الأساسية المطلوبة
  */
 export const exportAllProductsToExcel = (products: ProductWithBatches[]) => {
-  const data: any[] = [];
+  exportFilteredProductsToExcel(products, "Master_Inventory");
+};
 
-  products.forEach(product => {
-    // إذا كان المنتج له تشغيلات، نقوم بتصدير كل تشغيلة في سطر
-    if (product.batches && product.batches.length > 0) {
-      product.batches.forEach(batch => {
-        data.push({
-          "product_id": product.code, // استخدام الكود كمعرف للمنتج في الشيت
-          "product_name": product.name,
-          "selling_price": batch.selling_price,
-          "purchase_price": batch.purchase_price,
-          "quantity": batch.quantity,
-          "expiry_date": batch.expiry_date,
-          "status": batch.status
+/**
+ * تصدير البيانات المصفاة (Search results / Filtered view)
+ */
+export const exportFilteredProductsToExcel = (products: ProductWithBatches[], fileName = "Inventory_Export") => {
+    const data: any[] = [];
+  
+    products.forEach(product => {
+      if (product.batches && product.batches.length > 0) {
+        product.batches.forEach(batch => {
+          data.push({
+            "كود الصنف": product.code,
+            "اسم الصنف": product.name,
+            "سعر البيع": batch.selling_price,
+            "سعر الشراء": batch.purchase_price,
+            "الكمية": batch.quantity,
+            "رقم التشغيلة": batch.batch_number,
+            "تاريخ الصلاحية": batch.expiry_date,
+            "الحالة": batch.status
+          });
         });
-      });
-    } else {
-      // إذا لم يكن له تشغيلات، نصدر بيانات المنتج الأساسية فقط
-      data.push({
-        "product_id": product.code,
-        "product_name": product.name,
-        "selling_price": 0,
-        "purchase_price": 0,
-        "quantity": 0,
-        "expiry_date": "-",
-        "status": "NO_BATCH"
-      });
-    }
-  });
-
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "All Products");
-
-  // تحسين عرض الأعمدة
-  ws['!cols'] = [
-    { wch: 15 }, // product_id
-    { wch: 30 }, // product_name
-    { wch: 12 }, // selling_price
-    { wch: 12 }, // purchase_price
-    { wch: 10 }, // quantity
-    { wch: 15 }, // expiry_date
-    { wch: 12 }, // status
-  ];
-
-  XLSX.writeFile(wb, `Mizan_Master_Inventory_${new Date().toISOString().split('T')[0]}.xlsx`);
+      } else {
+        data.push({
+          "كود الصنف": product.code,
+          "اسم الصنف": product.name,
+          "سعر البيع": product.selling_price || 0,
+          "سعر الشراء": product.purchase_price || 0,
+          "الكمية": 0,
+          "رقم التشغيلة": "-",
+          "تاريخ الصلاحية": "-",
+          "الحالة": "NO_BATCH"
+        });
+      }
+    });
+  
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+  
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 12 }
+    ];
+  
+    XLSX.writeFile(wb, `Mizan_${fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
 };
