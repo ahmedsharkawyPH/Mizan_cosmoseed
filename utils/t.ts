@@ -1,10 +1,10 @@
-
 import { db } from '../services/db';
 
 const translations: Record<string, Record<string, string>> = {
   en: {
     // Navigation
     'nav.dashboard': 'Dashboard',
+    'nav.sales': 'Sales',
     'nav.new_invoice': 'New Invoice',
     'nav.invoices': 'Invoices',
     'nav.inventory': 'Inventory',
@@ -437,8 +437,9 @@ const translations: Record<string, Record<string, string>> = {
   ar: {
     // Navigation
     'nav.dashboard': 'لوحة التحكم',
+    'nav.sales': 'المبيعات',
     'nav.new_invoice': 'فاتورة بيع',
-    'nav.invoices': 'مبيعات',
+    'nav.invoices': 'سجل المبيعات',
     'nav.inventory': 'المخزون',
     'nav.inventory_analysis': 'تحليل المخزون',
     'nav.customers': 'العملاء',

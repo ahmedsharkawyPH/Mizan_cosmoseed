@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
@@ -11,7 +10,7 @@ import AiAssistant from './AiAssistant';
 export default function Layout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState<string[]>(['user_mgmt']);
+  const [openMenus, setOpenMenus] = useState<string[]>(['sales_mgmt', 'user_mgmt']);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const user = authService.getCurrentUser();
@@ -41,8 +40,17 @@ export default function Layout() {
 
   const sidebarItems = [
     { label: t('nav.dashboard'), path: '/', icon: NAV_ITEMS[0].icon, perm: 'VIEW_DASHBOARD', roles: ['ADMIN', 'TELESALES'] },
-    { label: t('nav.new_invoice'), path: '/invoice/new', icon: ShoppingCart, perm: 'MANAGE_SALES', roles: ['ADMIN', 'REP', 'TELESALES'] },
-    { label: t('nav.invoices'), path: '/invoices', icon: FileText, perm: 'MANAGE_SALES', roles: ['ADMIN', 'REP', 'TELESALES'] },
+    {
+        key: 'sales_mgmt',
+        label: t('nav.sales'),
+        icon: ShoppingCart,
+        perm: 'MANAGE_SALES',
+        roles: ['ADMIN', 'REP', 'TELESALES'],
+        children: [
+            { label: t('nav.new_invoice'), path: '/invoice/new', icon: ShoppingCart },
+            { label: t('nav.invoices'), path: '/invoices', icon: FileText }
+        ]
+    },
     { label: t('pur.list_title'), path: '/purchases/list', icon: FileText, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
     { label: t('stock.order'), path: '/purchase-orders', icon: ShoppingBag, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
     { label: t('nav.inventory'), path: '/inventory', icon: Package, perm: 'MANAGE_INVENTORY', roles: ['ADMIN', 'TELESALES'] },
