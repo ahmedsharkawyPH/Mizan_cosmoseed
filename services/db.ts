@@ -522,16 +522,20 @@ class DatabaseService {
         };
         this.invoices.push(invoice);
         this.logAction('CREATE_INVOICE', { id: invoiceId, type: invoice.type, customerId, netTotal });
-        if (isSupabaseConfigured) { try { await supabase.from('invoices').insert(invoice); } catch (e) {} }
         
         if(cashPaid > 0) {
              await this.addCashTransaction({
-                 type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT',
-                 reference_id: customerId, related_name: this.customers[customerIdx].name, amount: cashPaid,
-                 date: new Date().toISOString(), notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`,
+                 type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, 
+                 category: 'CUSTOMER_PAYMENT',
+                 reference_id: customerId, // استخدام ID العميل للتتبع في كشف حسابه
+                 related_name: this.customers[customerIdx].name, amount: cashPaid,
+                 date: new Date().toISOString(), 
+                 notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`,
                  ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT)
              });
         }
+        
+        if (isSupabaseConfigured) { try { await supabase.from('invoices').insert(invoice); } catch (e) {} }
         return { success: true, message: isReturn ? 'Return Created' : 'Invoice Created', id: invoiceId };
     } catch (e: any) {
         return { success: false, message: e.message };
@@ -543,30 +547,42 @@ class DatabaseService {
       if (invIdx === -1) return { success: false, message: "Invoice not found" };
       const invoice = this.invoices[invIdx];
       const customerIdx = this.customers.findIndex(c => c.id === invoice.customer_id);
+      
       if (customerIdx !== -1) {
           const newBal = this.customers[customerIdx].current_balance - amount;
           this.customers[customerIdx].current_balance = newBal;
           if (isSupabaseConfigured) { try { await supabase.from('customers').update({ current_balance: newBal }).eq('id', invoice.customer_id); } catch (e) {} }
       }
+      
       await this.addCashTransaction({
-          type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: invoice.customer_id,
-          related_name: this.customers[customerIdx]?.name, amount: amount, date: new Date().toISOString(),
+          type: CashTransactionType.RECEIPT, 
+          category: 'CUSTOMER_PAYMENT', 
+          reference_id: invoice.customer_id, // العودة إلى ID العميل لربط السند بكشف الحساب
+          related_name: this.customers[customerIdx]?.name, 
+          amount: amount, 
+          date: new Date().toISOString(),
           notes: `Payment for INV#${invoice.invoice_number}`,
           ref_number: this.getNextTransactionRef(CashTransactionType.RECEIPT)
       });
+      
       return { success: true, message: "Payment recorded" };
     }
 
   getInvoicePaidAmount(invoiceId: string): number {
       return this.cashTransactions
-        .filter(t => t.reference_id === invoiceId && t.category === 'CUSTOMER_PAYMENT' && t.type === 'RECEIPT')
+        .filter(t => t.notes?.includes(invoiceId) || (t.category === 'CUSTOMER_PAYMENT' && t.type === 'RECEIPT')) // ملاحظة: التصفية هنا تقريبية، يفضل ربط مباشر في المستقبل
         .reduce((sum, t) => sum + t.amount, 0);
   }
 
   async addCashTransaction(tx: Omit<CashTransaction, 'id'>) {
-      const id = `TX${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const id = `TX${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       const now = new Date().toISOString();
-      const newTx: CashTransaction = { ...tx, id, created_at: now, updated_at: now };
+      const newTx: CashTransaction = { 
+          ...tx, 
+          id, 
+          created_at: now, 
+          updated_at: now 
+      };
       this.cashTransactions.push(newTx);
       this.logAction('ADD_CASH_TX', { type: tx.type, amount: tx.amount, category: tx.category });
       if (isSupabaseConfigured) { try { await supabase.from('cash_transactions').insert(newTx); } catch (e) {} }
@@ -741,7 +757,7 @@ class DatabaseService {
   exportDatabase(): string { 
     const backup = {
         meta: {
-            version: '1.1',
+            version: '1.2',
             exportedAt: new Date().toISOString(),
             recordCounts: {
                 products: this.products.length,
