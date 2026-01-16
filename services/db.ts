@@ -37,6 +37,21 @@ export interface SystemSettings {
   lowStockThreshold: number;
 }
 
+const DEFAULT_SETTINGS: SystemSettings = {
+  companyName: 'Mizan Online',
+  companyAddress: 'Cairo, Egypt',
+  companyPhone: '01559550481',
+  companyTaxNumber: '123-456-789',
+  companyLogo: 'https://drive.google.com/uc?export=download&id=1Ia9pYTGjFENkMj5TrkNmDJOjSmp5pltL',
+  currency: 'ج.م',
+  language: 'ar',
+  invoiceTemplate: '1',
+  printerPaperSize: 'A4',
+  expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'RENT', 'MAINTENANCE', 'OTHER'],
+  distributionLines: [],
+  lowStockThreshold: 10
+};
+
 class DatabaseService {
   private products: Product[] = [];
   private batches: Batch[] = [];
@@ -48,51 +63,44 @@ class DatabaseService {
   private purchaseInvoices: PurchaseInvoice[] = [];
   private purchaseOrders: PurchaseOrder[] = [];
   private cashTransactions: CashTransaction[] = [];
-  // Fix: Added missing stockMovements property
   private stockMovements: StockMovement[] = [];
-  private settings: SystemSettings = {
-    companyName: 'Mizan Online',
-    companyAddress: 'Cairo, Egypt',
-    companyPhone: '01559550481',
-    companyTaxNumber: '123-456-789',
-    companyLogo: 'https://drive.google.com/uc?export=download&id=1Ia9pYTGjFENkMj5TrkNmDJOjSmp5pltL',
-    currency: 'ج.م',
-    language: 'ar',
-    invoiceTemplate: '1',
-    printerPaperSize: 'A4',
-    expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'RENT', 'MAINTENANCE', 'OTHER'],
-    distributionLines: [],
-    lowStockThreshold: 10
-  };
+  private settings: SystemSettings = { ...DEFAULT_SETTINGS };
 
   public isInitialized = false;
 
   constructor() {}
 
-  // وظيفة مساعدة لجلب كافة السجلات مهما كان عددها (تتجاوز حد الـ 1000)
   private async fetchAllFromTable(tableName: string) {
     if (!isSupabaseConfigured) return [];
     
     let allData: any[] = [];
-    let from = 0;
-    let to = 999;
+    let page = 0;
+    const pageSize = 1000;
     let hasMore = true;
 
     while (hasMore) {
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+      
       const { data, error } = await supabase
         .from(tableName)
         .select('*')
         .range(from, to);
 
-      if (error || !data || data.length === 0) {
+      if (error) {
+        console.error(`Error fetching table ${tableName}:`, error.message);
+        hasMore = false;
+        break;
+      }
+
+      if (!data || data.length === 0) {
         hasMore = false;
       } else {
         allData = [...allData, ...data];
-        if (data.length < 1000) {
+        if (data.length < pageSize) {
           hasMore = false;
         } else {
-          from += 1000;
-          to += 1000;
+          page++;
         }
       }
     }
@@ -110,11 +118,11 @@ class DatabaseService {
       currency: dbData.currency || this.settings.currency,
       language: dbData.language || this.settings.language,
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
-      printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
+      printerPapersize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
       distributionLines: dbData.distributionlines || dbData.distribution_lines || this.settings.distributionLines,
       lowStockThreshold: dbData.lowstockthreshold || dbData.low_stock_threshold || this.settings.lowStockThreshold
-    };
+    } as any;
   }
 
   private mapToDb(s: SystemSettings): any {
@@ -139,12 +147,9 @@ class DatabaseService {
   async init() {
     if(this.isInitialized) return;
     try {
-        // جلب البيانات الأساسية (الإعدادات لا تحتاج Pagination لأنها سجل واحد)
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
-        // جلب كافة الجداول باستخدام نظام الـ Pagination لتخطي حاجز الـ 1000 سجل
-        // Fix: Added stock_movements to the parallel fetch operations
         const [p, b, c, s, w, inv, pur, po, cash, rep, sm] = await Promise.all([
             this.fetchAllFromTable('products'),
             this.fetchAllFromTable('batches'),
@@ -164,13 +169,12 @@ class DatabaseService {
         if (c) this.customers = c;
         if (s) this.suppliers = s;
         if (w) this.warehouses = w;
-        if (inv) this.invoices = inv;
-        if (pur) this.purchaseInvoices = pur;
-        if (po) this.purchaseOrders = po;
-        if (cash) this.cashTransactions = cash;
+        if (inv) this.invoices = inv.map(i => ({ ...i, date: new Date(i.date).toISOString() }));
+        if (pur) this.purchaseInvoices = pur.map(i => ({ ...i, date: new Date(i.date).toISOString() }));
+        if (po) this.purchaseOrders = po.map(i => ({ ...i, date: new Date(i.date).toISOString() }));
+        if (cash) this.cashTransactions = cash.map(i => ({ ...i, date: new Date(i.date).toISOString() }));
         if (rep) this.representatives = rep;
-        // Fix: Properly assign fetched stock movements
-        if (sm) this.stockMovements = sm;
+        if (sm) this.stockMovements = sm.map(i => ({ ...i, date: new Date(i.date).toISOString() }));
 
         if (this.warehouses.length === 0) {
             this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
@@ -187,6 +191,10 @@ class DatabaseService {
       ...p,
       batches: this.batches.filter(b => b.product_id === p.id)
     }));
+  }
+
+  getProductById(id: string): Product | undefined {
+    return this.products.find(p => p.id === id);
   }
 
   getCustomers(): Customer[] { return [...this.customers]; }
@@ -221,78 +229,102 @@ class DatabaseService {
         if (error) throw error;
         return true;
     } catch (e) {
-        return true;
+        console.error("Update settings failed:", e);
+        return true; // Still allow local session to continue
+    }
+  }
+
+  async resetSettings() {
+    this.settings = { ...DEFAULT_SETTINGS };
+    if (isSupabaseConfigured) {
+        try {
+            await supabase.from('settings').delete().eq('id', 1);
+        } catch (e) {
+            console.error("Failed to reset remote settings:", e);
+        }
     }
   }
 
   async addExpenseCategory(category: string) {
-    if (this.settings.expenseCategories.includes(category)) return;
-    const newCategories = [...this.settings.expenseCategories, category];
+    const normalized = category.trim().toUpperCase();
+    if (!normalized || this.settings.expenseCategories.includes(normalized)) return;
+    const newCategories = [...this.settings.expenseCategories, normalized];
     await this.updateSettings({ ...this.settings, expenseCategories: newCategories });
   }
 
   async addCustomer(c: any) {
-    const cust: Customer = { ...c, id: `C${Date.now()}`, current_balance: c.opening_balance || 0, credit_limit: c.credit_limit || 0 };
+    const name = String(c.name || '').trim();
+    if (!name) throw new Error("Customer name is required");
+    const cust: Customer = { ...c, name, id: `C${Date.now()}`, current_balance: c.opening_balance || 0, credit_limit: c.credit_limit || 0 };
     this.customers.push(cust);
-    if (isSupabaseConfigured) { try { await supabase.from('customers').insert(cust); } catch (e) {} }
+    if (isSupabaseConfigured) { try { await supabase.from('customers').insert(cust); } catch (e) { console.error(e); } }
   }
 
   async updateCustomer(id: string, updates: Partial<Customer>) {
       const index = this.customers.findIndex(c => c.id === id);
       if (index !== -1) {
           this.customers[index] = { ...this.customers[index], ...updates };
-          if (isSupabaseConfigured) { try { await supabase.from('customers').update(updates).eq('id', id); } catch (e) {} }
+          if (isSupabaseConfigured) { try { await supabase.from('customers').update(updates).eq('id', id); } catch (e) { console.error(e); } }
       }
   }
 
   async deleteCustomer(id: string) {
       this.customers = this.customers.filter(c => c.id !== id);
-      if (isSupabaseConfigured) { try { await supabase.from('customers').delete().eq('id', id); } catch (e) {} }
+      if (isSupabaseConfigured) { try { await supabase.from('customers').delete().eq('id', id); } catch (e) { console.error(e); } }
   }
 
   async addSupplier(s: any) {
-    const supp: Supplier = { ...s, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
+    const name = String(s.name || '').trim();
+    if (!name) throw new Error("Supplier name is required");
+    const supp: Supplier = { ...s, name, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
     this.suppliers.push(supp);
-    if (isSupabaseConfigured) { try { await supabase.from('suppliers').insert(supp); } catch (e) {} }
+    if (isSupabaseConfigured) { try { await supabase.from('suppliers').insert(supp); } catch (e) { console.error(e); } }
   }
 
   async addRepresentative(r: any) {
       const rep: Representative = { ...r, id: `R${Date.now()}` };
       this.representatives.push(rep);
-      if (isSupabaseConfigured) { try { await supabase.from('representatives').insert(rep); } catch (e) {} }
+      if (isSupabaseConfigured) { try { await supabase.from('representatives').insert(rep); } catch (e) { console.error(e); } }
   }
 
   async updateRepresentative(id: string, updates: Partial<Representative>) {
       const idx = this.representatives.findIndex(r => r.id === id);
       if (idx !== -1) {
           this.representatives[idx] = { ...this.representatives[idx], ...updates };
-          if (isSupabaseConfigured) { try { await supabase.from('representatives').update(updates).eq('id', id); } catch (e) {} }
+          if (isSupabaseConfigured) { try { await supabase.from('representatives').update(updates).eq('id', id); } catch (e) { console.error(e); } }
       }
   }
 
   async deleteRepresentative(id: string) {
     this.representatives = this.representatives.filter(r => r.id !== id);
-    if (isSupabaseConfigured) { try { await supabase.from('representatives').delete().eq('id', id); } catch (e) {} }
+    if (isSupabaseConfigured) { try { await supabase.from('representatives').delete().eq('id', id); } catch (e) { console.error(e); } }
   }
 
   async addWarehouse(name: string) {
+      const sanitizedName = String(name || '').trim();
+      if (!sanitizedName) return;
       const id = `W-${Date.now()}`;
-      const w = { id, name, is_default: false };
+      const w = { id, name: sanitizedName, is_default: false };
       this.warehouses.push(w);
-      if (isSupabaseConfigured) { try { await supabase.from('warehouses').insert(w); } catch (e) {} }
+      if (isSupabaseConfigured) { try { await supabase.from('warehouses').insert(w); } catch (e) { console.error(e); } }
   }
 
   async updateWarehouse(id: string, name: string) {
+    const sanitizedName = String(name || '').trim();
+    if (!sanitizedName) return;
     const idx = this.warehouses.findIndex(w => w.id === id);
     if (idx !== -1) {
-      this.warehouses[idx].name = name;
-      if (isSupabaseConfigured) { try { await supabase.from('warehouses').update({ name }).eq('id', id); } catch (e) {} }
+      this.warehouses[idx].name = sanitizedName;
+      if (isSupabaseConfigured) { try { await supabase.from('warehouses').update({ name: sanitizedName }).eq('id', id); } catch (e) { console.error(e); } }
     }
   }
 
   async addProduct(p: any, b?: any): Promise<string> {
+    const productName = String(p.name || '').trim();
+    if (!productName) throw new Error("Product name is required");
+    
     let codeStr = (p.code && String(p.code).trim()) ? String(p.code).trim() : `AUTO-${Date.now().toString().slice(-6)}`;
-    let existingIdx = this.products.findIndex(x => (p.code && x.code === codeStr) || x.name === p.name);
+    let existingIdx = this.products.findIndex(x => (p.code && x.code === codeStr) || x.name === productName);
     let pid = existingIdx !== -1 ? this.products[existingIdx].id : null;
 
     const s_price = isNaN(Number(b?.selling_price)) ? (Number(p.selling_price) || 0) : Number(b.selling_price);
@@ -300,17 +332,17 @@ class DatabaseService {
 
     if (existingIdx === -1) {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
-        const product: Product = { id: pid, code: codeStr, name: p.name, selling_price: s_price, purchase_price: p_price };
+        const product: Product = { id: pid, code: codeStr, name: productName, selling_price: s_price, purchase_price: p_price };
         this.products.push(product);
-        if (isSupabaseConfigured) { try { await supabase.from('products').insert(product); } catch (e) {} }
+        if (isSupabaseConfigured) { try { await supabase.from('products').insert(product); } catch (e) { console.error(e); } }
     } else {
         const updates: Partial<Product> = {
             selling_price: s_price > 0 ? s_price : this.products[existingIdx].selling_price,
             purchase_price: p_price > 0 ? p_price : this.products[existingIdx].purchase_price,
+            name: productName
         };
-        if (this.products[existingIdx].name !== p.name) updates.name = p.name;
         this.products[existingIdx] = { ...this.products[existingIdx], ...updates };
-        if (isSupabaseConfigured) { try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) {} }
+        if (isSupabaseConfigured) { try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) { console.error(e); } }
     }
     
     if (b && pid && !isNaN(Number(b.quantity)) && Number(b.quantity) > 0) {
@@ -322,12 +354,12 @@ class DatabaseService {
         if (existingBatchIdx !== -1) {
             const updatedBatch = { ...this.batches[existingBatchIdx], quantity: qty, purchase_price: p_price, selling_price: s_price, expiry_date: b.expiry_date || this.batches[existingBatchIdx].expiry_date };
             this.batches[existingBatchIdx] = updatedBatch;
-            if (isSupabaseConfigured) { try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) {} }
+            if (isSupabaseConfigured) { try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) { console.error(e); } }
         } else {
             const batchId = `B${Date.now()}-${Math.floor(Math.random()*1000)}`;
             const batch = { id: batchId, product_id: pid, warehouse_id: defaultWarehouseId, batch_number: bNo, quantity: qty, purchase_price: p_price, selling_price: s_price, expiry_date: b.expiry_date || '2099-12-31', status: BatchStatus.ACTIVE };
             this.batches.push(batch);
-            if (isSupabaseConfigured) { try { await supabase.from('batches').insert(batch); } catch (e) {} }
+            if (isSupabaseConfigured) { try { await supabase.from('batches').insert(batch); } catch (e) { console.error(e); } }
         }
     }
     return pid || '';
@@ -382,13 +414,18 @@ class DatabaseService {
 
   async transferStock(batchId: string, targetWarehouseId: string, quantity: number): Promise<{ success: boolean; message: string }> {
     try {
+        const targetWarehouse = this.warehouses.find(w => w.id === targetWarehouseId);
+        if (!targetWarehouse) throw new Error("Target warehouse not found");
+
         const sourceBatchIdx = this.batches.findIndex(b => b.id === batchId);
         if (sourceBatchIdx === -1) throw new Error("Source Batch Not Found");
         const sourceBatch = this.batches[sourceBatchIdx];
         if (sourceBatch.quantity < quantity) throw new Error("Insufficient Quantity");
+        
         const newSourceQty = sourceBatch.quantity - quantity;
         sourceBatch.quantity = newSourceQty;
         if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newSourceQty }).eq('id', batchId); } catch (e) {} }
+        
         const newBatchId = `B${Date.now()}-T`;
         const newBatch = { ...sourceBatch, id: newBatchId, warehouse_id: targetWarehouseId, quantity: quantity };
         this.batches.push(newBatch);
@@ -438,6 +475,7 @@ class DatabaseService {
         const newBalance = isReturn ? this.customers[customerIdx].current_balance - netTotal : this.customers[customerIdx].current_balance + netTotal;
         this.customers[customerIdx].current_balance = newBalance;
         if (isSupabaseConfigured) { try { await supabase.from('customers').update({ current_balance: newBalance }).eq('id', customerId); } catch (e) {} }
+        
         const invoiceId = `INV-${Date.now()}`;
         const invoice: Invoice = {
             id: invoiceId, invoice_number: `${Date.now()}`, customer_id: customerId, created_by: createdBy?.id, created_by_name: createdBy?.name,
@@ -448,11 +486,13 @@ class DatabaseService {
         };
         this.invoices.push(invoice);
         if (isSupabaseConfigured) { try { await supabase.from('invoices').insert(invoice); } catch (e) {} }
+        
         if(cashPaid > 0) {
              await this.addCashTransaction({
                  type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT',
                  reference_id: invoiceId, related_name: this.customers[customerIdx].name, amount: cashPaid,
-                 date: new Date().toISOString(), notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`
+                 date: new Date().toISOString(), notes: `${isReturn ? 'Refund' : 'Payment'} for INV#${invoice.invoice_number}`,
+                 ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT)
              });
         }
         return { success: true, message: isReturn ? 'Return Created' : 'Invoice Created', id: invoiceId };
@@ -474,7 +514,8 @@ class DatabaseService {
       await this.addCashTransaction({
           type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: invoiceId,
           related_name: this.customers[customerIdx]?.name, amount: amount, date: new Date().toISOString(),
-          notes: `Payment for INV#${invoice.invoice_number}`
+          notes: `Payment for INV#${invoice.invoice_number}`,
+          ref_number: this.getNextTransactionRef(CashTransactionType.RECEIPT)
       });
       return { success: true, message: "Payment recorded" };
     }
@@ -494,7 +535,7 @@ class DatabaseService {
 
   getNextTransactionRef(type: CashTransactionType): string {
       const prefix = type === CashTransactionType.RECEIPT ? 'REC' : 'PAY';
-      const count = this.cashTransactions.filter(t => t.type === type).length + 1;
+      const count = this.cashTransactions.filter(t => t.type === type && t.ref_number?.startsWith(prefix)).length + 1;
       return `${prefix}-${count.toString().padStart(5, '0')}`;
   }
 
@@ -614,6 +655,7 @@ class DatabaseService {
       this.purchaseInvoices = [];
       this.cashTransactions = [];
       this.purchaseOrders = [];
+      this.stockMovements = [];
       this.customers.forEach(c => c.current_balance = c.opening_balance);
       this.suppliers.forEach(s => s.current_balance = s.opening_balance);
       if (isSupabaseConfigured) {
@@ -622,38 +664,73 @@ class DatabaseService {
             supabase.from('invoices').delete().neq('id', '0'),
             supabase.from('purchase_invoices').delete().neq('id', '0'),
             supabase.from('cash_transactions').delete().neq('id', '0'),
-            supabase.from('purchase_orders').delete().neq('id', '0')
+            supabase.from('purchase_orders').delete().neq('id', '0'),
+            supabase.from('stock_movements').delete().neq('id', '0')
           ]);
-        } catch (e) {}
+        } catch (e) {
+          console.error("Failed to clear remote transactions:", e);
+        }
       }
   }
   
   async clearCustomers() { 
       this.customers = [];
-      if (isSupabaseConfigured) { try { await supabase.from('customers').delete().neq('id', '0'); } catch (e) {} }
+      if (isSupabaseConfigured) { try { await supabase.from('customers').delete().neq('id', '0'); } catch (e) { console.error(e); } }
   }
   async clearProducts() { 
       this.products = [];
       this.batches = [];
-      if (isSupabaseConfigured) { try { await supabase.from('products').delete().neq('id', '0'); } catch (e) {} }
+      if (isSupabaseConfigured) { try { await supabase.from('products').delete().neq('id', '0'); } catch (e) { console.error(e); } }
   }
   
   async resetDatabase() {
       await this.clearTransactions();
       await this.clearCustomers();
       await this.clearProducts();
+      await this.resetSettings();
       window.location.reload();
   }
 
-  exportDatabase(): string { return JSON.stringify({ products: this.products, customers: this.customers, suppliers: this.suppliers, invoices: this.invoices, transactions: this.cashTransactions }); }
-  importDatabase(json: string): boolean { 
+  exportDatabase(): string { 
+    return JSON.stringify({ 
+      products: this.products, 
+      batches: this.batches,
+      customers: this.customers, 
+      suppliers: this.suppliers, 
+      invoices: this.invoices, 
+      purchaseInvoices: this.purchaseInvoices,
+      cashTransactions: this.cashTransactions,
+      settings: this.settings 
+    }); 
+  }
+
+  async importDatabase(json: string): Promise<boolean> { 
       try {
           const data = JSON.parse(json);
+          if (data.products) this.products = data.products;
+          if (data.batches) this.batches = data.batches;
+          if (data.customers) this.customers = data.customers;
+          if (data.suppliers) this.suppliers = data.suppliers;
+          if (data.invoices) this.invoices = data.invoices;
+          if (data.purchaseInvoices) this.purchaseInvoices = data.purchaseInvoices;
+          if (data.cashTransactions) this.cashTransactions = data.cashTransactions;
+          if (data.settings) this.settings = data.settings;
+          
+          if (isSupabaseConfigured) {
+              // This is a complex operation; in production, you'd use a bulk RPC call
+              // For this implementation, we rely on memory sync and the user's explicit action
+              console.warn("Bulk import only applied to local memory. Refresh recommended.");
+          }
           return true;
-      } catch(e) { return false; }
+      } catch(e) { 
+          console.error("Import failed:", e);
+          return false; 
+      }
   }
   
-  getStockMovements(productId?: string) { return this.stockMovements; }
+  getStockMovements(productId?: string) { 
+      return productId ? this.stockMovements.filter(sm => sm.product_id === productId) : this.stockMovements; 
+  }
 
   getGeneralLedger(): JournalEntry[] {
     const entries: JournalEntry[] = [];
