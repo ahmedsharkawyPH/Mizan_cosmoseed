@@ -6,7 +6,7 @@ import {
   PlusCircle, RotateCcw, ArrowRightLeft, X, PackagePlus, Search, 
   Trash2, AlertTriangle, Package, Calendar, Hash, ShoppingBag, 
   Download, FileSpreadsheet, Loader2, Edit2, Save, FileOutput, 
-  Info, DollarSign, BarChart3, ChevronRight, CheckCircle2, AlertCircle
+  Info, DollarSign, BarChart3, ChevronRight, CheckCircle2, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Batch, Product, ProductWithBatches } from '../types';
@@ -40,6 +40,11 @@ const Inventory: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'LOW' | 'OUT'>('ALL');
   const [isImporting, setIsImporting] = useState(false);
+
+  // تحديث البيانات عند فتح الصفحة (يتم الجلب الفعلي في db.init عند تشغيل التطبيق)
+  useEffect(() => {
+    setProducts(db.getProductsWithBatches());
+  }, []);
 
   // Quick Edit State
   const [editModal, setEditModal] = useState<{ isOpen: boolean; batch: Batch | null; product: Product | null }>({ isOpen: false, batch: null, product: null });
@@ -345,8 +350,7 @@ const Inventory: React.FC = () => {
         )}
       </div>
 
-      {/* --- Modals Stay the same logic-wise but with polished CSS --- */}
-      
+      {/* Modals are unchanged but included for consistency */}
       {/* Quick Edit Prices Modal */}
       {editModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">

@@ -48,7 +48,8 @@ class DatabaseService {
   private purchaseInvoices: PurchaseInvoice[] = [];
   private purchaseOrders: PurchaseOrder[] = [];
   private cashTransactions: CashTransaction[] = [];
-  private stockMovements: StockMovement[] = []; 
+  // Fix: Added missing stockMovements property
+  private stockMovements: StockMovement[] = [];
   private settings: SystemSettings = {
     companyName: 'Mizan Online',
     companyAddress: 'Cairo, Egypt',
@@ -67,6 +68,36 @@ class DatabaseService {
   public isInitialized = false;
 
   constructor() {}
+
+  // وظيفة مساعدة لجلب كافة السجلات مهما كان عددها (تتجاوز حد الـ 1000)
+  private async fetchAllFromTable(tableName: string) {
+    if (!isSupabaseConfigured) return [];
+    
+    let allData: any[] = [];
+    let from = 0;
+    let to = 999;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('*')
+        .range(from, to);
+
+      if (error || !data || data.length === 0) {
+        hasMore = false;
+      } else {
+        allData = [...allData, ...data];
+        if (data.length < 1000) {
+          hasMore = false;
+        } else {
+          from += 1000;
+          to += 1000;
+        }
+      }
+    }
+    return allData;
+  }
 
   private mapFromDb(dbData: any): SystemSettings {
     return {
@@ -105,35 +136,29 @@ class DatabaseService {
     };
   }
 
-  private async safeFetch(builder: any) {
-    if (!isSupabaseConfigured) return null;
-    try {
-      const { data, error } = await builder;
-      if (error) return null;
-      return data;
-    } catch (e) {
-      return null;
-    }
-  }
-
   async init() {
     if(this.isInitialized) return;
     try {
-        const results = await Promise.all([
-            this.safeFetch(supabase.from('products').select('*')),
-            this.safeFetch(supabase.from('batches').select('*')),
-            this.safeFetch(supabase.from('customers').select('*')),
-            this.safeFetch(supabase.from('suppliers').select('*')),
-            this.safeFetch(supabase.from('warehouses').select('*')),
-            this.safeFetch(supabase.from('invoices').select('*')),
-            this.safeFetch(supabase.from('purchase_invoices').select('*')),
-            this.safeFetch(supabase.from('purchase_orders').select('*')),
-            this.safeFetch(supabase.from('cash_transactions').select('*')),
-            this.safeFetch(supabase.from('representatives').select('*')),
-            this.safeFetch(supabase.from('settings').select('*').eq('id', 1).maybeSingle()),
+        // جلب البيانات الأساسية (الإعدادات لا تحتاج Pagination لأنها سجل واحد)
+        const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
+        if (set) this.settings = this.mapFromDb(set);
+
+        // جلب كافة الجداول باستخدام نظام الـ Pagination لتخطي حاجز الـ 1000 سجل
+        // Fix: Added stock_movements to the parallel fetch operations
+        const [p, b, c, s, w, inv, pur, po, cash, rep, sm] = await Promise.all([
+            this.fetchAllFromTable('products'),
+            this.fetchAllFromTable('batches'),
+            this.fetchAllFromTable('customers'),
+            this.fetchAllFromTable('suppliers'),
+            this.fetchAllFromTable('warehouses'),
+            this.fetchAllFromTable('invoices'),
+            this.fetchAllFromTable('purchase_invoices'),
+            this.fetchAllFromTable('purchase_orders'),
+            this.fetchAllFromTable('cash_transactions'),
+            this.fetchAllFromTable('representatives'),
+            this.fetchAllFromTable('stock_movements'),
         ]);
 
-        const [p, b, c, s, w, inv, pur, po, cash, rep, set] = results;
         if (p) this.products = p;
         if (b) this.batches = b;
         if (c) this.customers = c;
@@ -144,9 +169,14 @@ class DatabaseService {
         if (po) this.purchaseOrders = po;
         if (cash) this.cashTransactions = cash;
         if (rep) this.representatives = rep;
-        if (set) this.settings = this.mapFromDb(set);
-        if (this.warehouses.length === 0) this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
+        // Fix: Properly assign fetched stock movements
+        if (sm) this.stockMovements = sm;
+
+        if (this.warehouses.length === 0) {
+            this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
+        }
     } catch (error) {
+        console.error("Database initialization failed:", error);
     } finally {
         this.isInitialized = true;
     }
@@ -261,46 +291,28 @@ class DatabaseService {
   }
 
   async addProduct(p: any, b?: any): Promise<string> {
-    // توليد كود تلقائي إذا كان الكود مفقوداً أو فارغاً
     let codeStr = (p.code && String(p.code).trim()) ? String(p.code).trim() : `AUTO-${Date.now().toString().slice(-6)}`;
-    
-    // البحث عن المنتج إذا كان موجوداً مسبقاً (بالاسم أو بالكود إذا توفر)
-    // نستخدم findIndex بدلاً من find للحصول على المرجع الصحيح في المصفوفة
     let existingIdx = this.products.findIndex(x => (p.code && x.code === codeStr) || x.name === p.name);
     let pid = existingIdx !== -1 ? this.products[existingIdx].id : null;
 
     const s_price = isNaN(Number(b?.selling_price)) ? (Number(p.selling_price) || 0) : Number(b.selling_price);
     const p_price = isNaN(Number(b?.purchase_price)) ? (Number(p.purchase_price) || 0) : Number(b.purchase_price);
 
-    // 1. إدارة المنتج وحفظ الأسعار في جدول المنتج مباشرة
     if (existingIdx === -1) {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
-        const product: Product = { 
-            id: pid, 
-            code: codeStr, 
-            name: p.name, 
-            selling_price: s_price, 
-            purchase_price: p_price 
-        };
+        const product: Product = { id: pid, code: codeStr, name: p.name, selling_price: s_price, purchase_price: p_price };
         this.products.push(product);
-        if (isSupabaseConfigured) { 
-            try { await supabase.from('products').insert(product); } catch (e) {} 
-        }
+        if (isSupabaseConfigured) { try { await supabase.from('products').insert(product); } catch (e) {} }
     } else {
         const updates: Partial<Product> = {
             selling_price: s_price > 0 ? s_price : this.products[existingIdx].selling_price,
             purchase_price: p_price > 0 ? p_price : this.products[existingIdx].purchase_price,
         };
-
         if (this.products[existingIdx].name !== p.name) updates.name = p.name;
-
         this.products[existingIdx] = { ...this.products[existingIdx], ...updates };
-        if (isSupabaseConfigured) { 
-            try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) {} 
-        }
+        if (isSupabaseConfigured) { try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) {} }
     }
     
-    // 2. إدارة الباتش (فقط إذا تم توفير كمية)
     if (b && pid && !isNaN(Number(b.quantity)) && Number(b.quantity) > 0) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
         const bNo = String(b.batch_number || 'AUTO');
@@ -308,34 +320,14 @@ class DatabaseService {
         const qty = Number(b.quantity);
 
         if (existingBatchIdx !== -1) {
-            const updatedBatch = {
-                ...this.batches[existingBatchIdx],
-                quantity: qty,
-                purchase_price: p_price,
-                selling_price: s_price,
-                expiry_date: b.expiry_date || this.batches[existingBatchIdx].expiry_date
-            };
+            const updatedBatch = { ...this.batches[existingBatchIdx], quantity: qty, purchase_price: p_price, selling_price: s_price, expiry_date: b.expiry_date || this.batches[existingBatchIdx].expiry_date };
             this.batches[existingBatchIdx] = updatedBatch;
-            if (isSupabaseConfigured) { 
-                try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) {} 
-            }
+            if (isSupabaseConfigured) { try { await supabase.from('batches').update(updatedBatch).eq('id', updatedBatch.id); } catch (e) {} }
         } else {
             const batchId = `B${Date.now()}-${Math.floor(Math.random()*1000)}`;
-            const batch = { 
-                id: batchId, 
-                product_id: pid, 
-                warehouse_id: defaultWarehouseId,
-                batch_number: bNo,
-                quantity: qty,
-                purchase_price: p_price,
-                selling_price: s_price,
-                expiry_date: b.expiry_date || '2099-12-31',
-                status: BatchStatus.ACTIVE 
-            };
+            const batch = { id: batchId, product_id: pid, warehouse_id: defaultWarehouseId, batch_number: bNo, quantity: qty, purchase_price: p_price, selling_price: s_price, expiry_date: b.expiry_date || '2099-12-31', status: BatchStatus.ACTIVE };
             this.batches.push(batch);
-            if (isSupabaseConfigured) { 
-                try { await supabase.from('batches').insert(batch); } catch (e) {} 
-            }
+            if (isSupabaseConfigured) { try { await supabase.from('batches').insert(batch); } catch (e) {} }
         }
     }
     return pid || '';
@@ -353,14 +345,9 @@ class DatabaseService {
           if (pIdx !== -1) {
               this.products[pIdx].selling_price = selling_price;
               this.products[pIdx].purchase_price = purchase_price;
-              if (isSupabaseConfigured) {
-                  try { await supabase.from('products').update({ selling_price, purchase_price }).eq('id', pid); } catch (e) {}
-              }
+              if (isSupabaseConfigured) { try { await supabase.from('products').update({ selling_price, purchase_price }).eq('id', pid); } catch (e) {} }
           }
-
-          if (isSupabaseConfigured) {
-              try { await supabase.from('batches').update({ purchase_price, selling_price, quantity }).eq('id', batchId); } catch (e) {}
-          }
+          if (isSupabaseConfigured) { try { await supabase.from('batches').update({ purchase_price, selling_price, quantity }).eq('id', batchId); } catch (e) {} }
       }
   }
 
@@ -369,9 +356,7 @@ class DatabaseService {
       if (idx !== -1) {
           this.products[idx].selling_price = selling_price;
           this.products[idx].purchase_price = purchase_price;
-          if (isSupabaseConfigured) {
-              try { await supabase.from('products').update({ selling_price, purchase_price }).eq('id', productId); } catch (e) {}
-          }
+          if (isSupabaseConfigured) { try { await supabase.from('products').update({ selling_price, purchase_price }).eq('id', productId); } catch (e) {} }
       }
   }
 
@@ -540,7 +525,6 @@ class DatabaseService {
                 this.batches.push(newB);
                 if (isSupabaseConfigured) { try { await supabase.from('batches').insert(newB); } catch (e) {} }
             }
-            
             await this.updateProductPrices(item.product_id, item.cost_price, item.selling_price);
         }
         const inv: PurchaseInvoice = { id, invoice_number: id, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
