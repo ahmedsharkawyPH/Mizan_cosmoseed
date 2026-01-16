@@ -260,42 +260,47 @@ class DatabaseService {
     }
   }
 
-  /**
-   * دالة محسنة لإضافة المنتج والباتش.
-   * تدعم حفظ الأسعار الافتراضية في سطر المنتج.
-   */
   async addProduct(p: any, b?: any): Promise<string> {
-    const codeStr = String(p.code);
-    const existingProduct = this.products.find(x => x.code === codeStr);
+    // توليد كود تلقائي إذا كان الكود مفقوداً
+    let codeStr = p.code ? String(p.code).trim() : `AUTO-${Date.now().toString().slice(-6)}`;
+    
+    // البحث عن المنتج إذا كان موجوداً مسبقاً (بالاسم أو بالكود إذا توفر)
+    let existingProduct = this.products.find(x => (p.code && x.code === codeStr) || x.name === p.name);
     let pid = existingProduct?.id;
 
     const s_price = isNaN(Number(b?.selling_price)) ? (p.selling_price || 0) : Number(b.selling_price);
     const p_price = isNaN(Number(b?.purchase_price)) ? (p.purchase_price || 0) : Number(b.purchase_price);
 
-    // 1. إدارة المنتج وحفظ الأسعار الافتراضية
+    // 1. إدارة المنتج وحفظ الأسعار في جدول المنتج مباشرة
     if (!existingProduct) {
         pid = `P${Date.now()}-${Math.floor(Math.random()*1000)}`;
-        const product: Product = { id: pid, code: codeStr, name: p.name, selling_price: s_price, purchase_price: p_price };
+        const product: Product = { 
+            id: pid, 
+            code: codeStr, 
+            name: p.name, 
+            selling_price: s_price, 
+            purchase_price: p_price 
+        };
         this.products.push(product);
         if (isSupabaseConfigured) { 
-            try { await supabase.from('products').upsert(product, { onConflict: 'code' }); } catch (e) {} 
+            try { await supabase.from('products').insert(product); } catch (e) {} 
         }
     } else {
         const idx = this.products.findIndex(x => x.id === pid);
-        const updates: Partial<Product> = {};
-        if (this.products[idx].name !== p.name) updates.name = p.name;
-        if (s_price > 0) updates.selling_price = s_price;
-        if (p_price > 0) updates.purchase_price = p_price;
+        const updates: Partial<Product> = {
+            selling_price: s_price > 0 ? s_price : this.products[idx].selling_price,
+            purchase_price: p_price > 0 ? p_price : this.products[idx].purchase_price,
+        };
 
-        if (Object.keys(updates).length > 0) {
-            this.products[idx] = { ...this.products[idx], ...updates };
-            if (isSupabaseConfigured) { 
-                try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) {} 
-            }
+        if (this.products[idx].name !== p.name) updates.name = p.name;
+
+        this.products[idx] = { ...this.products[idx], ...updates };
+        if (isSupabaseConfigured) { 
+            try { await supabase.from('products').update(updates).eq('id', pid); } catch (e) {} 
         }
     }
     
-    // 2. إدارة الباتش (إذا تم توفير بيانات كمية)
+    // 2. إدارة الباتش (فقط إذا تم توفير كمية)
     if (b && pid && !isNaN(Number(b.quantity)) && Number(b.quantity) > 0) {
         const defaultWarehouseId = this.warehouses.find(w => w.is_default)?.id || 'W1';
         const bNo = String(b.batch_number || 'AUTO');
@@ -344,7 +349,6 @@ class DatabaseService {
           this.batches[idx].selling_price = selling_price;
           this.batches[idx].quantity = quantity;
           
-          // تحديث السعر الافتراضي للمنتج أيضاً عند تعديل آخر تشغيلة
           const pIdx = this.products.findIndex(p => p.id === pid);
           if (pIdx !== -1) {
               this.products[pIdx].selling_price = selling_price;
@@ -443,8 +447,6 @@ class DatabaseService {
                 const newQty = isReturn ? this.batches[batchIdx].quantity + totalQtyChange : this.batches[batchIdx].quantity - totalQtyChange;
                 this.batches[batchIdx].quantity = newQty;
                 if (isSupabaseConfigured) { try { await supabase.from('batches').update({ quantity: newQty }).eq('id', item.batch.id); } catch (e) {} }
-            } else if (!isReturn) {
-                // في حالة بيع منتج ليس له تشغيلة، يمكن لاحقاً إضافة منطق لإنشاء تشغيلة سالبة أو مجرد تجاهل الخصم المخزني
             }
         }
 
@@ -539,7 +541,6 @@ class DatabaseService {
                 if (isSupabaseConfigured) { try { await supabase.from('batches').insert(newB); } catch (e) {} }
             }
             
-            // تحديث السعر الافتراضي للمنتج أيضاً
             await this.updateProductPrices(item.product_id, item.cost_price, item.selling_price);
         }
         const inv: PurchaseInvoice = { id, invoice_number: id, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };

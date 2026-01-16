@@ -26,12 +26,12 @@ export interface Warehouse {
 
 export interface Product {
   id: string;
-  code: string;
+  code?: string; // التعديل: جعل الكود اختيارياً
   name: string;
   package_type?: string; 
   items_per_package?: number;
-  selling_price?: number; // السعر الافتراضي للبيع
-  purchase_price?: number; // السعر الافتراضي للشراء
+  selling_price?: number; 
+  purchase_price?: number; 
 }
 
 export interface Batch {
@@ -197,7 +197,7 @@ export interface ProductWithBatches extends Product {
 
 export interface CartItem {
   product: Product;
-  batch?: Batch; // جعل الباتش اختيارياً للسماح بالبيع من الكتالوج
+  batch?: Batch; 
   quantity: number;
   bonus_quantity: number;
   discount_percentage: number;
