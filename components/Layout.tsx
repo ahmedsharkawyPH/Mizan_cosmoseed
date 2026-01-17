@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid } from 'lucide-react';
+import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
@@ -11,7 +11,6 @@ import AiAssistant from './AiAssistant';
 export default function Layout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  // التعديل: تخزين مفتاح قائمة واحدة فقط مفتوحة لتحقيق سلوك الانكماش التلقائي (Accordion)
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
@@ -35,7 +34,6 @@ export default function Layout() {
   };
 
   const toggleMenu = (key: string) => {
-      // إذا كانت القائمة مفتوحة نغلقها، وإلا نفتحها ونغلق أي قائمة أخرى مفتوحة تلقائياً
       setOpenMenu(prev => prev === key ? null : key);
   };
 
@@ -83,7 +81,8 @@ export default function Layout() {
         perm: 'MANAGE_WAREHOUSES',
         roles: ['ADMIN'],
         children: [
-            { label: t('ware.title'), path: '/warehouses', icon: WarehouseIcon }
+            { label: t('ware.title'), path: '/warehouses', icon: WarehouseIcon },
+            { label: t('stock.inventory_count'), path: '/stock-take', icon: ClipboardCheck }
         ]
     },
     { label: t('cust.title'), path: '/customers', icon: NAV_ITEMS[4].icon, perm: 'MANAGE_CUSTOMERS', roles: ['ADMIN', 'REP', 'TELESALES'] },
@@ -144,7 +143,6 @@ export default function Layout() {
                 );
             }
             return (
-                /* fix: use function pattern for NavLink children to provide access to isActive state */
                 <NavLink key={item.path} to={item.path} onClick={() => { setIsSidebarOpen(false); setOpenMenu(null); }} className={({ isActive }) => `flex items-center px-4 py-3 rounded-xl transition-all duration-200 group font-bold ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-white hover:bg-slate-800'}`}>
                     {({ isActive }) => (
                         <>
@@ -166,7 +164,7 @@ export default function Layout() {
              </div>
           </div>
           <button onClick={handleLogout} className="flex items-center w-full px-4 py-2 text-sm font-bold text-red-400 rounded-lg hover:bg-red-950/30 transition-colors">
-            <LogOut className="w-5 h-5 ltr:mr-3 rtl:ml-3" />تسجيل الخروج
+            <LogOut className="w-5 h-5 ltr:mr-3 rtl:ml-3" />{t('nav.logout') || 'تسجيل الخروج'}
           </button>
         </div>
       </aside>
