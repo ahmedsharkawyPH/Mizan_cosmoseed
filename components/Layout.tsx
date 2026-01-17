@@ -199,7 +199,7 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-slate-50 p-4 lg:p-8 custom-scrollbar">
+        <main className="flex-1 overflow-auto bg-slate-50 p-4 lg:p-8 custom-scrollbar">
           <div className="max-w-7xl mx-auto animate-in fade-in zoom-in duration-300">
             <Outlet />
           </div>

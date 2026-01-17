@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { Invoice, PaymentStatus } from '../types';
@@ -21,7 +22,7 @@ const INVOICE_STYLES = `
         flex-direction: column;
         align-items: center;
         padding: 20px;
-        overflow-y: auto;
+        overflow: auto;
     }
 
     /* Common Styles for the Invoice Half */
