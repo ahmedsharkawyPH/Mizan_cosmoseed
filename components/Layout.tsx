@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck } from 'lucide-react';
+import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck, ShieldCheck } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
@@ -39,6 +39,7 @@ export default function Layout() {
 
   const sidebarItems = [
     { label: t('nav.dashboard'), path: '/', icon: NAV_ITEMS[0].icon, perm: 'VIEW_DASHBOARD', roles: ['ADMIN', 'TELESALES'] },
+    { label: 'المدير', path: '/settings', icon: ShieldCheck, perm: 'MANAGE_SETTINGS', roles: ['ADMIN'] },
     {
         key: 'sales_mgmt',
         label: t('nav.sales'),

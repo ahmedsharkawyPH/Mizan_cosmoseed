@@ -249,7 +249,7 @@ const Inventory: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* قسم الأسعار المضاف */}
+                  {/* قسم الأسعار */}
                   <div className="flex gap-8 px-4 border-r border-l border-slate-50">
                     <div className="text-center">
                         <p className="text-[10px] text-slate-400 font-black uppercase flex items-center gap-1 justify-center">
