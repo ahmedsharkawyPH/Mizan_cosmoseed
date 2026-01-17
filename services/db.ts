@@ -78,28 +78,23 @@ class DatabaseService {
   private _cashBalance: number = 0;
 
   public isInitialized = false;
+  public isFullyLoaded = false;
 
   constructor() {}
 
-  private async fetchAllFromTable(tableName: string) {
+  private async fetchAllFromTable(tableName: string, limit?: number) {
     if (!isSupabaseConfigured) return [];
     try {
       let allData: any[] = [];
       let page = 0;
-      const pageSize = 1000;
+      const pageSize = limit || 1000;
       let hasMore = true;
       while (hasMore) {
         const { data, error } = await supabase.from(tableName).select('*').range(page * pageSize, (page + 1) * pageSize - 1);
-        if (error) {
-            if (error.code === 'PGRST116' || error.message.includes('not found')) {
-                console.warn(`[DB] Table '${tableName}' does not exist yet.`);
-                return [];
-            }
-            throw error;
-        }
+        if (error) throw error;
         if (!data || data.length === 0) { hasMore = false; break; }
         allData = [...allData, ...data];
-        if (data.length < pageSize) hasMore = false; else page++;
+        if (data.length < pageSize || limit) hasMore = false; else page++;
       }
       return allData;
     } catch (error: any) {
@@ -111,39 +106,28 @@ class DatabaseService {
   async init() {
     if(this.isInitialized) return;
     try {
+        // المرحلة 1: البيانات الحساسة والسريعة
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
-        const tables = [
-            'products', 'batches', 'customers', 'suppliers', 
-            'warehouses', 'invoices', 'purchase_invoices', 
-            'purchase_orders', 'cash_transactions', 'representatives', 
-            'stock_movements', 'pending_adjustments', 'daily_closings'
-        ];
+        // جلب الأساسيات فقط للبدء
+        const [wareData, prodData, custData, invData] = await Promise.all([
+            this.fetchAllFromTable('warehouses'),
+            this.fetchAllFromTable('products', 100), // أول 100 صنف
+            this.fetchAllFromTable('customers', 50),  // أول 50 عميل
+            this.fetchAllFromTable('invoices', 50)    // آخر 50 فاتورة
+        ]);
 
-        const results = await Promise.allSettled(tables.map(table => this.fetchAllFromTable(table)));
+        this.warehouses = wareData;
+        this.products = prodData;
+        this.customers = custData;
+        this.invoices = invData;
 
-        results.forEach((result, index) => {
-            if (result.status === 'fulfilled') {
-                const data = result.value || [];
-                const tableName = tables[index];
-                switch(tableName) {
-                    case 'products': this.products = data; break;
-                    case 'batches': this.batches = data; break;
-                    case 'customers': this.customers = data; break;
-                    case 'suppliers': this.suppliers = data; break;
-                    case 'warehouses': this.warehouses = data; break;
-                    case 'invoices': this.invoices = data; break;
-                    case 'purchase_invoices': this.purchaseInvoices = data; break;
-                    case 'purchase_orders': this.purchaseOrders = data; break;
-                    case 'cash_transactions': this.cashTransactions = data; break;
-                    case 'representatives': this.representatives = data; break;
-                    case 'stock_movements': this.stockMovements = data; break;
-                    case 'pending_adjustments': this.pendingAdjustments = data; break;
-                    case 'daily_closings': this.dailyClosings = data; break;
-                }
-            }
-        });
+        // جلب دفعات المنتجات المحملة حالياً فقط
+        if (this.products.length > 0) {
+            const { data: batchData } = await supabase.from('batches').select('*').in('product_id', this.products.map(p => p.id));
+            this.batches = batchData || [];
+        }
 
         this.rebuildIndexes();
         
@@ -151,13 +135,65 @@ class DatabaseService {
             this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
         }
         
-        console.log("[DB] System initialized successfully with cloud sync.");
-    } catch (error) {
-        console.error("[DB] Initialization critical failure:", error);
-        toast.error("خطأ في الاتصال بالسحابة، النظام يعمل بالبيانات المحلية.");
-    } finally {
         this.isInitialized = true;
+        console.log("[DB] Essential data loaded. App ready.");
+
+        // المرحلة 2: تحميل الباقي في الخلفية
+        this.loadRemainingData();
+
+    } catch (error) {
+        console.error("[DB] Staged init failure:", error);
+        toast.error("خطأ في الاتصال، النظام يعمل ببيانات محدودة حالياً.");
+        this.isInitialized = true; // نفتح التطبيق حتى لو ببيانات محدودة
     }
+  }
+
+  private async loadRemainingData() {
+      try {
+          const tables = [
+              'products', 'batches', 'customers', 'suppliers', 
+              'invoices', 'purchase_invoices', 'purchase_orders', 
+              'cash_transactions', 'representatives', 'stock_movements', 
+              'pending_adjustments', 'daily_closings'
+          ];
+
+          // تحميل كامل البيانات
+          const results = await Promise.allSettled(tables.map(t => this.fetchAllFromTable(t)));
+
+          results.forEach((result, index) => {
+              if (result.status === 'fulfilled') {
+                  const data = result.value || [];
+                  const tableName = tables[index];
+                  // نستخدم دمج ذكي لمنع التكرار مع ما تم تحميله في المرحلة 1
+                  this.mergeDataSafely(tableName, data);
+              }
+          });
+
+          this.rebuildIndexes();
+          this.isFullyLoaded = true;
+          console.log("[DB] Background full data load complete.");
+      } catch (err) {
+          console.error("[DB] Background load failed", err);
+      }
+  }
+
+  private mergeDataSafely(tableName: string, newData: any[]) {
+      const propertyMap: any = {
+          'products': 'products', 'batches': 'batches', 'customers': 'customers',
+          'suppliers': 'suppliers', 'invoices': 'invoices', 'purchase_invoices': 'purchaseInvoices',
+          'purchase_orders': 'purchaseOrders', 'cash_transactions': 'cashTransactions',
+          'representatives': 'representatives', 'stock_movements': 'stockMovements',
+          'pending_adjustments': 'pendingAdjustments', 'daily_closings': 'dailyClosings'
+      };
+      
+      const prop = propertyMap[tableName];
+      if (!prop) return;
+
+      const existingData = (this as any)[prop] as any[];
+      const existingIds = new Set(existingData.map(i => i.id));
+      
+      const uniqueNewItems = newData.filter(i => !existingIds.has(i.id));
+      (this as any)[prop] = [...existingData, ...uniqueNewItems];
   }
 
   private rebuildIndexes() {
@@ -193,12 +229,7 @@ class DatabaseService {
     sortOrder?: 'asc' | 'desc';
   }) {
     let products = this.getProductsWithBatches();
-    
-    // Applying smart search if query exists
-    if (options.search) {
-      products = ArabicSmartSearch.smartSearch(products, options.search);
-    }
-
+    if (options.search) { products = ArabicSmartSearch.smartSearch(products, options.search); }
     if (options.filters?.lowStockOnly) {
       const threshold = this.settings.lowStockThreshold || 10;
       products = products.filter(p => {
@@ -206,30 +237,7 @@ class DatabaseService {
         return total > 0 && total <= threshold;
       });
     }
-
-    if (options.filters?.outOfStockOnly) {
-      products = products.filter(p => p.batches.reduce((sum, b) => sum + b.quantity, 0) === 0);
-    }
-
-    if (options.sortBy && !options.search) {
-      // Sorting is handled by smartSearch if search query exists
-      products.sort((a, b) => {
-        let valA, valB;
-        if (options.sortBy === 'totalStock') {
-          valA = a.batches.reduce((sum, b) => sum + b.quantity, 0);
-          valB = b.batches.reduce((sum, b) => sum + b.quantity, 0);
-        } else {
-          // @ts-ignore
-          valA = (a[options.sortBy] || '').toString().toLowerCase();
-          // @ts-ignore
-          valB = (b[options.sortBy] || '').toString().toLowerCase();
-        }
-        if (valA < valB) return options.sortOrder === 'asc' ? -1 : 1;
-        if (valA > valB) return options.sortOrder === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-
+    if (options.filters?.outOfStockOnly) { products = products.filter(p => p.batches.reduce((sum, b) => sum + b.quantity, 0) === 0); }
     const total = products.length;
     const start = (options.page - 1) * options.pageSize;
     const paginatedProducts = products.slice(0, start + options.pageSize);
@@ -308,10 +316,7 @@ class DatabaseService {
     return true;
   }
 
-  getDailyClosings(): DailyClosing[] {
-    return [...this.dailyClosings].sort((a, b) => b.date.localeCompare(a.date));
-  }
-
+  getDailyClosings(): DailyClosing[] { return [...this.dailyClosings].sort((a, b) => b.date.localeCompare(a.date)); }
   getProductById(id: string): Product | undefined { return this.productsMap.get(id); }
   getCashBalance(): number { return this._cashBalance; }
 
@@ -370,9 +375,7 @@ class DatabaseService {
     const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
     const invoice: Invoice = { id: invoiceId, invoice_number: `${Date.now()}`, customer_id: customerId, date: new Date().toISOString(), total_before_discount: netTotal + addDisc, total_discount: 0, additional_discount: addDisc, net_total: netTotal, previous_balance: 0, final_balance: 0, payment_status: PaymentStatus.PAID, items, type: isReturn ? 'RETURN' : 'SALE' };
     this.invoices.push(invoice);
-    if (cashPaid > 0) {
-        await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` });
-    }
+    if (cashPaid > 0) { await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` }); }
     if (isSupabaseConfigured) await supabase.from('invoices').insert(invoice);
     return { success: true, message: 'Done', id: invoiceId };
   }
@@ -418,13 +421,11 @@ class DatabaseService {
     this.customers = this.customers.filter(c => c.id !== id);
     if (isSupabaseConfigured) await supabase.from('customers').delete().eq('id', id);
   }
-
   async addSupplier(s: any) {
     const supplier: Supplier = { ...s, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
     this.suppliers.push(supplier);
     if (isSupabaseConfigured) await supabase.from('suppliers').insert(supplier);
   }
-
   async addRepresentative(data: any) {
     const rep: Representative = { ...data, id: `R${Date.now()}` };
     this.representatives.push(rep);
@@ -441,14 +442,12 @@ class DatabaseService {
     this.representatives = this.representatives.filter(r => r.id !== id);
     if (isSupabaseConfigured) await supabase.from('representatives').delete().eq('id', id);
   }
-
   async recordInvoicePayment(invoiceId: string, amount: number) {
     const inv = this.invoices.find(i => i.id === invoiceId);
     if (!inv) return { success: false, message: 'Invoice not found' };
     await this.addCashTransaction({ type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: inv.customer_id, amount: amount, date: new Date().toISOString(), notes: `Collection for INV#${inv.invoice_number}` });
     return { success: true, message: 'Payment recorded' };
   }
-
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false) {
     const id = `PUR${Date.now()}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
@@ -458,7 +457,6 @@ class DatabaseService {
     if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(inv);
     return { success: true, message: 'Done', id };
   }
-
   async createPurchaseOrder(supplierId: string, items: any[]) {
     const order: PurchaseOrder = { id: `PO${Date.now()}`, order_number: `PO-${Date.now()}`, supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items };
     this.purchaseOrders.push(order);
@@ -472,7 +470,6 @@ class DatabaseService {
       if (isSupabaseConfigured) await supabase.from('purchase_orders').update({ status }).eq('id', id);
     }
   }
-
   async addWarehouse(name: string) {
     const w: Warehouse = { id: `W${Date.now()}`, name, is_default: false };
     this.warehouses.push(w);
@@ -485,14 +482,12 @@ class DatabaseService {
       if (isSupabaseConfigured) await supabase.from('warehouses').update({ name }).eq('id', id);
     }
   }
-
   async addExpenseCategory(cat: string) {
     if (!this.settings.expenseCategories.includes(cat)) {
       this.settings.expenseCategories.push(cat);
       await this.updateSettings(this.settings);
     }
   }
-
   getABCAnalysis() {
       const productRevenue: Record<string, number> = {};
       this.invoices.filter(i => i.type === 'SALE').forEach(inv => {
@@ -504,7 +499,6 @@ class DatabaseService {
       const sorted = Object.entries(productRevenue).map(([id, revenue]) => ({ id, name: this.productsMap.get(id)?.name || 'Unknown', revenue })).sort((a,b) => b.revenue - a.revenue);
       return { classifiedProducts: sorted.map(p => ({ ...p, category: 'A' })), totalRevenue: sorted.reduce((a,b)=>a+b.revenue,0) };
   }
-
   getInventoryValuationReport() {
       return this.products.map(p => {
           const productBatches = this.batchesByProductId.get(p.id) || [];
@@ -513,14 +507,12 @@ class DatabaseService {
           return { id: p.id, name: p.name, code: p.code, totalQty, totalValue, wac: totalQty > 0 ? totalValue / totalQty : 0, latestCost: 0, turnoverRate: '0' };
       });
   }
-
   getSystemSnapshot() {
     return JSON.stringify({
       stats: { totalSales: this.invoices.reduce((s, i) => s + i.net_total, 0), cashBalance: this._cashBalance, customerCount: this.customers.length, productCount: this.products.length },
       lowStock: this.products.filter(p => (this.batchesByProductId.get(p.id) || []).reduce((s, b) => s + b.quantity, 0) < this.settings.lowStockThreshold).map(p => p.name)
     });
   }
-
   async resetDatabase() { if (isSupabaseConfigured) await supabase.rpc('clear_all_data'); window.location.reload(); }
   exportDatabase(): string { return JSON.stringify({ products: this.products, batches: this.batches, customers: this.customers }); }
   importDatabase(json: string) { const d = JSON.parse(json); this.products = d.products || []; this.batches = d.batches || []; this.rebuildIndexes(); return true; }

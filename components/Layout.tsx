@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList } from 'lucide-react';
+import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
@@ -14,6 +14,8 @@ export default function Layout() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
+  const [dbFullLoaded, setDbFullLoaded] = useState(db.isFullyLoaded);
+  
   const user = authService.getCurrentUser();
   const settings = db.getSettings();
 
@@ -26,8 +28,17 @@ export default function Layout() {
       if (e.key === 'Escape') setIsCommandOpen(false);
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    
+    // مراقبة حالة تحميل البيانات
+    const checkLoad = setInterval(() => {
+        if (db.isFullyLoaded !== dbFullLoaded) setDbFullLoaded(db.isFullyLoaded);
+    }, 2000);
+
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        clearInterval(checkLoad);
+    };
+  }, [dbFullLoaded]);
 
   const handleLogout = () => {
     authService.logout();
@@ -114,11 +125,6 @@ export default function Layout() {
     { label: t('nav.settings'), path: '/settings', icon: NAV_ITEMS[6].icon, perm: 'MANAGE_SETTINGS', roles: ['ADMIN'] },
   ];
 
-  const searchResults = commandSearch.length > 2 ? [
-    ...db.getCustomers().filter(c => c.name.toLowerCase().includes(commandSearch.toLowerCase())).map(c => ({ type: 'Customer', name: c.name, path: '/customers' })),
-    ...db.getProductsWithBatches().filter(p => p.name.toLowerCase().includes(commandSearch.toLowerCase())).map(p => ({ type: 'Product', name: p.name, path: '/inventory' }))
-  ] : [];
-  
   return (
     <div className={`flex h-screen bg-slate-50 ${isRTL() ? 'rtl' : 'ltr'}`} dir={isRTL() ? 'rtl' : 'ltr'}>
       {isSidebarOpen && <div className="fixed inset-0 z-20 bg-black/50 lg:hidden glass-modal" onClick={() => setIsSidebarOpen(false)} />}
@@ -182,9 +188,26 @@ export default function Layout() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="bg-white shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-lg lg:hidden hover:bg-slate-100">
-            <Menu className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-4">
+              <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-lg lg:hidden hover:bg-slate-100">
+                <Menu className="w-6 h-6" />
+              </button>
+              
+              {/* Sync Status Indicator */}
+              <div className="flex items-center gap-2">
+                  {!dbFullLoaded ? (
+                      <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded-full border border-blue-100 animate-pulse">
+                          <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
+                          <span className="text-[10px] font-bold text-blue-700 whitespace-nowrap">جاري تحميل كامل البيانات...</span>
+                      </div>
+                  ) : (
+                      <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100 group cursor-default">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span className="text-[10px] font-bold text-emerald-700 hidden group-hover:block transition-all">البيانات مكتملة</span>
+                      </div>
+                  )}
+              </div>
+          </div>
           
           <div className="flex-1 flex justify-center max-w-lg mx-auto">
             <div className="relative w-full hidden md:block">
@@ -195,15 +218,11 @@ export default function Layout() {
                 className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer hover:bg-slate-100 transition-colors font-medium"
                 placeholder={`${t('cust.search')} (Ctrl+K)`}
               />
-              <div className="absolute right-3 top-2 flex gap-1 pointer-events-none">
-                 <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-400 font-mono font-bold">⌘</kbd>
-                 <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-400 font-mono font-bold">K</kbd>
-              </div>
             </div>
           </div>
           
           <div className="flex items-center gap-4 ltr:ml-auto rtl:mr-auto">
-             <div className="text-sm font-bold text-slate-600 hidden sm:block">
+             <div className="text-xs font-bold text-slate-400 hidden sm:block">
                  {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
              </div>
           </div>
@@ -230,34 +249,7 @@ export default function Layout() {
                  />
                  <X className="w-5 h-5 text-slate-400 cursor-pointer" onClick={() => setIsCommandOpen(false)} />
               </div>
-              <div className="max-h-[400px] overflow-y-auto p-2">
-                 {searchResults.length > 0 ? (
-                    searchResults.map((res, i) => (
-                      <div key={i} onClick={() => { navigate(res.path); setIsCommandOpen(false); }} className="flex items-center justify-between p-3 hover:bg-blue-50 rounded-xl cursor-pointer group">
-                        <div className="flex items-center">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center mr-3 ${res.type === 'Customer' ? 'bg-indigo-100 text-indigo-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                            {res.type === 'Customer' ? <Users className="w-4 h-4" /> : <Package className="w-4 h-4" />}
-                          </div>
-                          <div>
-                            <div className="font-bold text-slate-700">{res.name}</div>
-                            <div className="text-xs text-slate-400">{res.type}</div>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-slate-300 opacity-0 group-hover:opacity-100" />
-                      </div>
-                    ))
-                 ) : (
-                   <div className="p-10 text-center text-slate-400 flex flex-col items-center">
-                      <Command className="w-12 h-12 mb-2 opacity-10" />
-                      <p className="font-bold">ابدأ الكتابة للبحث في نظام ميزان...</p>
-                   </div>
-                 )}
-              </div>
               <div className="p-3 bg-slate-50 border-t flex justify-between items-center text-[10px] text-slate-400 font-bold">
-                 <div className="flex gap-4">
-                    <span>↑↓ للتنقل</span>
-                    <span>ENTER للاختيار</span>
-                 </div>
                  <span>ESC للإغلاق</span>
               </div>
            </div>
