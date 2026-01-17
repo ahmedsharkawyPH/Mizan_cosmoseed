@@ -79,8 +79,37 @@ class DatabaseService {
 
   public isInitialized = false;
   public isFullyLoaded = false;
+  public isOffline = !navigator.onLine;
 
-  constructor() {}
+  constructor() {
+    window.addEventListener('online', () => { this.isOffline = false; this.loadRemainingData(); });
+    window.addEventListener('offline', () => { this.isOffline = true; });
+  }
+
+  private saveToLocalCache() {
+      const cache = {
+          products: this.products.slice(0, 200),
+          customers: this.customers.slice(0, 100),
+          settings: this.settings,
+          warehouses: this.warehouses,
+          lastUpdate: new Date().getTime()
+      };
+      localStorage.setItem('mizan_essential_cache', JSON.stringify(cache));
+  }
+
+  private loadFromLocalCache(): boolean {
+      const stored = localStorage.getItem('mizan_essential_cache');
+      if (!stored) return false;
+      try {
+          const cache = JSON.parse(stored);
+          this.products = cache.products || [];
+          this.customers = cache.customers || [];
+          this.settings = cache.settings || DEFAULT_SETTINGS;
+          this.warehouses = cache.warehouses || [];
+          this.rebuildIndexes();
+          return true;
+      } catch (e) { return false; }
+  }
 
   private async fetchAllFromTable(tableName: string, limit?: number) {
     if (!isSupabaseConfigured) return [];
@@ -105,17 +134,24 @@ class DatabaseService {
 
   async init() {
     if(this.isInitialized) return;
+    
+    // محاولة التحميل من الكاش أولاً لسرعة البرق
+    const hasCache = this.loadFromLocalCache();
+    if (hasCache) {
+        this.isInitialized = true;
+        console.log("[DB] Loaded from Local Cache. App interactive.");
+    }
+
     try {
-        // المرحلة 1: البيانات الحساسة والسريعة
+        // المرحلة 1: تحديث البيانات الأساسية من السيرفر
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
-        // جلب الأساسيات فقط للبدء
         const [wareData, prodData, custData, invData] = await Promise.all([
             this.fetchAllFromTable('warehouses'),
-            this.fetchAllFromTable('products', 100), // أول 100 صنف
-            this.fetchAllFromTable('customers', 50),  // أول 50 عميل
-            this.fetchAllFromTable('invoices', 50)    // آخر 50 فاتورة
+            this.fetchAllFromTable('products', 200), 
+            this.fetchAllFromTable('customers', 100),  
+            this.fetchAllFromTable('invoices', 50)    
         ]);
 
         this.warehouses = wareData;
@@ -123,32 +159,27 @@ class DatabaseService {
         this.customers = custData;
         this.invoices = invData;
 
-        // جلب دفعات المنتجات المحملة حالياً فقط
         if (this.products.length > 0) {
             const { data: batchData } = await supabase.from('batches').select('*').in('product_id', this.products.map(p => p.id));
             this.batches = batchData || [];
         }
 
         this.rebuildIndexes();
+        this.saveToLocalCache(); // حفظ النسخة الجديدة محلياً
         
-        if (this.warehouses.length === 0) {
-            this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
-        }
+        if (!this.isInitialized) this.isInitialized = true;
         
-        this.isInitialized = true;
-        console.log("[DB] Essential data loaded. App ready.");
-
-        // المرحلة 2: تحميل الباقي في الخلفية
+        console.log("[DB] Essential data synced with server.");
         this.loadRemainingData();
 
     } catch (error) {
-        console.error("[DB] Staged init failure:", error);
-        toast.error("خطأ في الاتصال، النظام يعمل ببيانات محدودة حالياً.");
-        this.isInitialized = true; // نفتح التطبيق حتى لو ببيانات محدودة
+        console.error("[DB] Remote init failure:", error);
+        if (!this.isInitialized) this.isInitialized = true; 
     }
   }
 
   private async loadRemainingData() {
+      if (this.isOffline) return;
       try {
           const tables = [
               'products', 'batches', 'customers', 'suppliers', 
@@ -157,23 +188,20 @@ class DatabaseService {
               'pending_adjustments', 'daily_closings'
           ];
 
-          // تحميل كامل البيانات
           const results = await Promise.allSettled(tables.map(t => this.fetchAllFromTable(t)));
 
           results.forEach((result, index) => {
               if (result.status === 'fulfilled') {
-                  const data = result.value || [];
-                  const tableName = tables[index];
-                  // نستخدم دمج ذكي لمنع التكرار مع ما تم تحميله في المرحلة 1
-                  this.mergeDataSafely(tableName, data);
+                  this.mergeDataSafely(tables[index], result.value || []);
               }
           });
 
           this.rebuildIndexes();
           this.isFullyLoaded = true;
-          console.log("[DB] Background full data load complete.");
+          this.saveToLocalCache();
+          console.log("[DB] Full sync complete.");
       } catch (err) {
-          console.error("[DB] Background load failed", err);
+          console.error("[DB] Background sync failed", err);
       }
   }
 
@@ -190,10 +218,13 @@ class DatabaseService {
       if (!prop) return;
 
       const existingData = (this as any)[prop] as any[];
-      const existingIds = new Set(existingData.map(i => i.id));
+      const existingMap = new Map(existingData.map(i => [i.id, i]));
       
-      const uniqueNewItems = newData.filter(i => !existingIds.has(i.id));
-      (this as any)[prop] = [...existingData, ...uniqueNewItems];
+      newData.forEach(item => {
+          existingMap.set(item.id, { ...existingMap.get(item.id), ...item });
+      });
+      
+      (this as any)[prop] = Array.from(existingMap.values());
   }
 
   private rebuildIndexes() {
@@ -215,33 +246,6 @@ class DatabaseService {
       ...p,
       batches: this.batchesByProductId.get(p.id) || []
     }));
-  }
-
-  getProductsPaginated(options: {
-    page: number;
-    pageSize: number;
-    search?: string;
-    filters?: {
-      lowStockOnly?: boolean;
-      outOfStockOnly?: boolean;
-    };
-    sortBy?: 'name' | 'code' | 'totalStock';
-    sortOrder?: 'asc' | 'desc';
-  }) {
-    let products = this.getProductsWithBatches();
-    if (options.search) { products = ArabicSmartSearch.smartSearch(products, options.search); }
-    if (options.filters?.lowStockOnly) {
-      const threshold = this.settings.lowStockThreshold || 10;
-      products = products.filter(p => {
-        const total = p.batches.reduce((sum, b) => sum + b.quantity, 0);
-        return total > 0 && total <= threshold;
-      });
-    }
-    if (options.filters?.outOfStockOnly) { products = products.filter(p => p.batches.reduce((sum, b) => sum + b.quantity, 0) === 0); }
-    const total = products.length;
-    const start = (options.page - 1) * options.pageSize;
-    const paginatedProducts = products.slice(0, start + options.pageSize);
-    return { products: paginatedProducts, total, hasMore: total > paginatedProducts.length };
   }
 
   async submitStockTake(adjustments: Omit<PendingAdjustment, 'id' | 'status' | 'date'>[]) {
@@ -327,6 +331,7 @@ class DatabaseService {
       if (tx.type === CashTransactionType.RECEIPT) this._cashBalance += tx.amount;
       else this._cashBalance -= tx.amount;
       if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(newTx);
+      this.saveToLocalCache();
   }
 
   getInvoices(): Invoice[] { return [...this.invoices].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }
@@ -341,6 +346,7 @@ class DatabaseService {
 
   async updateSettings(s: SystemSettings): Promise<boolean> {
     this.settings = { ...s };
+    this.saveToLocalCache();
     if (isSupabaseConfigured) {
         const { error } = await supabase.from('settings').upsert(this.mapToDb(s));
         return !error;
@@ -402,6 +408,7 @@ class DatabaseService {
         if (isSupabaseConfigured) await supabase.from('batches').insert(batch);
     }
     if (isSupabaseConfigured) await supabase.from('products').insert(product);
+    this.saveToLocalCache();
     return pid;
   }
 
@@ -409,17 +416,20 @@ class DatabaseService {
       const cust = { ...c, id: `C${Date.now()}`, current_balance: c.opening_balance || 0 };
       this.customers.push(cust);
       if (isSupabaseConfigured) await supabase.from('customers').insert(cust);
+      this.saveToLocalCache();
   }
   async updateCustomer(id: string, data: any) {
     const idx = this.customers.findIndex(c => c.id === id);
     if (idx !== -1) {
       this.customers[idx] = { ...this.customers[idx], ...data };
       if (isSupabaseConfigured) await supabase.from('customers').update(data).eq('id', id);
+      this.saveToLocalCache();
     }
   }
   async deleteCustomer(id: string) {
     this.customers = this.customers.filter(c => c.id !== id);
     if (isSupabaseConfigured) await supabase.from('customers').delete().eq('id', id);
+    this.saveToLocalCache();
   }
   async addSupplier(s: any) {
     const supplier: Supplier = { ...s, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
@@ -474,12 +484,14 @@ class DatabaseService {
     const w: Warehouse = { id: `W${Date.now()}`, name, is_default: false };
     this.warehouses.push(w);
     if (isSupabaseConfigured) await supabase.from('warehouses').insert(w);
+    this.saveToLocalCache();
   }
   async updateWarehouse(id: string, name: string) {
     const idx = this.warehouses.findIndex(w => w.id === id);
     if (idx !== -1) {
       this.warehouses[idx].name = name;
       if (isSupabaseConfigured) await supabase.from('warehouses').update({ name }).eq('id', id);
+      this.saveToLocalCache();
     }
   }
   async addExpenseCategory(cat: string) {
@@ -513,9 +525,9 @@ class DatabaseService {
       lowStock: this.products.filter(p => (this.batchesByProductId.get(p.id) || []).reduce((s, b) => s + b.quantity, 0) < this.settings.lowStockThreshold).map(p => p.name)
     });
   }
-  async resetDatabase() { if (isSupabaseConfigured) await supabase.rpc('clear_all_data'); window.location.reload(); }
+  async resetDatabase() { if (isSupabaseConfigured) await supabase.rpc('clear_all_data'); localStorage.removeItem('mizan_essential_cache'); window.location.reload(); }
   exportDatabase(): string { return JSON.stringify({ products: this.products, batches: this.batches, customers: this.customers }); }
-  importDatabase(json: string) { const d = JSON.parse(json); this.products = d.products || []; this.batches = d.batches || []; this.rebuildIndexes(); return true; }
+  importDatabase(json: string) { const d = JSON.parse(json); this.products = d.products || []; this.batches = d.batches || []; this.rebuildIndexes(); this.saveToLocalCache(); return true; }
   getNextTransactionRef(type: CashTransactionType) { return `${type === 'RECEIPT' ? 'REC' : 'PAY'}-${Date.now()}`; }
   getInvoicePaidAmount(id: string) { return this.cashTransactions.filter(t => t.notes?.includes(id)).reduce((s, t) => s + t.amount, 0); }
   getInvoiceProfit(inv: Invoice) { return inv.net_total * 0.2; }
