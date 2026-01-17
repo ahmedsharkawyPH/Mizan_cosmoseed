@@ -1,5 +1,7 @@
+
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
-import { Search, ChevronDown, Check } from 'lucide-react';
+import { Search, ChevronDown, Check, Zap } from 'lucide-react';
+import { ArabicSmartSearch } from '../utils/search';
 
 interface Option {
   value: string;
@@ -49,16 +51,20 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const filteredOptions = useMemo(() => {
     if (!isOpen || searchTerm.length < minSearchChars) return [];
     
-    const filtered = options.filter(opt => 
-      opt.label.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      (opt.subLabel && opt.subLabel.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-    return filtered.slice(0, 100); 
+    // We wrap the options in a searchable object format
+    const searchableItems = options.map(opt => ({
+      ...opt,
+      name: opt.label, // Map label to name for the search engine
+      code: opt.subLabel || ''
+    }));
+
+    const results = ArabicSmartSearch.smartSearch(searchableItems, searchTerm);
+    return results.slice(0, 50); 
   }, [options, searchTerm, isOpen, minSearchChars]);
 
   useEffect(() => {
     if (!value) {
-      setSearchTerm('');
+      if (!isOpen) setSearchTerm('');
     } else {
       const selected = options.find(o => o.value === value);
       if (selected && !isOpen) {
@@ -93,7 +99,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       e.preventDefault();
       if (isOpen && filteredOptions.length > 0) {
         const optionToSelect = filteredOptions[highlightedIndex];
-        if (optionToSelect) selectOption(optionToSelect);
+        if (optionToSelect) selectOption(optionToSelect as any);
       } else if (!isOpen) {
          setIsOpen(true);
       }
@@ -154,7 +160,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
               ref={listRef}
               className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in slide-in-from-top-1"
             >
-              {filteredOptions.map((opt, idx) => (
+              {filteredOptions.map((opt: any, idx) => (
                 <li
                   key={opt.value}
                   className={`px-4 py-3 cursor-pointer flex justify-between items-center text-sm border-b border-slate-50 last:border-0
@@ -164,8 +170,11 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                   onClick={() => selectOption(opt)}
                   onMouseEnter={() => setHighlightedIndex(idx)}
                 >
-                  <div>
-                    <div className="font-bold">{opt.label}</div>
+                  <div className="flex-1">
+                    <div className="font-bold flex items-center gap-2">
+                       {opt.label}
+                       {opt._searchScore > 15 && <Zap className={`w-3 h-3 ${idx === highlightedIndex ? 'text-yellow-400' : 'text-emerald-500'}`} />}
+                    </div>
                     {opt.subLabel && <div className={`text-[10px] font-mono ${idx === highlightedIndex ? 'text-slate-300' : 'text-slate-400'}`}>{opt.subLabel}</div>}
                   </div>
                   {value === opt.value && <Check className={`w-4 h-4 ${idx === highlightedIndex ? 'text-white' : 'text-blue-600'}`} />}
@@ -176,11 +185,11 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
           
           {searchTerm.length > 0 && searchTerm.length < minSearchChars && (
             <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl p-4 text-center text-xs text-slate-500 font-bold animate-in fade-in slide-in-from-top-1">
-              اكتب حرفين على الأقل للبحث عن الأصناف...
+              اكتب حرفين على الأقل للبحث الذكي...
             </div>
           )}
 
-          {searchTerm.length >= minSearchChars && filteredOptions.length === 0 && (
+          {searchTerm.length >= minSearchChars && filteredOptions.length === 0 && searchTerm.trim() !== '' && (
              <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl p-4 text-center text-xs text-slate-400 font-bold animate-in fade-in slide-in-from-top-1">
                لا توجد نتائج مطابقة لبحثك
              </div>

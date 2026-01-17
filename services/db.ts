@@ -1,3 +1,4 @@
+
 import { supabase, isSupabaseConfigured } from './supabase';
 import {
   Product,
@@ -21,6 +22,7 @@ import {
   PendingAdjustment,
   DailyClosing
 } from '../types';
+import { ArabicSmartSearch } from '../utils/search';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -89,7 +91,6 @@ class DatabaseService {
       while (hasMore) {
         const { data, error } = await supabase.from(tableName).select('*').range(page * pageSize, (page + 1) * pageSize - 1);
         if (error) {
-            // معالجة حالة الجدول المفقود (PGRST116 أو كود 42P01 في SQL)
             if (error.code === 'PGRST116' || error.message.includes('not found')) {
                 console.warn(`[DB] Table '${tableName}' does not exist yet.`);
                 return [];
@@ -110,11 +111,9 @@ class DatabaseService {
   async init() {
     if(this.isInitialized) return;
     try {
-        // جلب الإعدادات أولاً لأنها ضرورية لبدء الواجهة
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
-        // جلب الجداول الأساسية باستخدام Promise.allSettled لضمان عدم توقف النظام عند فقدان جدول
         const tables = [
             'products', 'batches', 'customers', 'suppliers', 
             'warehouses', 'invoices', 'purchase_invoices', 
@@ -194,6 +193,12 @@ class DatabaseService {
     sortOrder?: 'asc' | 'desc';
   }) {
     let products = this.getProductsWithBatches();
+    
+    // Applying smart search if query exists
+    if (options.search) {
+      products = ArabicSmartSearch.smartSearch(products, options.search);
+    }
+
     if (options.filters?.lowStockOnly) {
       const threshold = this.settings.lowStockThreshold || 10;
       products = products.filter(p => {
@@ -201,14 +206,13 @@ class DatabaseService {
         return total > 0 && total <= threshold;
       });
     }
+
     if (options.filters?.outOfStockOnly) {
       products = products.filter(p => p.batches.reduce((sum, b) => sum + b.quantity, 0) === 0);
     }
-    if (options.search) {
-      const searchLower = options.search.toLowerCase();
-      products = products.filter(p => p.name.toLowerCase().includes(searchLower) || (p.code && p.code.toLowerCase().includes(searchLower)));
-    }
-    if (options.sortBy) {
+
+    if (options.sortBy && !options.search) {
+      // Sorting is handled by smartSearch if search query exists
       products.sort((a, b) => {
         let valA, valB;
         if (options.sortBy === 'totalStock') {
@@ -225,6 +229,7 @@ class DatabaseService {
         return 0;
       });
     }
+
     const total = products.length;
     const start = (options.page - 1) * options.pageSize;
     const paginatedProducts = products.slice(0, start + options.pageSize);
