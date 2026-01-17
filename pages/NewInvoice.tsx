@@ -81,6 +81,15 @@ export default function NewInvoice() {
     }
   }, [id]);
 
+  // تحسين الأداء: تجهيز خيارات العملاء والمنتجات بالذاكرة
+  const customerOptions = useMemo(() => 
+    customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })), 
+  [customers]);
+
+  const productOptions = useMemo(() => 
+    products.map(p => ({ value: p.id, label: p.name, subLabel: p.code })), 
+  [products]);
+
   useEffect(() => {
       if (selectedCustomer && !id) {
           const customer = customers.find(c => c.id === selectedCustomer);
@@ -229,7 +238,16 @@ export default function NewInvoice() {
       <div className="flex flex-col xl:flex-row gap-6 items-start">
         <div className="flex-1 flex flex-col space-y-6 w-full">
           <div className="bg-white p-4 rounded-2xl shadow-card border border-slate-100">
-             <SearchableSelect ref={customerRef} label={t('inv.customer')} placeholder={t('cust.search')} options={customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone }))} value={selectedCustomer} onChange={setSelectedCustomer} onComplete={() => productRef.current?.focus()} />
+             <SearchableSelect 
+                id="customer-select"
+                ref={customerRef} 
+                label={t('inv.customer')} 
+                placeholder={t('cust.search')} 
+                options={customerOptions} 
+                value={selectedCustomer} 
+                onChange={setSelectedCustomer} 
+                onComplete={() => productRef.current?.focus()} 
+             />
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-card border border-slate-100 relative">
@@ -237,14 +255,25 @@ export default function NewInvoice() {
                  <h3 className="font-bold text-slate-700 flex items-center gap-2">
                     <Package className="w-5 h-5 text-blue-600" /> {isReturnMode ? t('inv.add_return_item') : t('inv.add_product')}
                  </h3>
-                 <select className="bg-slate-50 border border-slate-200 text-sm rounded-lg p-2 font-medium" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                 </select>
+                 <div className="flex items-center gap-2">
+                    <label htmlFor="warehouse-select" className="text-xs font-bold text-slate-400">المخزن:</label>
+                    <select id="warehouse-select" name="warehouse" className="bg-slate-50 border border-slate-200 text-sm rounded-lg p-2 font-bold" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                 </div>
             </div>
             
             <div className="grid grid-cols-12 gap-4">
               <div className="col-span-12 md:col-span-9">
-                <SearchableSelect ref={productRef} label={t('inv.product')} placeholder={t('cust.search')} options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} value={selectedProduct} onChange={setSelectedProduct} />
+                <SearchableSelect 
+                    id="product-select"
+                    ref={productRef} 
+                    label={t('inv.product')} 
+                    placeholder={t('cust.search')} 
+                    options={productOptions} 
+                    value={selectedProduct} 
+                    onChange={setSelectedProduct} 
+                />
               </div>
               <div className="col-span-12 md:col-span-3">
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
@@ -274,22 +303,22 @@ export default function NewInvoice() {
 
               {invoiceConfig.enableManualPrice && (
                   <div className="col-span-6 md:col-span-3">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.price')}</label>
-                    <input ref={priceRef} type="number" className="w-full bg-white border border-orange-300 text-orange-700 rounded-lg p-2.5 font-bold" value={manualPrice} onChange={e => setManualPrice(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
+                    <label htmlFor="price-input" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.price')}</label>
+                    <input id="price-input" name="price" ref={priceRef} type="number" className="w-full bg-white border border-orange-300 text-orange-700 rounded-lg p-2.5 font-bold" value={manualPrice} onChange={e => setManualPrice(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
                   </div>
               )}
               <div className="col-span-6 md:col-span-2">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.qty')}</label>
-                <input ref={qtyRef} type="number" className="w-full bg-slate-50 border rounded-lg p-2.5 text-center font-bold" value={qty} onChange={e => setQty(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} />
+                <label htmlFor="qty-input" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.qty')}</label>
+                <input id="qty-input" name="qty" ref={qtyRef} type="number" className="w-full bg-slate-50 border rounded-lg p-2.5 text-center font-bold" value={qty} onChange={e => setQty(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} />
               </div>
               <div className="col-span-6 md:col-span-2">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.bonus')}</label>
-                <input ref={bonusRef} type="number" className="w-full bg-slate-50 border rounded-lg p-2.5 text-center" value={bonus} onChange={e => setBonus(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && (invoiceConfig.enableDiscount ? discountRef.current?.focus() : addItemToCart())} />
+                <label htmlFor="bonus-input" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.bonus')}</label>
+                <input id="bonus-input" name="bonus" ref={bonusRef} type="number" className="w-full bg-slate-50 border rounded-lg p-2.5 text-center" value={bonus} onChange={e => setBonus(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && (invoiceConfig.enableDiscount ? discountRef.current?.focus() : addItemToCart())} />
               </div>
               {invoiceConfig.enableDiscount && (
                <div className="col-span-6 md:col-span-2">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.disc_percent')}</label>
-                <input ref={discountRef} type="number" className="w-full bg-slate-50 border rounded-lg p-2.5 text-center text-red-500 font-bold" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && addItemToCart()} />
+                <label htmlFor="disc-input" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.disc_percent')}</label>
+                <input id="disc-input" name="discount" ref={discountRef} type="number" className="w-full bg-slate-50 border rounded-lg p-2.5 text-center text-red-500 font-bold" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && addItemToCart()} />
               </div>
               )}
               <div className="col-span-12 md:col-span-3 flex items-end">
@@ -339,9 +368,11 @@ export default function NewInvoice() {
                 
                 <div className="space-y-3 pt-2">
                     <div className="flex items-center gap-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase flex-1">خصم العميل (%)</label>
+                        <label htmlFor="cust-disc-input" className="text-xs font-bold text-slate-500 uppercase flex-1">خصم العميل (%)</label>
                         <div className="relative w-24">
                             <input 
+                                id="cust-disc-input"
+                                name="customer_discount"
                                 type="number" 
                                 className="w-full border rounded-lg p-1.5 text-center font-bold text-blue-600 focus:ring-1 focus:ring-blue-500 outline-none" 
                                 value={additionalDiscountPercent} 
@@ -351,8 +382,10 @@ export default function NewInvoice() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <label className="text-xs font-bold text-slate-500 uppercase flex-1">{t('inv.additional_discount')} (مبلغ)</label>
+                        <label htmlFor="extra-disc-input" className="text-xs font-bold text-slate-500 uppercase flex-1">{t('inv.additional_discount')} (مبلغ)</label>
                         <input 
+                            id="extra-disc-input"
+                            name="extra_discount"
                             type="number" 
                             className="w-24 border rounded-lg p-1.5 text-center font-bold text-red-600 focus:ring-1 focus:ring-blue-500 outline-none" 
                             value={additionalDiscount} 
@@ -373,7 +406,10 @@ export default function NewInvoice() {
             </div>
 
             <div className="space-y-4 pt-4">
-                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.cash_paid')}</label><input ref={cashRef} type="number" className="w-full border rounded-lg p-2.5 text-lg font-bold text-emerald-600" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} /></div>
+                <div>
+                  <label htmlFor="cash-paid-input" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.cash_paid')}</label>
+                  <input id="cash-paid-input" name="cash_paid" ref={cashRef} type="number" className="w-full border rounded-lg p-2.5 text-lg font-bold text-emerald-600" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} />
+                </div>
                 <button onClick={() => { handleCheckout(true); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
                 <button onClick={() => { handleCheckout(false); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
             </div>
@@ -386,8 +422,14 @@ export default function NewInvoice() {
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
                   <div className="bg-slate-50 p-4 border-b flex justify-between items-center"><h3 className="font-bold">{t('inv.settings')}</h3><button onClick={() => setShowSettings(false)}><X className="w-5 h-5" /></button></div>
                   <div className="p-4 space-y-3">
-                      <label className="flex items-center justify-between p-3 border rounded-xl"><span className="text-sm">{t('inv.manual_price')}</span><input type="checkbox" checked={invoiceConfig.enableManualPrice} onChange={e => setInvoiceConfig({...invoiceConfig, enableManualPrice: e.target.checked})} /></label>
-                      <label className="flex items-center justify-between p-3 border rounded-xl"><span className="text-sm">{t('inv.discount')}</span><input type="checkbox" checked={invoiceConfig.enableDiscount} onChange={e => setInvoiceConfig({...invoiceConfig, enableDiscount: e.target.checked})} /></label>
+                      <label className="flex items-center justify-between p-3 border rounded-xl cursor-pointer">
+                        <span className="text-sm">{t('inv.manual_price')}</span>
+                        <input type="checkbox" className="w-5 h-5 rounded text-blue-600" checked={invoiceConfig.enableManualPrice} onChange={e => setInvoiceConfig({...invoiceConfig, enableManualPrice: e.target.checked})} />
+                      </label>
+                      <label className="flex items-center justify-between p-3 border rounded-xl cursor-pointer">
+                        <span className="text-sm">{t('inv.discount')}</span>
+                        <input type="checkbox" className="w-5 h-5 rounded text-blue-600" checked={invoiceConfig.enableDiscount} onChange={e => setInvoiceConfig({...invoiceConfig, enableDiscount: e.target.checked})} />
+                      </label>
                   </div>
               </div>
           </div>

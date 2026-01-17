@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { Search, ChevronDown, Check } from 'lucide-react';
 
 interface Option {
@@ -17,7 +17,8 @@ interface SearchableSelectProps {
   label?: string;
   className?: string;
   autoFocus?: boolean;
-  onComplete?: () => void; // Triggered after selection via Enter
+  onComplete?: () => void;
+  id?: string; // إضافة id لإصلاح تحذيرات المتصفح
 }
 
 export interface SearchableSelectRef {
@@ -25,29 +26,33 @@ export interface SearchableSelectRef {
 }
 
 const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(({ 
-  options, value, onChange, placeholder, label, className, autoFocus, onComplete 
+  options, value, onChange, placeholder, label, className, autoFocus, onComplete, id
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLUListElement>(null); // Ref for the scrollable list
+  const listRef = useRef<HTMLUListElement>(null);
+  
+  // توليد معرف فريد إذا لم يتوفر
+  const uniqueId = useMemo(() => id || `select-${Math.random().toString(36).substr(2, 9)}`, [id]);
 
-  // Expose focus method to parent
   useImperativeHandle(ref, () => ({
     focus: () => {
       inputRef.current?.focus();
     }
   }));
 
-  // Filter options
-  const filteredOptions = options.filter(opt => 
-    opt.label.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (opt.subLabel && opt.subLabel.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // تحسين الأداء: الفلترة والتقليص (Render only top 100 to save DOM memory)
+  const filteredOptions = useMemo(() => {
+    const filtered = options.filter(opt => 
+      opt.label.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      (opt.subLabel && opt.subLabel.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+    return filtered.slice(0, 100); // عرض أول 100 نتيجة فقط
+  }, [options, searchTerm]);
 
-  // Sync internal search term with external value change (if value is cleared externally)
   useEffect(() => {
     if (!value) {
       setSearchTerm('');
@@ -59,12 +64,10 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
     }
   }, [value, options, isOpen]);
 
-  // Handle Outside Click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
-        // Revert search term to selected value if no new selection made
         const selected = options.find(o => o.value === value);
         setSearchTerm(selected ? selected.label : '');
       }
@@ -73,27 +76,21 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [value, options]);
 
-  // Scroll highlighted item into view
   useEffect(() => {
     if (isOpen && listRef.current && filteredOptions.length > 0) {
       const list = listRef.current;
-      // Ensure index is within bounds
       const safeIndex = Math.min(highlightedIndex, filteredOptions.length - 1);
       const element = list.children[safeIndex] as HTMLElement;
       
       if (element) {
-        // Calculate bounds
         const elementTop = element.offsetTop;
         const elementBottom = elementTop + element.clientHeight;
         const listTop = list.scrollTop;
         const listBottom = listTop + list.clientHeight;
 
-        // Scroll Down
         if (elementBottom > listBottom) {
           list.scrollTop = elementBottom - list.clientHeight;
-        }
-        // Scroll Up
-        else if (elementTop < listTop) {
+        } else if (elementTop < listTop) {
           list.scrollTop = elementTop;
         }
       }
@@ -103,21 +100,18 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIndex(prev => (prev + 1) % filteredOptions.length);
+      setHighlightedIndex(prev => (prev + 1) % Math.max(1, filteredOptions.length));
       setIsOpen(true);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightedIndex(prev => (prev - 1 + filteredOptions.length) % filteredOptions.length);
+      setHighlightedIndex(prev => (prev - 1 + filteredOptions.length) % Math.max(1, filteredOptions.length));
       setIsOpen(true);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (isOpen && filteredOptions.length > 0) {
         const optionToSelect = filteredOptions[highlightedIndex];
-        if (optionToSelect) {
-            selectOption(optionToSelect);
-        }
+        if (optionToSelect) selectOption(optionToSelect);
       } else {
-         // If closed but Enter pressed, toggle open
          setIsOpen(true);
       }
     } else if (e.key === 'Escape') {
@@ -138,23 +132,28 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
   return (
     <div className={`relative ${className}`} ref={containerRef}>
-      {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
+      {label && (
+        <label htmlFor={uniqueId} className="block text-sm font-medium text-gray-700 mb-1">
+          {label}
+        </label>
+      )}
       <div className="relative">
         <input
+          id={uniqueId}
+          name={uniqueId}
           ref={inputRef}
           type="text"
-          className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 pr-8"
+          className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 pr-8 font-medium"
           placeholder={placeholder}
           value={searchTerm}
           onChange={(e) => {
             setSearchTerm(e.target.value);
             setIsOpen(true);
             setHighlightedIndex(0);
-            if(e.target.value === '') onChange(''); // Clear selection if input cleared
+            if(e.target.value === '') onChange('');
           }}
           onFocus={() => {
               setIsOpen(true);
-              // Select all text on focus for easier replacement
               inputRef.current?.select();
           }}
           onKeyDown={handleKeyDown}
@@ -180,8 +179,8 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
               onMouseEnter={() => setHighlightedIndex(idx)}
             >
               <div>
-                <div className="font-medium">{opt.label}</div>
-                {opt.subLabel && <div className="text-xs text-gray-500">{opt.subLabel}</div>}
+                <div className="font-bold">{opt.label}</div>
+                {opt.subLabel && <div className="text-[10px] text-gray-400 font-mono">{opt.subLabel}</div>}
               </div>
               {value === opt.value && <Check className="w-4 h-4 text-blue-600" />}
             </li>
@@ -190,7 +189,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       )}
       {isOpen && filteredOptions.length === 0 && (
           <div className="absolute z-50 w-full bg-white mt-1 border border-gray-200 rounded-lg shadow-lg p-3 text-center text-sm text-gray-500">
-              No results found
+              لا توجد نتائج مطابقة
           </div>
       )}
     </div>
