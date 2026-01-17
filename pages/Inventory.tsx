@@ -4,7 +4,8 @@ import { db } from '../services/db';
 import { t } from '../utils/t';
 import { 
   PlusCircle, Search, Package, FileOutput, Loader2,
-  X, Download, Upload, FileSpreadsheet, History
+  X, Download, Upload, FileSpreadsheet, History, 
+  DollarSign, AlertCircle, TrendingUp, Tag
 } from 'lucide-react';
 import { exportFilteredProductsToExcel, readExcelFile, downloadInventoryTemplate } from '../utils/excel';
 
@@ -36,8 +37,33 @@ const Inventory: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
   const settings = db.getSettings();
+  const currency = settings.currency;
   const loadMoreRef = useRef<HTMLButtonElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+
+  // حساب الإحصائيات العامة للمخزون
+  const inventoryStats = useMemo(() => {
+    const allProducts = db.getProductsWithBatches();
+    let totalValue = 0;
+    let negativeCount = 0;
+    
+    allProducts.forEach(p => {
+        const totalQty = p.batches.reduce((sum, b) => sum + b.quantity, 0);
+        if (totalQty < 0) negativeCount++;
+        
+        p.batches.forEach(b => {
+            if (b.quantity > 0) {
+                totalValue += (b.quantity * b.purchase_price);
+            }
+        });
+    });
+    
+    return {
+        totalItems: allProducts.length,
+        negativeCount,
+        totalValue
+    };
+  }, [data]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -119,22 +145,58 @@ const Inventory: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-32 animate-in fade-in duration-500">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-800 flex items-center gap-3">
-            <Package className="w-8 h-8 text-blue-600" /> 
-            {t('stock.title')}
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">إدارة الأصناف وتتبع الأرصدة الحالية</p>
+      {/* رأس الصفحة والبطاقات الإحصائية */}
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-black text-slate-800 flex items-center gap-3">
+              <Package className="w-8 h-8 text-blue-600" /> 
+              {t('stock.title')}
+            </h1>
+            <p className="text-slate-500 text-sm mt-1">إدارة الأصناف وتتبع الأرصدة والأسعار</p>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setIsIEOpen(true)} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all">
+              <FileSpreadsheet className="w-5 h-5" /> استيراد وتصدير
+            </button>
+            <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
+              <PlusCircle className="w-5 h-5" /> {t('stock.new')}
+            </button>
+          </div>
         </div>
-        
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setIsIEOpen(true)} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all">
-            <FileSpreadsheet className="w-5 h-5" /> استيراد وتصدير
-          </button>
-          <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
-            <PlusCircle className="w-5 h-5" /> {t('stock.new')}
-          </button>
+
+        {/* بطاقات الإحصاء الصغيرة */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase">إجمالي الأصناف</p>
+              <h4 className="text-lg font-black text-slate-800">{inventoryStats.totalItems}</h4>
+            </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center shrink-0">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase">أصناف سالبة</p>
+              <h4 className="text-lg font-black text-red-600">{inventoryStats.negativeCount}</h4>
+            </div>
+          </div>
+
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
+            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase">قيمة المخزون (شراء)</p>
+              <h4 className="text-lg font-black text-emerald-600">{currency}{inventoryStats.totalValue.toLocaleString()}</h4>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -172,19 +234,40 @@ const Inventory: React.FC = () => {
         <div className="grid gap-4">
           {data.products.map(product => {
             const totalQty = product.batches.reduce((sum: number, b: any) => sum + b.quantity, 0);
+            // جلب أحدث أسعار من التشغيلات أو الأسعار الافتراضية
+            const purchasePrice = product.batches.length > 0 ? product.batches[product.batches.length - 1].purchase_price : (product.purchase_price || 0);
+            const sellingPrice = product.batches.length > 0 ? product.batches[product.batches.length - 1].selling_price : (product.selling_price || 0);
+
             return (
               <div key={product.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-all group">
                 <div className="px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
                   <div className="flex items-center gap-4 flex-1">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl ${totalQty === 0 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>{product.name.charAt(0)}</div>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl ${totalQty <= 0 ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>{product.name.charAt(0)}</div>
                     <div>
                       <h3 className="font-black text-slate-800 text-lg">{product.name}</h3>
                       <p className="text-xs text-slate-400 font-mono">{product.code}</p>
                     </div>
                   </div>
-                  <div className="text-right">
+
+                  {/* قسم الأسعار المضاف */}
+                  <div className="flex gap-8 px-4 border-r border-l border-slate-50">
+                    <div className="text-center">
+                        <p className="text-[10px] text-slate-400 font-black uppercase flex items-center gap-1 justify-center">
+                           <TrendingUp className="w-3 h-3 text-emerald-500" /> سعر الشراء
+                        </p>
+                        <span className="text-sm font-black text-slate-600">{currency}{purchasePrice.toLocaleString()}</span>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-[10px] text-slate-400 font-black uppercase flex items-center gap-1 justify-center">
+                           <Tag className="w-3 h-3 text-blue-500" /> سعر البيع
+                        </p>
+                        <span className="text-sm font-black text-blue-600">{currency}{sellingPrice.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-right min-w-[100px]">
                     <p className="text-[10px] text-slate-400 font-black uppercase">الرصيد الكلي</p>
-                    <span className={`text-2xl font-black ${totalQty === 0 ? 'text-red-500' : 'text-slate-800'}`}>{totalQty.toLocaleString()}</span>
+                    <span className={`text-2xl font-black ${totalQty <= 0 ? 'text-red-500' : 'text-slate-800'}`}>{totalQty.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
