@@ -51,16 +51,28 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const filteredOptions = useMemo(() => {
     if (!isOpen || searchTerm.length < minSearchChars) return [];
     
-    // We wrap the options in a searchable object format
     const searchableItems = options.map(opt => ({
       ...opt,
-      name: opt.label, // Map label to name for the search engine
+      name: opt.label, 
       code: opt.subLabel || ''
     }));
 
     const results = ArabicSmartSearch.smartSearch(searchableItems, searchTerm);
     return results.slice(0, 50); 
   }, [options, searchTerm, isOpen, minSearchChars]);
+
+  // تحديث التمرير عند تغيير العنصر المحدد بالأسهم
+  useEffect(() => {
+    if (isOpen && listRef.current && filteredOptions.length > 0) {
+      const highlightedElement = listRef.current.children[highlightedIndex] as HTMLElement;
+      if (highlightedElement) {
+        highlightedElement.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [highlightedIndex, isOpen, filteredOptions.length]);
 
   useEffect(() => {
     if (!value) {
@@ -87,14 +99,21 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return;
+    
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIndex(prev => (prev + 1) % Math.max(1, filteredOptions.length));
-      setIsOpen(true);
+      if (!isOpen) {
+        setIsOpen(true);
+      } else {
+        setHighlightedIndex(prev => (prev + 1) % Math.max(1, filteredOptions.length));
+      }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightedIndex(prev => (prev - 1 + filteredOptions.length) % Math.max(1, filteredOptions.length));
-      setIsOpen(true);
+      if (!isOpen) {
+        setIsOpen(true);
+      } else {
+        setHighlightedIndex(prev => (prev - 1 + filteredOptions.length) % Math.max(1, filteredOptions.length));
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (isOpen && filteredOptions.length > 0) {
