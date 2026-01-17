@@ -19,6 +19,8 @@ interface SearchableSelectProps {
   onComplete?: () => void;
   id?: string;
   name?: string;
+  minSearchChars?: number;
+  disabled?: boolean;
 }
 
 export interface SearchableSelectRef {
@@ -26,7 +28,7 @@ export interface SearchableSelectRef {
 }
 
 const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(({ 
-  options, value, onChange, placeholder, label, className, autoFocus, onComplete, id, name
+  options, value, onChange, placeholder, label, className, autoFocus, onComplete, id, name, minSearchChars = 0, disabled = false
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,7 +37,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   
-  const uniqueId = useMemo(() => id || `select-${Math.random().toString(36).substr(2, 9)}`, [id]);
+  const uniqueId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
   const inputName = name || uniqueId;
 
   useImperativeHandle(ref, () => ({
@@ -44,15 +46,15 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
     }
   }));
 
-  // تحسين الأداء: الفلترة والتقليص (عرض أول 100 نتيجة فقط لتسريع المتصفح)
   const filteredOptions = useMemo(() => {
-    if (!searchTerm && !isOpen) return [];
+    if (!isOpen || searchTerm.length < minSearchChars) return [];
+    
     const filtered = options.filter(opt => 
       opt.label.toLowerCase().includes(searchTerm.toLowerCase()) || 
       (opt.subLabel && opt.subLabel.toLowerCase().includes(searchTerm.toLowerCase()))
     );
     return filtered.slice(0, 100); 
-  }, [options, searchTerm, isOpen]);
+  }, [options, searchTerm, isOpen, minSearchChars]);
 
   useEffect(() => {
     if (!value) {
@@ -78,6 +80,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   }, [value, options]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setHighlightedIndex(prev => (prev + 1) % Math.max(1, filteredOptions.length));
@@ -91,7 +94,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       if (isOpen && filteredOptions.length > 0) {
         const optionToSelect = filteredOptions[highlightedIndex];
         if (optionToSelect) selectOption(optionToSelect);
-      } else {
+      } else if (!isOpen) {
          setIsOpen(true);
       }
     } else if (e.key === 'Escape') {
@@ -109,9 +112,9 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   };
 
   return (
-    <div className={`relative ${className}`} ref={containerRef}>
+    <div className={`relative ${className} ${disabled ? 'opacity-60 grayscale-[0.5]' : ''}`} ref={containerRef}>
       {label && (
-        <label htmlFor={uniqueId} className="block text-sm font-bold text-slate-700 mb-1">
+        <label htmlFor={uniqueId} className={`block text-sm font-bold mb-1 ${disabled ? 'text-slate-400' : 'text-slate-700'}`}>
           {label}
         </label>
       )}
@@ -122,8 +125,9 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
           ref={inputRef}
           type="text"
           autoComplete="off"
-          className="w-full border-slate-200 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border p-2.5 pr-10 font-bold bg-slate-50 focus:bg-white transition-all"
-          placeholder={placeholder}
+          disabled={disabled}
+          className="w-full border-slate-200 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border p-2.5 pr-10 font-bold bg-slate-50 focus:bg-white transition-all disabled:cursor-not-allowed"
+          placeholder={disabled ? "يرجى اختيار العميل أولاً..." : placeholder}
           value={searchTerm}
           onChange={(e) => {
             setSearchTerm(e.target.value);
@@ -132,43 +136,56 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
             if(e.target.value === '') onChange('');
           }}
           onFocus={() => {
-              setIsOpen(true);
-              inputRef.current?.select();
+              if (!disabled) {
+                setIsOpen(true);
+                inputRef.current?.select();
+              }
           }}
           onKeyDown={handleKeyDown}
           autoFocus={autoFocus}
         />
-        <Search className="absolute right-3 top-3 w-4.5 h-4.5 text-slate-400 pointer-events-none" />
+        <Search className={`absolute right-3 top-3 w-4.5 h-4.5 pointer-events-none ${disabled ? 'text-slate-300' : 'text-slate-400'}`} />
       </div>
 
-      {isOpen && filteredOptions.length > 0 && (
-        <ul 
-          ref={listRef}
-          className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in slide-in-from-top-1"
-        >
-          {filteredOptions.map((opt, idx) => (
-            <li
-              key={opt.value}
-              className={`px-4 py-3 cursor-pointer flex justify-between items-center text-sm border-b border-slate-50 last:border-0
-                ${opt.disabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}
-                ${idx === highlightedIndex ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}
-              `}
-              onClick={() => selectOption(opt)}
-              onMouseEnter={() => setHighlightedIndex(idx)}
+      {isOpen && !disabled && (
+        <>
+          {searchTerm.length >= minSearchChars && filteredOptions.length > 0 && (
+            <ul 
+              ref={listRef}
+              className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in slide-in-from-top-1"
             >
-              <div>
-                <div className="font-bold">{opt.label}</div>
-                {opt.subLabel && <div className={`text-[10px] font-mono ${idx === highlightedIndex ? 'text-slate-300' : 'text-slate-400'}`}>{opt.subLabel}</div>}
-              </div>
-              {value === opt.value && <Check className={`w-4 h-4 ${idx === highlightedIndex ? 'text-white' : 'text-blue-600'}`} />}
-            </li>
-          ))}
-          {options.length > 100 && filteredOptions.length === 100 && (
-              <li className="px-4 py-2 text-[10px] text-center text-slate-400 bg-slate-50 font-bold">
-                  اكتب المزيد لتخصيص البحث (يعرض 100 من {options.length})
-              </li>
+              {filteredOptions.map((opt, idx) => (
+                <li
+                  key={opt.value}
+                  className={`px-4 py-3 cursor-pointer flex justify-between items-center text-sm border-b border-slate-50 last:border-0
+                    ${opt.disabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}
+                    ${idx === highlightedIndex ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}
+                  `}
+                  onClick={() => selectOption(opt)}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
+                >
+                  <div>
+                    <div className="font-bold">{opt.label}</div>
+                    {opt.subLabel && <div className={`text-[10px] font-mono ${idx === highlightedIndex ? 'text-slate-300' : 'text-slate-400'}`}>{opt.subLabel}</div>}
+                  </div>
+                  {value === opt.value && <Check className={`w-4 h-4 ${idx === highlightedIndex ? 'text-white' : 'text-blue-600'}`} />}
+                </li>
+              ))}
+            </ul>
           )}
-        </ul>
+          
+          {searchTerm.length > 0 && searchTerm.length < minSearchChars && (
+            <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl p-4 text-center text-xs text-slate-500 font-bold animate-in fade-in slide-in-from-top-1">
+              اكتب حرفين على الأقل للبحث عن الأصناف...
+            </div>
+          )}
+
+          {searchTerm.length >= minSearchChars && filteredOptions.length === 0 && (
+             <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl p-4 text-center text-xs text-slate-400 font-bold animate-in fade-in slide-in-from-top-1">
+               لا توجد نتائج مطابقة لبحثك
+             </div>
+          )}
+        </>
       )}
     </div>
   );

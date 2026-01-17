@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
@@ -79,7 +78,6 @@ export default function NewInvoice() {
     }
   }, [id]);
 
-  // تحسين الأداء الحاسم: تجميد الخيارات في الذاكرة لمنع البطء (حل الـ 2 ثانية)
   const customerOptions = useMemo(() => 
     customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })), 
   [customers]);
@@ -96,6 +94,10 @@ export default function NewInvoice() {
           } else {
               setAdditionalDiscountPercent(0);
           }
+          // توجيه التركيز لخانة الأصناف بمجرد اختيار العميل
+          setTimeout(() => {
+            productRef.current?.focus();
+          }, 100);
       }
   }, [selectedCustomer, customers, id]);
 
@@ -236,18 +238,17 @@ export default function NewInvoice() {
                 options={customerOptions} 
                 value={selectedCustomer} 
                 onChange={setSelectedCustomer} 
-                onComplete={() => productRef.current?.focus()} 
              />
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-card border border-slate-100 relative">
             <div className="flex justify-between items-center mb-6">
-                 <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                    <Package className="w-5 h-5 text-blue-600" /> {isReturnMode ? t('inv.add_return_item') : t('inv.add_product')}
+                 <h3 className={`font-bold flex items-center gap-2 ${!selectedCustomer ? 'text-slate-400' : 'text-slate-700'}`}>
+                    <Package className={`w-5 h-5 ${!selectedCustomer ? 'text-slate-300' : 'text-blue-600'}`} /> {isReturnMode ? t('inv.add_return_item') : t('inv.add_product')}
                  </h3>
                  <div className="flex items-center gap-2">
                     <label htmlFor="warehouseSelect" className="text-xs font-bold text-slate-400 uppercase tracking-wider">المخزن:</label>
-                    <select id="warehouseSelect" name="warehouse_id" className="bg-slate-50 border border-slate-200 text-sm rounded-lg p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                    <select id="warehouseSelect" name="warehouse_id" disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-lg p-2 font-bold focus:ring-2 focus:ring-blue-500 disabled:opacity-50" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                  </div>
@@ -264,6 +265,8 @@ export default function NewInvoice() {
                     options={productOptions} 
                     value={selectedProduct} 
                     onChange={setSelectedProduct} 
+                    minSearchChars={2} 
+                    disabled={!selectedCustomer} 
                 />
               </div>
               <div className="col-span-12 md:col-span-3">
@@ -295,21 +298,21 @@ export default function NewInvoice() {
               {invoiceConfig.enableManualPrice && (
                   <div className="col-span-6 md:col-span-3">
                     <label htmlFor="priceInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.price')}</label>
-                    <input id="priceInput" name="unit_price" ref={priceRef} type="number" className="w-full bg-white border border-orange-300 text-orange-700 rounded-xl p-2.5 font-bold focus:ring-2 focus:ring-orange-500 outline-none" value={manualPrice} onChange={e => setManualPrice(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
+                    <input id="priceInput" disabled={!selectedProduct} name="unit_price" ref={priceRef} type="number" className="w-full bg-white border border-orange-300 text-orange-700 rounded-xl p-2.5 font-bold focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50" value={manualPrice} onChange={e => setManualPrice(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
                   </div>
               )}
               <div className="col-span-6 md:col-span-2">
                 <label htmlFor="qtyInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.qty')}</label>
-                <input id="qtyInput" name="quantity" ref={qtyRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={qty} onChange={e => setQty(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} />
+                <input id="qtyInput" disabled={!selectedProduct} name="quantity" ref={qtyRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={qty} onChange={e => setQty(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} />
               </div>
               <div className="col-span-6 md:col-span-2">
                 <label htmlFor="bonusInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.bonus')}</label>
-                <input id="bonusInput" name="bonus" ref={bonusRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={bonus} onChange={e => setBonus(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && (invoiceConfig.enableDiscount ? discountRef.current?.focus() : addItemToCart())} />
+                <input id="bonusInput" disabled={!selectedProduct} name="bonus" ref={bonusRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={bonus} onChange={e => setBonus(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && (invoiceConfig.enableDiscount ? discountRef.current?.focus() : addItemToCart())} />
               </div>
               {invoiceConfig.enableDiscount && (
                <div className="col-span-6 md:col-span-2">
                 <label htmlFor="discountInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.disc_percent')}</label>
-                <input id="discountInput" name="discount_percent" ref={discountRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center text-red-500 font-bold focus:ring-2 focus:ring-red-500 outline-none" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && addItemToCart()} />
+                <input id="discountInput" disabled={!selectedProduct} name="discount_percent" ref={discountRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center text-red-500 font-bold focus:ring-2 focus:ring-red-500 outline-none disabled:opacity-50" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && addItemToCart()} />
               </div>
               )}
               <div className="col-span-12 md:col-span-3 flex items-end">
@@ -363,9 +366,10 @@ export default function NewInvoice() {
                         <div className="relative w-24">
                             <input 
                                 id="customerDiscInput"
+                                disabled={!selectedCustomer}
                                 name="customer_discount_percent"
                                 type="number" 
-                                className="w-full border border-slate-200 rounded-lg p-1.5 text-center font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none" 
+                                className="w-full border border-slate-200 rounded-lg p-1.5 text-center font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" 
                                 value={additionalDiscountPercent} 
                                 onChange={e => setAdditionalDiscountPercent(parseFloat(e.target.value) || 0)} 
                             />
@@ -376,9 +380,10 @@ export default function NewInvoice() {
                         <label htmlFor="extraDiscInput" className="text-[10px] font-black text-slate-400 uppercase flex-1">{t('inv.additional_discount')} (مبلغ)</label>
                         <input 
                             id="extraDiscInput"
+                            disabled={!selectedCustomer}
                             name="extra_discount_value"
                             type="number" 
-                            className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-bold text-red-600 focus:ring-2 focus:ring-red-500 outline-none" 
+                            className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-bold text-red-600 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" 
                             value={additionalDiscount} 
                             onChange={e => setAdditionalDiscount(parseFloat(e.target.value) || 0)} 
                         />
@@ -399,7 +404,7 @@ export default function NewInvoice() {
             <div className="space-y-4 pt-4 border-t border-slate-100">
                 <div>
                   <label htmlFor="cashPaidInput" className="block text-xs font-bold text-slate-500 uppercase mb-1.5">{t('inv.cash_paid')}</label>
-                  <input id="cashPaidInput" name="cash_paid" ref={cashRef} type="number" className="w-full border border-slate-200 rounded-xl p-3 text-xl font-black text-emerald-600 bg-emerald-50/30 focus:ring-2 focus:ring-emerald-500 outline-none" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} />
+                  <input id="cashPaidInput" disabled={!selectedCustomer} name="cash_paid" ref={cashRef} type="number" className="w-full border border-slate-200 rounded-xl p-3 text-xl font-black text-emerald-600 bg-emerald-50/30 focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} />
                 </div>
                 <button onClick={() => { handleCheckout(true); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
                 <button onClick={() => { handleCheckout(false); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
