@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
@@ -127,14 +128,14 @@ export default function Layout() {
                 const isOpen = openMenus.includes(item.key);
                 return (
                     <div key={item.key} className={`space-y-1 rounded-xl transition-all duration-300 ${isOpen ? 'bg-orange-600/10 pb-2' : ''}`}>
-                        <button onClick={() => toggleMenu(item.key)} className={`flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isOpen ? 'text-white bg-orange-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                        <button onClick={() => toggleMenu(item.key)} className={`flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isOpen ? 'text-white bg-orange-600/20' : 'text-white hover:bg-slate-800'}`}>
                             <div className="flex items-center"><item.icon className="w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0" />{item.label}</div>
                             {isOpen ? <ChevronDown className="w-4 h-4" /> : isRTL() ? <ChevronDown className="w-4 h-4 rotate-90" /> : <ChevronRight className="w-4 h-4" />}
                         </button>
                         {isOpen && (
                             <div className={`space-y-1 ${isRTL() ? 'pr-4 border-r border-orange-600/30' : 'pl-4 border-l border-orange-600/30'} ml-3 mr-3 mt-1`}>
                                 {item.children.map((child: any) => (
-                                    <NavLink key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-2 rounded-lg transition-all duration-200 text-sm ${isActive ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-white hover:bg-orange-600/20'}`}>
+                                    <NavLink key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-2 rounded-lg transition-all duration-200 text-sm ${isActive ? 'bg-orange-600 text-white' : 'text-white hover:bg-orange-600/20'}`}>
                                         <child.icon className="w-4 h-4 ltr:mr-3 rtl:ml-3 shrink-0" />{child.label}
                                     </NavLink>
                                 ))}
@@ -144,7 +145,7 @@ export default function Layout() {
                 );
             }
             return (
-                <NavLink key={item.path} to={item.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                <NavLink key={item.path} to={item.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-white hover:bg-slate-800'}`}>
                     <item.icon className="w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0" />{item.label}
                 </NavLink>
             );
@@ -153,10 +154,10 @@ export default function Layout() {
 
         <div className="p-4 bg-slate-950 border-t border-slate-800 shrink-0">
           <div className="flex items-center gap-3 mb-3 px-2">
-             <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold">{user?.name?.charAt(0) || 'U'}</div>
+             <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold text-white">{user?.name?.charAt(0) || 'U'}</div>
              <div className="overflow-hidden">
-                 <p className="text-sm font-bold truncate">{user?.name}</p>
-                 <p className="text-xs text-slate-500 truncate">{user?.role}</p>
+                 <p className="text-sm font-bold truncate text-white">{user?.name}</p>
+                 <p className="text-xs text-white/70 truncate">{user?.role}</p>
              </div>
           </div>
           <button onClick={handleLogout} className="flex items-center w-full px-4 py-2 text-sm font-medium text-red-400 rounded-lg hover:bg-slate-800 transition-colors">
