@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -25,6 +24,8 @@ import Reports from './pages/Reports';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { db } from './services/db';
 import { Loader2 } from 'lucide-react';
+// @ts-ignore
+import { Toaster } from 'react-hot-toast';
 
 function App() {
   const [isDbReady, setIsDbReady] = useState(false);
@@ -47,45 +48,56 @@ function App() {
   }
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        
-        <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="invoice/new" element={<NewInvoice />} />
-            <Route path="invoice/edit/:id" element={<NewInvoice />} />
-            <Route path="invoices" element={<Invoices />} />
-            
-            <Route path="inventory" element={<Inventory />} />
-            <Route path="inventory/analysis" element={<InventoryAnalysis />} />
-            <Route path="shortages" element={<Shortages />} />
-            
-            <Route path="purchases/new" element={<PurchaseInvoice type="PURCHASE" />} />
-            <Route path="purchases/return" element={<PurchaseInvoice type="RETURN" />} />
-            <Route path="purchases/list" element={<PurchaseList />} />
-            <Route path="purchase-orders" element={<PurchaseOrders />} />
-            
-            <Route path="customers" element={<Customers />} />
-            <Route path="suppliers" element={<Suppliers />} />
-            <Route path="representatives" element={<Representatives />} />
-            <Route path="telesales" element={<Telesales />} />
-            <Route path="warehouses" element={<Warehouses />} />
-            <Route path="stock-take" element={<StockTake />} />
-            <Route path="daily-closing" element={<DailyClosing />} />
-            
-            <Route path="cash" element={<CashRegister />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="reports/*" element={<Reports />} />
-            
-            <Route path="settings" element={<Settings />} />
+    <>
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: { background: '#334155', color: '#fff', borderRadius: '12px' },
+          success: { iconTheme: { primary: '#10B981', secondary: '#fff' } },
+          error: { iconTheme: { primary: '#EF4444', secondary: '#fff' } },
+        }} 
+      />
+      <HashRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="invoice/new" element={<NewInvoice />} />
+              <Route path="invoice/edit/:id" element={<NewInvoice />} />
+              <Route path="invoices" element={<Invoices />} />
+              
+              <Route path="inventory" element={<Inventory />} />
+              <Route path="inventory/analysis" element={<InventoryAnalysis />} />
+              <Route path="shortages" element={<Shortages />} />
+              
+              <Route path="purchases/new" element={<PurchaseInvoice type="PURCHASE" />} />
+              <Route path="purchases/return" element={<PurchaseInvoice type="RETURN" />} />
+              <Route path="purchases/list" element={<PurchaseList />} />
+              <Route path="purchase-orders" element={<PurchaseOrders />} />
+              
+              <Route path="customers" element={<Customers />} />
+              <Route path="suppliers" element={<Suppliers />} />
+              <Route path="representatives" element={<Representatives />} />
+              <Route path="telesales" element={<Telesales />} />
+              <Route path="warehouses" element={<Warehouses />} />
+              <Route path="stock-take" element={<StockTake />} />
+              <Route path="daily-closing" element={<DailyClosing />} />
+              
+              <Route path="cash" element={<CashRegister />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="reports/*" element={<Reports />} />
+              
+              <Route path="settings" element={<Settings />} />
+            </Route>
           </Route>
-        </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </HashRouter>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </HashRouter>
+    </>
   );
 }
 

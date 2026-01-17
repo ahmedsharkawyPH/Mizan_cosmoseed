@@ -1,4 +1,3 @@
-
 import { supabase, isSupabaseConfigured } from './supabase';
 import {
   Product,
@@ -22,6 +21,8 @@ import {
   PendingAdjustment,
   DailyClosing
 } from '../types';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 export interface SystemSettings {
   companyName: string;
@@ -40,7 +41,7 @@ export interface SystemSettings {
 }
 
 const DEFAULT_SETTINGS: SystemSettings = {
-  companyName: 'Mizan Online',
+  companyName: 'Mizan Online Pro',
   companyAddress: 'Cairo, Egypt',
   companyPhone: '01559550481',
   companyTaxNumber: '123-456-789',
@@ -80,56 +81,81 @@ class DatabaseService {
 
   private async fetchAllFromTable(tableName: string) {
     if (!isSupabaseConfigured) return [];
-    let allData: any[] = [];
-    let page = 0;
-    const pageSize = 1000;
-    let hasMore = true;
-    while (hasMore) {
-      const { data, error } = await supabase.from(tableName).select('*').range(page * pageSize, (page + 1) * pageSize - 1);
-      if (error || !data || data.length === 0) { hasMore = false; break; }
-      allData = [...allData, ...data];
-      if (data.length < pageSize) hasMore = false; else page++;
+    try {
+      let allData: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data, error } = await supabase.from(tableName).select('*').range(page * pageSize, (page + 1) * pageSize - 1);
+        if (error) {
+            // معالجة حالة الجدول المفقود (PGRST116 أو كود 42P01 في SQL)
+            if (error.code === 'PGRST116' || error.message.includes('not found')) {
+                console.warn(`[DB] Table '${tableName}' does not exist yet.`);
+                return [];
+            }
+            throw error;
+        }
+        if (!data || data.length === 0) { hasMore = false; break; }
+        allData = [...allData, ...data];
+        if (data.length < pageSize) hasMore = false; else page++;
+      }
+      return allData;
+    } catch (error: any) {
+        console.warn(`[DB] Error fetching table '${tableName}':`, error.message);
+        return [];
     }
-    return allData;
   }
 
   async init() {
     if(this.isInitialized) return;
     try {
+        // جلب الإعدادات أولاً لأنها ضرورية لبدء الواجهة
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
-        const [p, b, c, s, w, inv, pur, po, cash, rep, sm, pa, dc] = await Promise.all([
-            this.fetchAllFromTable('products'), this.fetchAllFromTable('batches'),
-            this.fetchAllFromTable('customers'), this.fetchAllFromTable('suppliers'),
-            this.fetchAllFromTable('warehouses'), this.fetchAllFromTable('invoices'),
-            this.fetchAllFromTable('purchase_invoices'), this.fetchAllFromTable('purchase_orders'),
-            this.fetchAllFromTable('cash_transactions'), this.fetchAllFromTable('representatives'),
-            this.fetchAllFromTable('stock_movements'), this.fetchAllFromTable('pending_adjustments'),
-            this.fetchAllFromTable('daily_closings')
-        ]);
+        // جلب الجداول الأساسية باستخدام Promise.allSettled لضمان عدم توقف النظام عند فقدان جدول
+        const tables = [
+            'products', 'batches', 'customers', 'suppliers', 
+            'warehouses', 'invoices', 'purchase_invoices', 
+            'purchase_orders', 'cash_transactions', 'representatives', 
+            'stock_movements', 'pending_adjustments', 'daily_closings'
+        ];
 
-        this.products = p || [];
-        this.batches = b || [];
-        this.customers = c || [];
-        this.suppliers = s || [];
-        this.warehouses = w || [];
-        this.invoices = inv || [];
-        this.purchaseInvoices = pur || [];
-        this.purchaseOrders = po || [];
-        this.cashTransactions = cash || [];
-        this.representatives = rep || [];
-        this.stockMovements = sm || [];
-        this.pendingAdjustments = pa || [];
-        this.dailyClosings = dc || [];
+        const results = await Promise.allSettled(tables.map(table => this.fetchAllFromTable(table)));
+
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+                const data = result.value || [];
+                const tableName = tables[index];
+                switch(tableName) {
+                    case 'products': this.products = data; break;
+                    case 'batches': this.batches = data; break;
+                    case 'customers': this.customers = data; break;
+                    case 'suppliers': this.suppliers = data; break;
+                    case 'warehouses': this.warehouses = data; break;
+                    case 'invoices': this.invoices = data; break;
+                    case 'purchase_invoices': this.purchaseInvoices = data; break;
+                    case 'purchase_orders': this.purchaseOrders = data; break;
+                    case 'cash_transactions': this.cashTransactions = data; break;
+                    case 'representatives': this.representatives = data; break;
+                    case 'stock_movements': this.stockMovements = data; break;
+                    case 'pending_adjustments': this.pendingAdjustments = data; break;
+                    case 'daily_closings': this.dailyClosings = data; break;
+                }
+            }
+        });
 
         this.rebuildIndexes();
         
         if (this.warehouses.length === 0) {
             this.warehouses.push({ id: 'W1', name: 'المخزن الرئيسي', is_default: true });
         }
+        
+        console.log("[DB] System initialized successfully with cloud sync.");
     } catch (error) {
-        console.error("Database initialization failed:", error);
+        console.error("[DB] Initialization critical failure:", error);
+        toast.error("خطأ في الاتصال بالسحابة، النظام يعمل بالبيانات المحلية.");
     } finally {
         this.isInitialized = true;
     }
@@ -168,7 +194,6 @@ class DatabaseService {
     sortOrder?: 'asc' | 'desc';
   }) {
     let products = this.getProductsWithBatches();
-    
     if (options.filters?.lowStockOnly) {
       const threshold = this.settings.lowStockThreshold || 10;
       products = products.filter(p => {
@@ -176,21 +201,13 @@ class DatabaseService {
         return total > 0 && total <= threshold;
       });
     }
-    
     if (options.filters?.outOfStockOnly) {
-      products = products.filter(p => 
-        p.batches.reduce((sum, b) => sum + b.quantity, 0) === 0
-      );
+      products = products.filter(p => p.batches.reduce((sum, b) => sum + b.quantity, 0) === 0);
     }
-
     if (options.search) {
       const searchLower = options.search.toLowerCase();
-      products = products.filter(p => 
-        p.name.toLowerCase().includes(searchLower) ||
-        (p.code && p.code.toLowerCase().includes(searchLower))
-      );
+      products = products.filter(p => p.name.toLowerCase().includes(searchLower) || (p.code && p.code.toLowerCase().includes(searchLower)));
     }
-    
     if (options.sortBy) {
       products.sort((a, b) => {
         let valA, valB;
@@ -203,26 +220,17 @@ class DatabaseService {
           // @ts-ignore
           valB = (b[options.sortBy] || '').toString().toLowerCase();
         }
-        
         if (valA < valB) return options.sortOrder === 'asc' ? -1 : 1;
         if (valA > valB) return options.sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
     }
-    
     const total = products.length;
     const start = (options.page - 1) * options.pageSize;
     const paginatedProducts = products.slice(0, start + options.pageSize);
-    
-    return {
-      products: paginatedProducts,
-      total,
-      hasMore: total > paginatedProducts.length
-    };
+    return { products: paginatedProducts, total, hasMore: total > paginatedProducts.length };
   }
 
-  // --- دوال الجرد والاعتماد ---
-  
   async submitStockTake(adjustments: Omit<PendingAdjustment, 'id' | 'status' | 'date'>[]) {
     const newItems = adjustments.map(adj => ({
       ...adj,
@@ -230,11 +238,8 @@ class DatabaseService {
       status: 'PENDING' as const,
       date: new Date().toISOString()
     }));
-    
     this.pendingAdjustments.push(...newItems);
-    if (isSupabaseConfigured) {
-      await supabase.from('pending_adjustments').insert(newItems);
-    }
+    if (isSupabaseConfigured) await supabase.from('pending_adjustments').insert(newItems);
     return true;
   }
 
@@ -245,20 +250,13 @@ class DatabaseService {
   async approveAdjustment(id: string) {
     const adjIdx = this.pendingAdjustments.findIndex(a => a.id === id);
     if (adjIdx === -1) return false;
-    
     const adj = this.pendingAdjustments[adjIdx];
-    
     const productBatches = this.batches.filter(b => b.product_id === adj.product_id && b.warehouse_id === adj.warehouse_id);
-    
     if (productBatches.length > 0) {
       const targetBatch = productBatches[productBatches.length - 1];
       targetBatch.quantity = adj.actual_qty;
-      
-      if (isSupabaseConfigured) {
-        await supabase.from('batches').update({ quantity: targetBatch.quantity }).eq('id', targetBatch.id);
-      }
+      if (isSupabaseConfigured) await supabase.from('batches').update({ quantity: targetBatch.quantity }).eq('id', targetBatch.id);
     }
-    
     const movement: StockMovement = {
       id: `SM${Date.now()}`,
       date: new Date().toISOString(),
@@ -269,15 +267,12 @@ class DatabaseService {
       quantity: adj.diff,
       notes: `تسوية جرد معتمدة: ${id}`
     };
-    
     this.stockMovements.push(movement);
     adj.status = 'APPROVED';
-    
     if (isSupabaseConfigured) {
       await supabase.from('stock_movements').insert(movement);
       await supabase.from('pending_adjustments').update({ status: 'APPROVED' }).eq('id', id);
     }
-    
     this.rebuildIndexes();
     return true;
   }
@@ -285,62 +280,26 @@ class DatabaseService {
   async rejectAdjustment(id: string) {
     const adjIdx = this.pendingAdjustments.findIndex(a => a.id === id);
     if (adjIdx === -1) return false;
-    
     this.pendingAdjustments[adjIdx].status = 'REJECTED';
-    if (isSupabaseConfigured) {
-      await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id);
-    }
+    if (isSupabaseConfigured) await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id);
     return true;
   }
 
-  // --- التقفيل اليومي ---
-
   getDailySummary(date: string) {
-    const targetDate = date; // YYYY-MM-DD
-    
-    // المقبوضات (تحصيلات)
-    const collections = this.cashTransactions
-      .filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.RECEIPT)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    // المصروفات
-    const expenses = this.cashTransactions
-      .filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category !== 'SUPPLIER_PAYMENT')
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    // سداد موردين (نقدي)
-    const cashPurchases = this.cashTransactions
-      .filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category === 'SUPPLIER_PAYMENT')
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    // الرصيد الافتتاحي (رصيد الخزينة قبل هذا اليوم)
-    const openingCash = this.cashTransactions
-      .filter(t => t.date.split('T')[0] < targetDate)
-      .reduce((sum, t) => t.type === CashTransactionType.RECEIPT ? sum + t.amount : sum - t.amount, 0);
-
+    const targetDate = date;
+    const collections = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.RECEIPT).reduce((sum, t) => sum + t.amount, 0);
+    const expenses = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category !== 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
+    const cashPurchases = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category === 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
+    const openingCash = this.cashTransactions.filter(t => t.date.split('T')[0] < targetDate).reduce((sum, t) => t.type === CashTransactionType.RECEIPT ? sum + t.amount : sum - t.amount, 0);
     const expectedCash = openingCash + collections - expenses - cashPurchases;
-
-    return {
-      openingCash,
-      collections,
-      expenses,
-      cashPurchases,
-      expectedCash,
-      cashSales: 0 // للتبسيط، نفترض أن كل المبيعات يتم تسجيلها كـ RECEIPT في الخزينة فوراً
-    };
+    return { openingCash, collections, expenses, cashPurchases, expectedCash, cashSales: 0 };
   }
 
   async saveDailyClosing(closing: Omit<DailyClosing, 'id' | 'created_at'>) {
     const id = `DC${Date.now()}`;
-    const newClosing: DailyClosing = {
-      ...closing,
-      id,
-      created_at: new Date().toISOString()
-    };
+    const newClosing: DailyClosing = { ...closing, id, created_at: new Date().toISOString() };
     this.dailyClosings.push(newClosing);
-    if (isSupabaseConfigured) {
-      await supabase.from('daily_closings').insert(newClosing);
-    }
+    if (isSupabaseConfigured) await supabase.from('daily_closings').insert(newClosing);
     return true;
   }
 
@@ -348,15 +307,8 @@ class DatabaseService {
     return [...this.dailyClosings].sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  // --- بقية الدوال ---
-
-  getProductById(id: string): Product | undefined {
-    return this.productsMap.get(id);
-  }
-
-  getCashBalance(): number {
-    return this._cashBalance;
-  }
+  getProductById(id: string): Product | undefined { return this.productsMap.get(id); }
+  getCashBalance(): number { return this._cashBalance; }
 
   async addCashTransaction(tx: Omit<CashTransaction, 'id'>) {
       const id = `TX${Date.now()}`;

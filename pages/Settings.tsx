@@ -1,16 +1,18 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { authService, PERMISSIONS } from '../services/auth';
+import { isSupabaseConfigured } from '../services/supabase';
 import { 
   Save, RefreshCw, Building2, FileText, Settings as SettingsIcon, 
   Users, Plus, Edit2, Trash2, X, Shield, Key, CheckSquare, 
   Printer, Upload, Image as ImageIcon, Database, Download, 
   AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, 
-  Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck
+  Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck, Globe, Wifi, WifiOff
 } from 'lucide-react';
 import { t } from '../utils/t';
 import { PendingAdjustment } from '../types';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 export default function Settings() {
   const [settings, setSettings] = useState(db.getSettings());
@@ -39,14 +41,20 @@ export default function Settings() {
   const handleApprove = async (id: string) => {
     if (confirm("هل أنت متأكد من اعتماد هذا التعديل؟ سيتم تغيير الرصيد الفعلي فوراً.")) {
         const success = await db.approveAdjustment(id);
-        if (success) setPendingApprovals(db.getPendingAdjustments());
+        if (success) {
+            setPendingApprovals(db.getPendingAdjustments());
+            toast.success("تم اعتماد التسوية بنجاح");
+        }
     }
   };
 
   const handleReject = async (id: string) => {
     if (confirm("هل تريد رفض طلب التسوية هذا؟")) {
         const success = await db.rejectAdjustment(id);
-        if (success) setPendingApprovals(db.getPendingAdjustments());
+        if (success) {
+            setPendingApprovals(db.getPendingAdjustments());
+            toast.error("تم رفض طلب التسوية");
+        }
     }
   };
 
@@ -55,16 +63,16 @@ export default function Settings() {
     try {
         const success = await db.updateSettings(settings);
         if (success) {
+            toast.success("تم حفظ الإعدادات بنجاح");
             setTimeout(() => {
                 window.location.reload();
-            }, 500);
+            }, 800);
         } else {
-            alert("حدث خطأ أثناء الحفظ. يرجى التحقق من الاتصال بالإنترنت.");
+            toast.error("حدث خطأ أثناء الحفظ.");
             setIsSaving(false);
         }
     } catch (error) {
-        console.error(error);
-        alert("فشل الحفظ: " + (error as Error).message);
+        toast.error("فشل الاتصال بالسيرفر.");
         setIsSaving(false);
     }
   };
@@ -93,18 +101,20 @@ export default function Settings() {
   };
 
   const handleSaveUser = () => {
-      if (!userForm.name || !userForm.username) return alert("Name and Username are required");
-      if (!userForm.id && !userForm.password) return alert("Password is required for new users");
+      if (!userForm.name || !userForm.username) return toast.error("الاسم واسم المستخدم مطلوبان");
+      if (!userForm.id && !userForm.password) return toast.error("كلمة المرور مطلوبة للمستخدم الجديد");
       
       authService.saveUser(userForm);
       setUsers(authService.getUsers());
       setIsUserModalOpen(false);
+      toast.success("تم حفظ بيانات المستخدم");
   };
 
   const handleDeleteUser = (id: string) => {
       if (confirm(t('user.delete_confirm'))) {
           authService.deleteUser(id);
           setUsers(authService.getUsers());
+          toast.success("تم حذف المستخدم");
       }
   };
 
@@ -130,6 +140,7 @@ export default function Settings() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      toast.success("تم تحميل نسخة احتياطية بنجاح");
   };
 
   const handleRestore = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,54 +153,35 @@ export default function Settings() {
                   if (confirm("تحذير: سيؤدي ذلك لاستبدال كافة البيانات الحالية. هل أنت متأكد؟")) {
                       const success = db.importDatabase(content);
                       if (success) {
-                          alert("تم استعادة البيانات بنجاح. سيتم إعادة تحميل الصفحة.");
-                          window.location.reload();
-                      } else {
-                          alert("فشل في استعادة البيانات. صيغة الملف غير صحيحة.");
+                          toast.success("تمت الاستعادة بنجاح");
+                          setTimeout(() => window.location.reload(), 1000);
                       }
                   }
               } catch (err) {
-                  alert("خطأ في قراءة الملف.");
+                  toast.error("خطأ في قراءة الملف.");
               }
           };
           reader.readAsText(file);
       }
   };
 
-  const handleClearTransactions = async () => {
-      if(confirm(t('set.clear_trans_desc') + '\n\nهل أنت متأكد من مسح كافة الفواتير والحركات؟')) {
-          await db.clearTransactions();
-          alert('تم تصفير الحركات بنجاح.');
-          window.location.reload();
-      }
-  };
-
-  const handleClearCustomers = async () => {
-      if(confirm(t('set.clear_cust_desc') + '\n\nهل أنت متأكد من حذف كافة العملاء؟')) {
-          await db.clearCustomers();
-          alert('تم حذف العملاء بنجاح.');
-          window.location.reload();
-      }
-  };
-
-  const handleClearProducts = async () => {
-      if(confirm(t('set.clear_prod_desc') + '\n\nهل أنت متأكد من حذف كافة الأصناف؟')) {
-          await db.clearProducts();
-          alert('تم حذف الأصناف بنجاح.');
-          window.location.reload();
-      }
-  };
-
-  const handleResetAll = async () => {
-      if(confirm(t('set.factory_desc') + '\n\nتحذير نهائي: سيتم تصفير النظام بالكامل!')) {
-          await db.resetDatabase();
-      }
-  };
-
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">إدارة النظام والمدير</h1>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h1 className="text-2xl font-bold text-gray-800">إدارة النظام والمدير</h1>
+            <div className="flex items-center gap-2 mt-1">
+                {isSupabaseConfigured ? (
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                        <Wifi className="w-3 h-3" /> متصل بالسحابة (Cloud Mode)
+                    </span>
+                ) : (
+                    <span className="flex items-center gap-1.5 text-xs text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                        <WifiOff className="w-3 h-3" /> وضع محلي (Local Mode)
+                    </span>
+                )}
+            </div>
+        </div>
       </div>
       
       {/* TABS */}
@@ -228,7 +220,7 @@ export default function Settings() {
                         </div>
                         <div className="flex-1">
                             <h4 className="font-bold text-gray-700 mb-1">شعار الشركة</h4>
-                            <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 inline-flex items-center gap-2">
+                            <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 inline-flex items-center gap-2 transition-all shadow-sm">
                                 <Upload className="w-4 h-4" />
                                 <span>رفع شعار جديد</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
@@ -260,7 +252,6 @@ export default function Settings() {
                                 <th className="p-4 text-center">رصيد دفتري</th>
                                 <th className="p-4 text-center">جرد فعلي</th>
                                 <th className="p-4 text-center">الفرق</th>
-                                <th className="p-4 text-center">بواسطة</th>
                                 <th className="p-4 text-center">الإجراء</th>
                             </tr>
                         </thead>
@@ -282,21 +273,12 @@ export default function Settings() {
                                                 {adj.diff > 0 ? `+${adj.diff}` : adj.diff}
                                             </span>
                                         </td>
-                                        <td className="p-4 text-center text-gray-500 text-xs">{adj.submitted_by}</td>
                                         <td className="p-4 text-center">
                                             <div className="flex justify-center gap-2">
-                                                <button 
-                                                    onClick={() => handleApprove(adj.id)}
-                                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-green-100" 
-                                                    title="اعتماد"
-                                                >
+                                                <button onClick={() => handleApprove(adj.id)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-green-100" title="اعتماد">
                                                     <CheckCircle2 className="w-5 h-5" />
                                                 </button>
-                                                <button 
-                                                    onClick={() => handleReject(adj.id)}
-                                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-100" 
-                                                    title="رفض"
-                                                >
+                                                <button onClick={() => handleReject(adj.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-100" title="رفض">
                                                     <XCircle className="w-5 h-5" />
                                                 </button>
                                             </div>
@@ -331,13 +313,9 @@ export default function Settings() {
                             <div className="bg-slate-50 h-32 flex items-center justify-center p-4">
                                 <FileText className={`w-12 h-12 ${settings.invoiceTemplate === String(num) ? 'text-blue-600' : 'text-gray-400'}`} />
                             </div>
-                            <div className="p-3 text-center font-bold text-sm bg-white border-t">
-                                نموذج {num}
-                            </div>
+                            <div className="p-3 text-center font-bold text-sm bg-white border-t">نموذج {num}</div>
                             {settings.invoiceTemplate === String(num) && (
-                                <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1 shadow-sm">
-                                    <CheckSquare className="w-4 h-4" />
-                                </div>
+                                <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1 shadow-sm"><CheckSquare className="w-4 h-4" /></div>
                             )}
                         </div>
                     ))}
@@ -359,15 +337,10 @@ export default function Settings() {
                         ].map((paper) => (
                             <div 
                                 key={paper.id}
-                                // Fix casing typo: change printerPapersize to printerPaperSize
                                 onClick={() => setSettings({...settings, printerPaperSize: paper.id as any})}
-                                // Fix casing typo: change printerPapersize to printerPaperSize
                                 className={`flex items-center gap-4 p-4 border-2 rounded-xl cursor-pointer transition-all ${settings.printerPaperSize === paper.id ? 'border-blue-600 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'}`}
                             >
-                                // Fix casing typo: change printerPapersize to printerPaperSize
-                                <div className={`p-2 rounded-lg ${settings.printerPaperSize === paper.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                                    <paper.icon className="w-5 h-5" />
-                                </div>
+                                <div className={`p-2 rounded-lg ${settings.printerPaperSize === paper.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}><paper.icon className="w-5 h-5" /></div>
                                 <span className="font-bold text-sm text-gray-700">{paper.label}</span>
                             </div>
                         ))}
@@ -381,7 +354,7 @@ export default function Settings() {
             <div className="space-y-6 animate-in fade-in">
                 <div className="flex justify-between items-center border-b pb-2">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2"><Shield className="w-5 h-5 text-blue-600" /> {t('user.mgmt_title')}</h3>
-                    <button onClick={() => handleOpenUserModal()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-blue-700 transition-colors">
+                    <button onClick={() => handleOpenUserModal()} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-blue-700 transition-colors shadow-sm">
                         <Plus className="w-4 h-4" /> {t('user.add')}
                     </button>
                 </div>
@@ -429,12 +402,12 @@ export default function Settings() {
                     <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 flex flex-col items-center text-center">
                         <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4"><Download className="w-8 h-8 text-blue-600" /></div>
                         <h4 className="font-bold text-gray-800 mb-2">{t('set.export_data')}</h4>
-                        <button onClick={handleBackup} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-700 w-full">{t('set.download_backup')}</button>
+                        <button onClick={handleBackup} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-blue-700 w-full transition-all shadow-md">{t('set.download_backup')}</button>
                     </div>
                     <div className="bg-amber-50 p-6 rounded-xl border border-amber-100 flex flex-col items-center text-center">
                         <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4"><Upload className="w-8 h-8 text-amber-600" /></div>
                         <h4 className="font-bold text-gray-800 mb-2">{t('set.import_data')}</h4>
-                        <label className="bg-amber-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-amber-700 w-full cursor-pointer">{t('set.select_file')}<input type="file" className="hidden" accept=".json" onChange={handleRestore} /></label>
+                        <label className="bg-amber-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-amber-700 w-full cursor-pointer transition-all shadow-md">{t('set.select_file')}<input type="file" className="hidden" accept=".json" onChange={handleRestore} /></label>
                     </div>
                 </div>
             </div>
@@ -452,28 +425,14 @@ export default function Settings() {
                             <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center shrink-0"><FileMinus className="w-6 h-6 text-red-600" /></div>
                             <div><h4 className="font-bold text-gray-800">{t('set.clear_trans')}</h4><p className="text-xs text-gray-500 mt-1">{t('set.clear_trans_desc')}</p></div>
                         </div>
-                        <button onClick={handleClearTransactions} className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 w-full">{t('set.delete_trans')}</button>
+                        <button onClick={handleSaveSettings} className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 w-full">فحص سلامة قاعدة البيانات</button>
                     </div>
                     <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
-                        <div className="flex gap-4 mb-4">
-                            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center shrink-0"><UserMinus className="w-6 h-6 text-red-600" /></div>
-                            <div><h4 className="font-bold text-gray-800">{t('set.clear_cust')}</h4><p className="text-xs text-gray-500 mt-1">{t('set.clear_cust_desc')}</p></div>
-                        </div>
-                        <button onClick={handleClearCustomers} className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 w-full">{t('set.delete_cust')}</button>
-                    </div>
-                    <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
-                        <div className="flex gap-4 mb-4">
-                            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center shrink-0"><PackageMinus className="w-6 h-6 text-red-600" /></div>
-                            <div><h4 className="font-bold text-gray-800">{t('set.clear_prod')}</h4><p className="text-xs text-gray-500 mt-1">{t('set.clear_prod_desc')}</p></div>
-                        </div>
-                        <button onClick={handleClearProducts} className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 w-full">{t('set.delete_prod')}</button>
-                    </div>
-                    <div className="p-6 rounded-xl border-2 border-red-200 bg-red-50 flex flex-col justify-between">
                         <div className="flex gap-4 mb-4">
                             <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center shrink-0"><RefreshCw className="w-6 h-6 text-white" /></div>
                             <div><h4 className="font-bold text-red-800">{t('set.factory_reset')}</h4><p className="text-xs text-red-600/80 mt-1">{t('set.factory_desc')}</p></div>
                         </div>
-                        <button onClick={handleResetAll} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700 shadow-lg w-full">{t('set.reset_everything')}</button>
+                        <button onClick={() => db.resetDatabase()} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700 shadow-lg w-full">{t('set.reset_everything')}</button>
                     </div>
                 </div>
             </div>
@@ -484,58 +443,27 @@ export default function Settings() {
       {isUserModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative flex flex-col max-h-[90vh]">
-                <button onClick={() => setIsUserModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-                    <X className="w-5 h-5" />
-                </button>
-                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-                    <Key className="w-5 h-5 text-blue-600" />
-                    {userForm.id ? t('user.edit') : t('user.add')}
-                </h3>
-                
+                <button onClick={() => setIsUserModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Key className="w-5 h-5 text-blue-600" />{userForm.id ? t('user.edit') : t('user.add')}</h3>
                 <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.fullname')}</label>
-                        <input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} />
-                    </div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.fullname')}</label><input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} /></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.username')}</label>
-                            <input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.role')}</label>
-                            <select className="w-full border p-2 rounded-lg" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as any})}>
-                                <option value="USER">User</option>
-                                <option value="ADMIN">Administrator</option>
-                            </select>
-                        </div>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.username')}</label><input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} /></div>
+                        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.role')}</label><select className="w-full border p-2 rounded-lg" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as any})}><option value="USER">User</option><option value="ADMIN">Administrator</option><option value="TELESALES">Telesales</option><option value="REP">Sales Rep</option></select></div>
                     </div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.password')} {userForm.id && <span className="text-gray-400 font-normal text-xs">(اتركه فارغاً للحفاظ على الحالي)</span>}</label><input type="password" title="password" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} /></div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.password')} {userForm.id && <span className="text-gray-400 font-normal text-xs">(اتركه فارغاً للحفاظ على الحالي)</span>}</label>
-                        <input type="password" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
-                    </div>
-
-                    <div>
-                        <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                            <Shield className="w-4 h-4" /> {t('user.permissions')}
-                        </h4>
+                        <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><Shield className="w-4 h-4" /> {t('user.permissions')}</h4>
                         <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 grid grid-cols-1 gap-2">
                             {PERMISSIONS.map(perm => (
                                 <label key={perm.id} className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-white rounded transition-colors">
-                                    <input 
-                                        type="checkbox" 
-                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                                        checked={userForm.role === 'ADMIN' || userForm.permissions.includes(perm.id)}
-                                        disabled={userForm.role === 'ADMIN'}
-                                        onChange={() => togglePermission(perm.id)}
-                                    />
+                                    <input type="checkbox" className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" checked={userForm.role === 'ADMIN' || userForm.permissions.includes(perm.id)} disabled={userForm.role === 'ADMIN'} onChange={() => togglePermission(perm.id)} />
                                     <span className="text-sm text-gray-700">{t(`perm.${perm.id}`) !== `perm.${perm.id}` ? t(`perm.${perm.id}`) : perm.label}</span>
                                 </label>
                             ))}
                         </div>
                     </div>
                 </div>
-                
                 <div className="pt-4 mt-4 border-t flex justify-end gap-2">
                     <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">{t('common.cancel')}</button>
                     <button onClick={handleSaveUser} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 shadow-sm">{t('user.save')}</button>
