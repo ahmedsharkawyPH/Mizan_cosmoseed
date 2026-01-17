@@ -1,14 +1,23 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { authService, PERMISSIONS } from '../services/auth';
-import { Save, RefreshCw, Building2, FileText, Settings as SettingsIcon, Users, Plus, Edit2, Trash2, X, Shield, Key, CheckSquare, Printer, Upload, Image as ImageIcon, Database, Download, AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, Monitor, Layout, FileType } from 'lucide-react';
+import { 
+  Save, RefreshCw, Building2, FileText, Settings as SettingsIcon, 
+  Users, Plus, Edit2, Trash2, X, Shield, Key, CheckSquare, 
+  Printer, Upload, Image as ImageIcon, Database, Download, 
+  AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, 
+  Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck
+} from 'lucide-react';
 import { t } from '../utils/t';
+import { PendingAdjustment } from '../types';
 
 export default function Settings() {
   const [settings, setSettings] = useState(db.getSettings());
-  const [activeTab, setActiveTab] = useState<'general' | 'invoice' | 'users' | 'printer' | 'backup' | 'data'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'approvals' | 'invoice' | 'users' | 'printer' | 'backup' | 'data'>('general');
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingAdjustment[]>([]);
+  const user = authService.getCurrentUser();
   
   // Users Management State
   const [users, setUsers] = useState<any[]>([]);
@@ -22,7 +31,24 @@ export default function Settings() {
     if (activeTab === 'users') {
         setUsers(authService.getUsers());
     }
+    if (activeTab === 'approvals') {
+        setPendingApprovals(db.getPendingAdjustments());
+    }
   }, [activeTab]);
+
+  const handleApprove = async (id: string) => {
+    if (confirm("هل أنت متأكد من اعتماد هذا التعديل؟ سيتم تغيير الرصيد الفعلي فوراً.")) {
+        const success = await db.approveAdjustment(id);
+        if (success) setPendingApprovals(db.getPendingAdjustments());
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (confirm("هل تريد رفض طلب التسوية هذا؟")) {
+        const success = await db.rejectAdjustment(id);
+        if (success) setPendingApprovals(db.getPendingAdjustments());
+    }
+  };
 
   const handleSaveSettings = async () => {
     setIsSaving(true);
@@ -161,15 +187,18 @@ export default function Settings() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">{t('set.title')}</h1>
+        <h1 className="text-2xl font-bold text-gray-800">إدارة النظام والمدير</h1>
       </div>
       
       {/* TABS */}
       <div className="flex space-x-2 border-b border-gray-200 rtl:space-x-reverse overflow-x-auto">
           <button onClick={() => setActiveTab('general')} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'general' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
              <SettingsIcon className="w-4 h-4" /> {t('set.tab_general')}
+          </button>
+          <button onClick={() => setActiveTab('approvals')} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'approvals' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+             <PackageCheck className="w-4 h-4" /> اعتماد الجرد
           </button>
           <button onClick={() => setActiveTab('invoice')} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'invoice' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
              <FileText className="w-4 h-4" /> {t('set.tab_invoice')}
@@ -198,10 +227,10 @@ export default function Settings() {
                             {settings.companyLogo ? <img src={settings.companyLogo} alt="Logo" className="w-full h-full object-contain" /> : <ImageIcon className="w-8 h-8 text-gray-300" />}
                         </div>
                         <div className="flex-1">
-                            <h4 className="font-bold text-gray-700 mb-1">Company Logo</h4>
+                            <h4 className="font-bold text-gray-700 mb-1">شعار الشركة</h4>
                             <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 inline-flex items-center gap-2">
                                 <Upload className="w-4 h-4" />
-                                <span>Upload New Logo</span>
+                                <span>رفع شعار جديد</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
                             </label>
                         </div>
@@ -212,6 +241,80 @@ export default function Settings() {
                     <div className="col-span-1 md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">{t('set.address')}</label><input className="w-full border p-2 rounded-lg" value={settings.companyAddress} onChange={e => setSettings({...settings, companyAddress: e.target.value})} /></div>
                 </div>
                 <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} disabled={isSaving} className="bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 shadow-sm hover:bg-blue-700 disabled:bg-blue-400">{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{isSaving ? "جاري الحفظ..." : t('set.save')}</button></div>
+            </div>
+        )}
+
+        {activeTab === 'approvals' && (
+            <div className="space-y-6 animate-in fade-in">
+                <div className="flex justify-between items-center border-b pb-2">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><PackageCheck className="w-5 h-5 text-orange-600" /> مراجعة طلبات تسوية الجرد</h3>
+                    <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-bold">{pendingApprovals.length} طلب معلق</span>
+                </div>
+                
+                <div className="border rounded-xl overflow-hidden shadow-sm">
+                    <table className="w-full text-sm text-right">
+                        <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                            <tr>
+                                <th className="p-4">الصنف</th>
+                                <th className="p-4 text-center">المخزن</th>
+                                <th className="p-4 text-center">رصيد دفتري</th>
+                                <th className="p-4 text-center">جرد فعلي</th>
+                                <th className="p-4 text-center">الفرق</th>
+                                <th className="p-4 text-center">بواسطة</th>
+                                <th className="p-4 text-center">الإجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {pendingApprovals.map(adj => {
+                                const prod = db.getProductsWithBatches().find(p => p.id === adj.product_id);
+                                const wh = db.getWarehouses().find(w => w.id === adj.warehouse_id);
+                                return (
+                                    <tr key={adj.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="p-4">
+                                            <div className="font-bold text-slate-800">{prod?.name || 'صنف غير معروف'}</div>
+                                            <div className="text-[10px] text-slate-400 font-mono">{prod?.code}</div>
+                                        </td>
+                                        <td className="p-4 text-center text-gray-600">{wh?.name}</td>
+                                        <td className="p-4 text-center font-bold text-gray-500">{adj.system_qty}</td>
+                                        <td className="p-4 text-center font-bold text-blue-600 bg-blue-50/30">{adj.actual_qty}</td>
+                                        <td className="p-4 text-center">
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${adj.diff > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                {adj.diff > 0 ? `+${adj.diff}` : adj.diff}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-center text-gray-500 text-xs">{adj.submitted_by}</td>
+                                        <td className="p-4 text-center">
+                                            <div className="flex justify-center gap-2">
+                                                <button 
+                                                    onClick={() => handleApprove(adj.id)}
+                                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-green-100" 
+                                                    title="اعتماد"
+                                                >
+                                                    <CheckCircle2 className="w-5 h-5" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleReject(adj.id)}
+                                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-100" 
+                                                    title="رفض"
+                                                >
+                                                    <XCircle className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {pendingApprovals.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} className="p-12 text-center text-slate-400">
+                                        <CheckCircle2 className="w-12 h-12 mx-auto mb-2 opacity-10" />
+                                        <p className="font-bold">لا توجد طلبات جرد بانتظار المراجعة</p>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         )}
 
@@ -229,7 +332,7 @@ export default function Settings() {
                                 <FileText className={`w-12 h-12 ${settings.invoiceTemplate === String(num) ? 'text-blue-600' : 'text-gray-400'}`} />
                             </div>
                             <div className="p-3 text-center font-bold text-sm bg-white border-t">
-                                Template {num}
+                                نموذج {num}
                             </div>
                             {settings.invoiceTemplate === String(num) && (
                                 <div className="absolute top-2 right-2 bg-blue-600 text-white rounded-full p-1 shadow-sm">
@@ -256,9 +359,12 @@ export default function Settings() {
                         ].map((paper) => (
                             <div 
                                 key={paper.id}
+                                // Fix casing typo: change printerPapersize to printerPaperSize
                                 onClick={() => setSettings({...settings, printerPaperSize: paper.id as any})}
+                                // Fix casing typo: change printerPapersize to printerPaperSize
                                 className={`flex items-center gap-4 p-4 border-2 rounded-xl cursor-pointer transition-all ${settings.printerPaperSize === paper.id ? 'border-blue-600 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'}`}
                             >
+                                // Fix casing typo: change printerPapersize to printerPaperSize
                                 <div className={`p-2 rounded-lg ${settings.printerPaperSize === paper.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
                                     <paper.icon className="w-5 h-5" />
                                 </div>
@@ -405,7 +511,7 @@ export default function Settings() {
                         </div>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.password')} {userForm.id && <span className="text-gray-400 font-normal text-xs">(Blank to keep)</span>}</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('user.password')} {userForm.id && <span className="text-gray-400 font-normal text-xs">(اتركه فارغاً للحفاظ على الحالي)</span>}</label>
                         <input type="password" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} />
                     </div>
 

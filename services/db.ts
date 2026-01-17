@@ -18,7 +18,8 @@ import {
   Representative,
   Warehouse,
   StockMovement,
-  JournalEntry
+  JournalEntry,
+  PendingAdjustment
 } from '../types';
 
 export interface SystemSettings {
@@ -64,6 +65,7 @@ class DatabaseService {
   private purchaseOrders: PurchaseOrder[] = [];
   private cashTransactions: CashTransaction[] = [];
   private stockMovements: StockMovement[] = [];
+  private pendingAdjustments: PendingAdjustment[] = [];
   private settings: SystemSettings = { ...DEFAULT_SETTINGS };
   
   private batchesByProductId: Map<string, Batch[]> = new Map();
@@ -95,13 +97,13 @@ class DatabaseService {
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
-        const [p, b, c, s, w, inv, pur, po, cash, rep, sm] = await Promise.all([
+        const [p, b, c, s, w, inv, pur, po, cash, rep, sm, pa] = await Promise.all([
             this.fetchAllFromTable('products'), this.fetchAllFromTable('batches'),
             this.fetchAllFromTable('customers'), this.fetchAllFromTable('suppliers'),
             this.fetchAllFromTable('warehouses'), this.fetchAllFromTable('invoices'),
             this.fetchAllFromTable('purchase_invoices'), this.fetchAllFromTable('purchase_orders'),
             this.fetchAllFromTable('cash_transactions'), this.fetchAllFromTable('representatives'),
-            this.fetchAllFromTable('stock_movements'),
+            this.fetchAllFromTable('stock_movements'), this.fetchAllFromTable('pending_adjustments')
         ]);
 
         this.products = p || [];
@@ -115,6 +117,7 @@ class DatabaseService {
         this.cashTransactions = cash || [];
         this.representatives = rep || [];
         this.stockMovements = sm || [];
+        this.pendingAdjustments = pa || [];
 
         this.rebuildIndexes();
         
@@ -149,8 +152,6 @@ class DatabaseService {
     }));
   }
 
-  // --- دوال تحسين الأداء الجديدة ---
-  
   getProductsPaginated(options: {
     page: number;
     pageSize: number;
@@ -164,7 +165,6 @@ class DatabaseService {
   }) {
     let products = this.getProductsWithBatches();
     
-    // الفلترة حسب الحالة
     if (options.filters?.lowStockOnly) {
       const threshold = this.settings.lowStockThreshold || 10;
       products = products.filter(p => {
@@ -179,7 +179,6 @@ class DatabaseService {
       );
     }
 
-    // البحث النصي
     if (options.search) {
       const searchLower = options.search.toLowerCase();
       products = products.filter(p => 
@@ -188,7 +187,6 @@ class DatabaseService {
       );
     }
     
-    // الفرز
     if (options.sortBy) {
       products.sort((a, b) => {
         let valA, valB;
@@ -210,7 +208,7 @@ class DatabaseService {
     
     const total = products.length;
     const start = (options.page - 1) * options.pageSize;
-    const paginatedProducts = products.slice(0, start + options.pageSize); // إرجاع القائمة تراكمياً لسهولة العرض
+    const paginatedProducts = products.slice(0, start + options.pageSize);
     
     return {
       products: paginatedProducts,
@@ -219,27 +217,83 @@ class DatabaseService {
     };
   }
 
-  searchProducts(options: {
-    query: string;
-    limit?: number;
-    filters?: {
-      lowStockOnly?: boolean;
-      outOfStockOnly?: boolean;
-    };
-    sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
-  }) {
-    // هذه الدالة تستدعي التجزئة مع الصفحة الأولى
-    return this.getProductsPaginated({
-      page: 1,
-      pageSize: options.limit || 100,
-      search: options.query,
-      filters: options.filters,
-      // @ts-ignore
-      sortBy: options.sortBy,
-      sortOrder: options.sortOrder
-    });
+  // --- دوال الجرد والاعتماد ---
+  
+  async submitStockTake(adjustments: Omit<PendingAdjustment, 'id' | 'status' | 'date'>[]) {
+    const newItems = adjustments.map(adj => ({
+      ...adj,
+      id: `PA${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      status: 'PENDING' as const,
+      date: new Date().toISOString()
+    }));
+    
+    this.pendingAdjustments.push(...newItems);
+    if (isSupabaseConfigured) {
+      await supabase.from('pending_adjustments').insert(newItems);
+    }
+    return true;
   }
+
+  getPendingAdjustments(): PendingAdjustment[] {
+    return this.pendingAdjustments.filter(a => a.status === 'PENDING');
+  }
+
+  async approveAdjustment(id: string) {
+    const adjIdx = this.pendingAdjustments.findIndex(a => a.id === id);
+    if (adjIdx === -1) return false;
+    
+    const adj = this.pendingAdjustments[adjIdx];
+    
+    // البحث عن التشغيلة المناسبة في المخزن لتعديلها
+    // ملاحظة: للتبسيط نقوم بتعديل أحدث تشغيلة لهذا الصنف في هذا المخزن أو إنشاء حركة تعديل
+    const productBatches = this.batches.filter(b => b.product_id === adj.product_id && b.warehouse_id === adj.warehouse_id);
+    
+    if (productBatches.length > 0) {
+      // تعديل أحدث تشغيلة
+      const targetBatch = productBatches[productBatches.length - 1];
+      targetBatch.quantity = adj.actual_qty;
+      
+      if (isSupabaseConfigured) {
+        await supabase.from('batches').update({ quantity: targetBatch.quantity }).eq('id', targetBatch.id);
+      }
+    }
+    
+    // تسجيل حركة مخزنية
+    const movement: StockMovement = {
+      id: `SM${Date.now()}`,
+      date: new Date().toISOString(),
+      type: 'ADJUSTMENT',
+      product_id: adj.product_id,
+      batch_number: 'ST-ADJ',
+      warehouse_id: adj.warehouse_id,
+      quantity: adj.diff,
+      notes: `تسوية جرد معتمدة: ${id}`
+    };
+    
+    this.stockMovements.push(movement);
+    adj.status = 'APPROVED';
+    
+    if (isSupabaseConfigured) {
+      await supabase.from('stock_movements').insert(movement);
+      await supabase.from('pending_adjustments').update({ status: 'APPROVED' }).eq('id', id);
+    }
+    
+    this.rebuildIndexes();
+    return true;
+  }
+
+  async rejectAdjustment(id: string) {
+    const adjIdx = this.pendingAdjustments.findIndex(a => a.id === id);
+    if (adjIdx === -1) return false;
+    
+    this.pendingAdjustments[adjIdx].status = 'REJECTED';
+    if (isSupabaseConfigured) {
+      await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id);
+    }
+    return true;
+  }
+
+  // --- بقية الدوال ---
 
   getProductById(id: string): Product | undefined {
     return this.productsMap.get(id);
@@ -288,6 +342,7 @@ class DatabaseService {
       currency: dbData.currency || this.settings.currency,
       language: dbData.language || this.settings.language,
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
+      // Fix casing typo: change printerPapersize to printerPaperSize
       printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
       distributionLines: dbData.distributionlines || dbData.distribution_lines || this.settings.distributionLines,

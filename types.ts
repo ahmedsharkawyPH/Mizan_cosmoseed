@@ -182,6 +182,18 @@ export interface StockMovement {
     created_at?: string;
 }
 
+export interface PendingAdjustment {
+  id: string;
+  product_id: string;
+  warehouse_id: string;
+  system_qty: number;
+  actual_qty: number;
+  diff: number;
+  date: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  submitted_by?: string;
+}
+
 // Accounting Types
 export interface JournalEntry {
     id: string;

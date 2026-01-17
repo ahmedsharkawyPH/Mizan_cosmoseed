@@ -1,10 +1,11 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { db } from '../services/db';
+import { authService } from '../services/auth';
 import { t } from '../utils/t';
 import { 
-  Search, Package, Loader2, Save, ClipboardCheck, Warehouse as WarehouseIcon, 
-  RotateCcw, AlertCircle
+  Search, Package, Loader2, Send, ClipboardCheck, Warehouse as WarehouseIcon, 
+  CheckCircle2, AlertCircle
 } from 'lucide-react';
 
 const StockTake: React.FC = () => {
@@ -15,11 +16,11 @@ const StockTake: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [actualCounts, setActualCounts] = useState<Record<string, number>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const user = authService.getCurrentUser();
 
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      // جلب جميع الأصناف مع تشغيلاتها
       const all = db.getProductsWithBatches();
       setProducts(all);
     } catch (error) {
@@ -46,21 +47,48 @@ const StockTake: React.FC = () => {
   };
 
   const saveAdjustments = async () => {
-    const changesCount = Object.keys(actualCounts).length;
-    if (changesCount === 0) {
+    const changedItems = Object.keys(actualCounts).filter(id => {
+        const prod = products.find(p => p.id === id);
+        const sysQty = prod?.batches
+            ?.filter((b: any) => b.warehouse_id === selectedWarehouse)
+            ?.reduce((sum: number, b: any) => sum + b.quantity, 0) || 0;
+        return actualCounts[id] !== sysQty;
+    });
+
+    if (changedItems.length === 0) {
       alert(t('stock.no_changes'));
       return;
     }
     
-    if (confirm(`هل أنت متأكد من حفظ تسوية الجرد لعدد ${changesCount} صنف؟ سيتم تعديل الأرصدة دفترياً لتطابق الجرد الفعلي في المخزن المختار.`)) {
+    if (confirm(`هل أنت متأكد من إرسال تسوية الجرد لعدد ${changedItems.length} صنف للمدير؟ سيتم مراجعتها واعتمادها من قبل الإدارة.`)) {
       setIsSaving(true);
-      // محاكاة حفظ التغييرات
-      setTimeout(() => {
-        alert("تم حفظ تسويات الجرد بنجاح (سيتم تطبيق التأثير المحاسبي في التحديث القادم)");
-        setActualCounts({});
-        setIsSaving(false);
-        fetchProducts();
-      }, 1000);
+      
+      const adjustments = changedItems.map(id => {
+          const prod = products.find(p => p.id === id);
+          const sysQty = prod?.batches
+            ?.filter((b: any) => b.warehouse_id === selectedWarehouse)
+            ?.reduce((sum: number, b: any) => sum + b.quantity, 0) || 0;
+          const actualQty = actualCounts[id];
+          return {
+              product_id: id,
+              warehouse_id: selectedWarehouse,
+              system_qty: sysQty,
+              actual_qty: actualQty,
+              diff: actualQty - sysQty,
+              submitted_by: user?.name
+          };
+      });
+
+      try {
+          await db.submitStockTake(adjustments);
+          alert("تم إرسال طلبات التسوية بنجاح للمدير المباشر.");
+          setActualCounts({});
+          fetchProducts();
+      } catch (err) {
+          alert("حدث خطأ أثناء الإرسال.");
+      } finally {
+          setIsSaving(false);
+      }
     }
   };
 
@@ -72,7 +100,7 @@ const StockTake: React.FC = () => {
             <ClipboardCheck className="w-8 h-8 text-orange-600" /> 
             {t('stock.inventory_count')}
           </h1>
-          <p className="text-slate-500 text-sm mt-1">جرد فعلي ومطابقة الأرصدة الدفترية</p>
+          <p className="text-slate-500 text-sm mt-1">جرد فعلي ومطابقة الأرصدة (تخضع لاعتماد الإدارة)</p>
         </div>
 
         <div className="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
@@ -102,10 +130,10 @@ const StockTake: React.FC = () => {
         <button 
           onClick={saveAdjustments}
           disabled={isSaving}
-          className="bg-slate-900 text-white px-8 py-3 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+          className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-95 disabled:opacity-50"
         >
-          {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5 text-blue-400" />} 
-          {t('stock.save_adjustments')}
+          {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 text-blue-100" />} 
+          إرسال للمدير للاعتماد
         </button>
       </div>
 
@@ -120,16 +148,16 @@ const StockTake: React.FC = () => {
                 <thead className="bg-slate-50 text-slate-500 font-black uppercase text-xs border-b">
                     <tr>
                         <th className="px-6 py-4">الصنف</th>
-                        <th className="px-6 py-4 text-center">الرصيد دفترياً</th>
-                        <th className="px-6 py-4 text-center">الرصيد الفعلي (الجرد)</th>
-                        <th className="px-6 py-4 text-center">الفرق</th>
+                        <th className="px-6 py-4 text-center">الرصيد الحالي</th>
+                        <th className="px-6 py-4 text-center">الجرد الفعلي</th>
+                        <th className="px-6 py-4 text-center">الفرق المقترح</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                     {filteredProducts.map(product => {
                         const systemQty = product.batches
-                          .filter((b: any) => b.warehouse_id === selectedWarehouse)
-                          .reduce((sum: number, b: any) => sum + b.quantity, 0);
+                          ?.filter((b: any) => b.warehouse_id === selectedWarehouse)
+                          ?.reduce((sum: number, b: any) => sum + b.quantity, 0) || 0;
                         
                         const actualQty = actualCounts[product.id] ?? systemQty;
                         const diff = actualQty - systemQty;
