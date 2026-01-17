@@ -194,6 +194,22 @@ export interface PendingAdjustment {
   submitted_by?: string;
 }
 
+export interface DailyClosing {
+  id: string;
+  date: string;
+  opening_cash: number;
+  cash_sales: number;
+  collections: number;
+  cash_purchases: number;
+  expenses: number;
+  expected_cash: number;
+  actual_cash: number;
+  difference: number;
+  closed_by: string;
+  notes?: string;
+  created_at: string;
+}
+
 // Accounting Types
 export interface JournalEntry {
     id: string;

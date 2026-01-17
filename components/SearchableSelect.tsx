@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { Search, ChevronDown, Check } from 'lucide-react';
 
@@ -151,15 +150,15 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
             <li
               key={opt.value}
               className={`px-4 py-3 cursor-pointer flex justify-between items-center text-sm border-b border-slate-50 last:border-0
-                ${opt.disabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:bg-blue-50'}
-                ${idx === highlightedIndex ? 'bg-blue-600 text-white' : 'text-slate-700'}
+                ${opt.disabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}
+                ${idx === highlightedIndex ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}
               `}
               onClick={() => selectOption(opt)}
               onMouseEnter={() => setHighlightedIndex(idx)}
             >
               <div>
                 <div className="font-bold">{opt.label}</div>
-                {opt.subLabel && <div className={`text-[10px] font-mono ${idx === highlightedIndex ? 'text-blue-100' : 'text-slate-400'}`}>{opt.subLabel}</div>}
+                {opt.subLabel && <div className={`text-[10px] font-mono ${idx === highlightedIndex ? 'text-slate-300' : 'text-slate-400'}`}>{opt.subLabel}</div>}
               </div>
               {value === opt.value && <Check className={`w-4 h-4 ${idx === highlightedIndex ? 'text-white' : 'text-blue-600'}`} />}
             </li>

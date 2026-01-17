@@ -19,7 +19,8 @@ import {
   Warehouse,
   StockMovement,
   JournalEntry,
-  PendingAdjustment
+  PendingAdjustment,
+  DailyClosing
 } from '../types';
 
 export interface SystemSettings {
@@ -66,6 +67,7 @@ class DatabaseService {
   private cashTransactions: CashTransaction[] = [];
   private stockMovements: StockMovement[] = [];
   private pendingAdjustments: PendingAdjustment[] = [];
+  private dailyClosings: DailyClosing[] = [];
   private settings: SystemSettings = { ...DEFAULT_SETTINGS };
   
   private batchesByProductId: Map<string, Batch[]> = new Map();
@@ -97,13 +99,14 @@ class DatabaseService {
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
-        const [p, b, c, s, w, inv, pur, po, cash, rep, sm, pa] = await Promise.all([
+        const [p, b, c, s, w, inv, pur, po, cash, rep, sm, pa, dc] = await Promise.all([
             this.fetchAllFromTable('products'), this.fetchAllFromTable('batches'),
             this.fetchAllFromTable('customers'), this.fetchAllFromTable('suppliers'),
             this.fetchAllFromTable('warehouses'), this.fetchAllFromTable('invoices'),
             this.fetchAllFromTable('purchase_invoices'), this.fetchAllFromTable('purchase_orders'),
             this.fetchAllFromTable('cash_transactions'), this.fetchAllFromTable('representatives'),
-            this.fetchAllFromTable('stock_movements'), this.fetchAllFromTable('pending_adjustments')
+            this.fetchAllFromTable('stock_movements'), this.fetchAllFromTable('pending_adjustments'),
+            this.fetchAllFromTable('daily_closings')
         ]);
 
         this.products = p || [];
@@ -118,6 +121,7 @@ class DatabaseService {
         this.representatives = rep || [];
         this.stockMovements = sm || [];
         this.pendingAdjustments = pa || [];
+        this.dailyClosings = dc || [];
 
         this.rebuildIndexes();
         
@@ -244,12 +248,9 @@ class DatabaseService {
     
     const adj = this.pendingAdjustments[adjIdx];
     
-    // البحث عن التشغيلة المناسبة في المخزن لتعديلها
-    // ملاحظة: للتبسيط نقوم بتعديل أحدث تشغيلة لهذا الصنف في هذا المخزن أو إنشاء حركة تعديل
     const productBatches = this.batches.filter(b => b.product_id === adj.product_id && b.warehouse_id === adj.warehouse_id);
     
     if (productBatches.length > 0) {
-      // تعديل أحدث تشغيلة
       const targetBatch = productBatches[productBatches.length - 1];
       targetBatch.quantity = adj.actual_qty;
       
@@ -258,7 +259,6 @@ class DatabaseService {
       }
     }
     
-    // تسجيل حركة مخزنية
     const movement: StockMovement = {
       id: `SM${Date.now()}`,
       date: new Date().toISOString(),
@@ -291,6 +291,61 @@ class DatabaseService {
       await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id);
     }
     return true;
+  }
+
+  // --- التقفيل اليومي ---
+
+  getDailySummary(date: string) {
+    const targetDate = date; // YYYY-MM-DD
+    
+    // المقبوضات (تحصيلات)
+    const collections = this.cashTransactions
+      .filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.RECEIPT)
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    // المصروفات
+    const expenses = this.cashTransactions
+      .filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category !== 'SUPPLIER_PAYMENT')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    // سداد موردين (نقدي)
+    const cashPurchases = this.cashTransactions
+      .filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category === 'SUPPLIER_PAYMENT')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    // الرصيد الافتتاحي (رصيد الخزينة قبل هذا اليوم)
+    const openingCash = this.cashTransactions
+      .filter(t => t.date.split('T')[0] < targetDate)
+      .reduce((sum, t) => t.type === CashTransactionType.RECEIPT ? sum + t.amount : sum - t.amount, 0);
+
+    const expectedCash = openingCash + collections - expenses - cashPurchases;
+
+    return {
+      openingCash,
+      collections,
+      expenses,
+      cashPurchases,
+      expectedCash,
+      cashSales: 0 // للتبسيط، نفترض أن كل المبيعات يتم تسجيلها كـ RECEIPT في الخزينة فوراً
+    };
+  }
+
+  async saveDailyClosing(closing: Omit<DailyClosing, 'id' | 'created_at'>) {
+    const id = `DC${Date.now()}`;
+    const newClosing: DailyClosing = {
+      ...closing,
+      id,
+      created_at: new Date().toISOString()
+    };
+    this.dailyClosings.push(newClosing);
+    if (isSupabaseConfigured) {
+      await supabase.from('daily_closings').insert(newClosing);
+    }
+    return true;
+  }
+
+  getDailyClosings(): DailyClosing[] {
+    return [...this.dailyClosings].sort((a, b) => b.date.localeCompare(a.date));
   }
 
   // --- بقية الدوال ---
@@ -342,7 +397,6 @@ class DatabaseService {
       currency: dbData.currency || this.settings.currency,
       language: dbData.language || this.settings.language,
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
-      // Fix casing typo: change printerPapersize to printerPaperSize
       printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
       distributionLines: dbData.distributionlines || dbData.distribution_lines || this.settings.distributionLines,

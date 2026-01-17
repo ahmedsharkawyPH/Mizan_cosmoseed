@@ -114,3 +114,20 @@ CREATE TABLE settings (
     distributionlines JSONB,
     lowstockthreshold INTEGER DEFAULT 10
 );
+
+-- Daily Closings
+CREATE TABLE daily_closings (
+    id TEXT PRIMARY KEY,
+    date DATE NOT NULL UNIQUE,
+    opening_cash NUMERIC DEFAULT 0,
+    cash_sales NUMERIC DEFAULT 0,
+    collections NUMERIC DEFAULT 0,
+    cash_purchases NUMERIC DEFAULT 0,
+    expenses NUMERIC DEFAULT 0,
+    expected_cash NUMERIC DEFAULT 0,
+    actual_cash NUMERIC DEFAULT 0,
+    difference NUMERIC DEFAULT 0,
+    closed_by TEXT,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

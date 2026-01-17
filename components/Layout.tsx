@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck, ShieldCheck } from 'lucide-react';
+import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
@@ -99,7 +99,17 @@ export default function Layout() {
             { label: t('nav.telesales'), path: '/telesales', icon: Phone }
         ]
     },
-    { label: t('nav.cash'), path: '/cash', icon: NAV_ITEMS[5].icon, perm: 'MANAGE_CASH', roles: ['ADMIN', 'REP', 'TELESALES'] },
+    {
+        key: 'cash_mgmt',
+        label: t('nav.cash'),
+        icon: NAV_ITEMS[5].icon,
+        perm: 'MANAGE_CASH',
+        roles: ['ADMIN', 'REP', 'TELESALES'],
+        children: [
+            { label: 'الخزينة (حركات)', path: '/cash', icon: NAV_ITEMS[5].icon },
+            { label: 'تقفيل اليومية', path: '/daily-closing', icon: ClipboardList }
+        ]
+    },
     { label: t('nav.reports'), path: '/reports', icon: TrendingUp, perm: 'VIEW_REPORTS', roles: ['ADMIN'] },
     { label: t('nav.settings'), path: '/settings', icon: NAV_ITEMS[6].icon, perm: 'MANAGE_SETTINGS', roles: ['ADMIN'] },
   ];

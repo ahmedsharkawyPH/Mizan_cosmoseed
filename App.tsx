@@ -17,6 +17,7 @@ import Telesales from './pages/Telesales';
 import Suppliers from './pages/Suppliers';
 import Warehouses from './pages/Warehouses';
 import StockTake from './pages/StockTake';
+import DailyClosing from './pages/DailyClosing';
 import Login from './pages/Login';
 import InventoryAnalysis from './pages/InventoryAnalysis';
 import Shortages from './pages/Shortages';
@@ -72,6 +73,7 @@ function App() {
             <Route path="telesales" element={<Telesales />} />
             <Route path="warehouses" element={<Warehouses />} />
             <Route path="stock-take" element={<StockTake />} />
+            <Route path="daily-closing" element={<DailyClosing />} />
             
             <Route path="cash" element={<CashRegister />} />
             <Route path="reports" element={<Reports />} />
