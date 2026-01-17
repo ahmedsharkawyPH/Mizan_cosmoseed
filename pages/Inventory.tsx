@@ -4,9 +4,9 @@ import { db } from '../services/db';
 import { t } from '../utils/t';
 import { 
   PlusCircle, Search, Package, FileOutput, ChevronDown, Loader2,
-  Filter, X, AlertCircle, Database, ChevronUp
+  Filter, X, AlertCircle, Database, ChevronUp, Download, Upload, FileSpreadsheet, CheckCircle2
 } from 'lucide-react';
-import { exportFilteredProductsToExcel } from '../utils/excel';
+import { exportFilteredProductsToExcel, readExcelFile, downloadInventoryTemplate } from '../utils/excel';
 
 // إعدادات الأداء الاحترافية
 const PERFORMANCE_CONFIG = {
@@ -30,6 +30,12 @@ const Inventory: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [loadMoreLock, setLoadMoreLock] = useState(false);
+  
+  // حالة نافذة الاستيراد والتصدير
+  const [isIEOpen, setIsIEOpen] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importSuccess, setImportSuccess] = useState(false);
   
   // حالة التصفية المتقدمة
   const [showLowStock, setShowLowStock] = useState(false);
@@ -128,10 +134,7 @@ const Inventory: React.FC = () => {
   };
 
   const handleExport = () => {
-    if (data.total > 5000) {
-      if (!window.confirm(`سيتم تصدير ${data.total} صنف. قد يستغرق هذا وقتاً طويلاً. هل تريد الاستمرار؟`)) return;
-    }
-    // نقوم بتصدير كافة البيانات التي تطابق البحث الحالي
+    // تصدير كافة البيانات التي تطابق البحث الحالي أو الكل
     const fullResult = db.getProductsPaginated({
         page: 1,
         pageSize: 100000,
@@ -139,6 +142,44 @@ const Inventory: React.FC = () => {
         filters: { lowStockOnly: showLowStock, outOfStockOnly: showOutOfStock }
     });
     exportFilteredProductsToExcel(fullResult.products);
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    
+    const file = e.target.files[0];
+    setIsImporting(true);
+    setImportProgress(5);
+    setImportSuccess(false);
+
+    try {
+      const importedData = await readExcelFile<any>(file);
+      const totalItems = importedData.length;
+      
+      for (let i = 0; i < totalItems; i++) {
+        const item = importedData[i];
+        // محاكاة معالجة كل صنف
+        await db.addProduct(
+          { code: item.code, name: item.name, selling_price: item.selling_price, purchase_price: item.purchase_price },
+          { quantity: item.quantity, batch_number: item.batch_number, expiry_date: item.expiry_date }
+        );
+        
+        // تحديث شريط التقدم كل 10 أصناف لتقليل عمليات الريندر
+        if (i % 10 === 0 || i === totalItems - 1) {
+          setImportProgress(Math.round(((i + 1) / totalItems) * 100));
+        }
+      }
+      
+      setImportSuccess(true);
+      fetchProducts(true); // تحديث القائمة
+    } catch (error) {
+      alert("خطأ أثناء استيراد الملف. يرجى التأكد من توافق البيانات مع النموذج.");
+      console.error(error);
+    } finally {
+      setIsImporting(false);
+      // مسح المدخل للسماح برفع نفس الملف مرة أخرى إذا لزم الأمر
+      e.target.value = '';
+    }
   };
 
   return (
@@ -170,11 +211,11 @@ const Inventory: React.FC = () => {
           </div>
           
           <button 
-            onClick={handleExport}
+            onClick={() => setIsIEOpen(true)}
             className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all"
           >
-            <FileOutput className="w-4 h-4" /> 
-            تصدير {debouncedSearch ? '(المصفى)' : ''}
+            <FileSpreadsheet className="w-5 h-5" /> 
+            استيراد وتصدير
           </button>
           
           <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
@@ -293,16 +334,6 @@ const Inventory: React.FC = () => {
             })}
           </div>
 
-          {/* حالة: لا توجد نتائج */}
-          {!isLoading && data.products.length === 0 && (
-            <div className="py-20 text-center bg-white rounded-2xl border border-slate-100 shadow-sm">
-              <Package className="w-20 h-20 text-slate-200 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-slate-600 mb-2">لا توجد منتجات مطابقة</h3>
-              <p className="text-slate-400 mb-6">جرب تغيير كلمات البحث أو إزالة الفلاتر النشطة</p>
-              <button onClick={resetFilters} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors">إعادة تعيين البحث</button>
-            </div>
-          )}
-
           {/* زر تحميل المزيد (مؤشر التمرير التلقائي) */}
           <div className="flex flex-col items-center gap-4 py-12">
             {data.hasMore && (
@@ -319,15 +350,114 @@ const Inventory: React.FC = () => {
                     )}
                 </button>
             )}
-            
-            {data.products.length > 0 && !data.hasMore && (
-                <div className="flex flex-col items-center gap-2 text-slate-400">
-                    <ChevronUp className="w-8 h-8 opacity-20" />
-                    <p className="font-bold text-sm">نهاية قائمة المخزون ({data.total.toLocaleString()} صنف)</p>
-                </div>
-            )}
           </div>
         </>
+      )}
+
+      {/* نافذة الاستيراد والتصدير المنبثقة */}
+      {isIEOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in duration-300">
+            <div className="bg-slate-800 p-6 flex justify-between items-center text-white">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
+                <h3 className="text-xl font-bold">إدارة البيانات عبر إكسيل</h3>
+              </div>
+              {!isImporting && (
+                <button onClick={() => { setIsIEOpen(false); setImportSuccess(false); setImportProgress(0); }} className="hover:bg-white/10 p-2 rounded-xl transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+
+            <div className="p-8 space-y-8">
+              {!isImporting && !importSuccess ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* قسم التصدير والنموذج */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b pb-2">التصدير والتحميل</h4>
+                    <button 
+                      onClick={downloadInventoryTemplate}
+                      className="w-full flex items-center justify-between p-4 bg-blue-50 text-blue-700 rounded-2xl border border-blue-100 hover:bg-blue-100 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Download className="w-5 h-5" />
+                        <span className="font-bold">تحميل النموذج</span>
+                      </div>
+                      <ChevronDown className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-all -rotate-90" />
+                    </button>
+
+                    <button 
+                      onClick={handleExport}
+                      className="w-full flex items-center justify-between p-4 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100 hover:bg-emerald-100 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileOutput className="w-5 h-5" />
+                        <span className="font-bold">تصدير الحالي</span>
+                      </div>
+                      <ChevronDown className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-all -rotate-90" />
+                    </button>
+                  </div>
+
+                  {/* قسم الاستيراد */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest border-b pb-2">الاستيراد</h4>
+                    <label className="w-full flex flex-col items-center justify-center p-8 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl hover:bg-white hover:border-blue-400 transition-all cursor-pointer group">
+                      <Upload className="w-10 h-10 text-slate-300 group-hover:text-blue-500 mb-2 transition-colors" />
+                      <span className="text-sm font-bold text-slate-600 group-hover:text-blue-600">اختر ملف إكسيل</span>
+                      <p className="text-[10px] text-slate-400 mt-1">.xlsx, .xls</p>
+                      <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleImportExcel} />
+                    </label>
+                  </div>
+                </div>
+              ) : isImporting ? (
+                <div className="py-10 space-y-6 text-center animate-in fade-in">
+                  <div className="relative w-24 h-24 mx-auto">
+                    <div className="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+                    <div 
+                      className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"
+                    ></div>
+                    <div className="absolute inset-0 flex items-center justify-center font-black text-blue-600">
+                      {importProgress}%
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-xl font-bold text-slate-800">جاري استيراد المنتجات...</h4>
+                    <p className="text-sm text-slate-500">يرجى عدم إغلاق المتصفح حتى انتهاء العملية</p>
+                  </div>
+                  {/* شريط التقدم الأفقي */}
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                    <div 
+                      className="h-full bg-blue-600 transition-all duration-300 ease-out"
+                      style={{ width: `${importProgress}%` }}
+                    ></div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-10 space-y-6 text-center animate-in zoom-in">
+                  <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-100">
+                    <CheckCircle2 className="w-12 h-12" />
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-2xl font-black text-slate-800">تمت العملية بنجاح!</h4>
+                    <p className="text-slate-500 font-medium">تمت إضافة كافة الأصناف الجديدة وتحديث المخزون.</p>
+                  </div>
+                  <button 
+                    onClick={() => { setIsIEOpen(false); setImportSuccess(false); }}
+                    className="px-10 py-3 bg-slate-800 text-white rounded-2xl font-bold hover:bg-slate-700 transition-all shadow-xl"
+                  >
+                    العودة للمخزن
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-center gap-6 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+              <span>Mizan Pro Data Service</span>
+              <span>Secure Import/Export</span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ذيل معلومات النظام */}
