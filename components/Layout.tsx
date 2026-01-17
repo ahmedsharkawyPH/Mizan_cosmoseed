@@ -11,8 +11,8 @@ import AiAssistant from './AiAssistant';
 export default function Layout() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  // التعديل: جعل القوائم مغلقة افتراضياً عبر تعيين المصفوفة كفارغة
-  const [openMenus, setOpenMenus] = useState<string[]>([]);
+  // التعديل: تخزين مفتاح قائمة واحدة فقط مفتوحة لتحقيق سلوك الانكماش التلقائي (Accordion)
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const user = authService.getCurrentUser();
@@ -35,9 +35,8 @@ export default function Layout() {
   };
 
   const toggleMenu = (key: string) => {
-      setOpenMenus(prev => 
-          prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
-      );
+      // إذا كانت القائمة مفتوحة نغلقها، وإلا نفتحها ونغلق أي قائمة أخرى مفتوحة تلقائياً
+      setOpenMenu(prev => prev === key ? null : key);
   };
 
   const sidebarItems = [
@@ -125,18 +124,18 @@ export default function Layout() {
             if (!authService.hasPermission(item.perm)) return null;
             if (item.roles && user && !item.roles.includes(user.role)) return null;
             if (item.children) {
-                const isOpen = openMenus.includes(item.key);
+                const isOpen = openMenu === item.key;
                 return (
-                    <div key={item.key} className={`space-y-1 rounded-xl transition-all duration-300 ${isOpen ? 'bg-orange-600/10 pb-2' : ''}`}>
-                        <button onClick={() => toggleMenu(item.key)} className={`flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isOpen ? 'text-white bg-orange-600/20' : 'text-white hover:bg-slate-800'}`}>
-                            <div className="flex items-center"><item.icon className="w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0" />{item.label}</div>
+                    <div key={item.key} className={`space-y-1 rounded-xl transition-all duration-300 ${isOpen ? 'bg-white/5 pb-2' : ''}`}>
+                        <button onClick={() => toggleMenu(item.key)} className={`flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 group font-bold ${isOpen ? 'text-white bg-blue-600' : 'text-white hover:bg-slate-800'}`}>
+                            <div className="flex items-center"><item.icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0 ${isOpen ? 'text-white' : 'text-blue-400'}`} />{item.label}</div>
                             {isOpen ? <ChevronDown className="w-4 h-4" /> : isRTL() ? <ChevronDown className="w-4 h-4 rotate-90" /> : <ChevronRight className="w-4 h-4" />}
                         </button>
                         {isOpen && (
-                            <div className={`space-y-1 ${isRTL() ? 'pr-4 border-r border-orange-600/30' : 'pl-4 border-l border-orange-600/30'} ml-3 mr-3 mt-1`}>
+                            <div className={`space-y-1 ${isRTL() ? 'pr-4 border-r border-white/10' : 'pl-4 border-l border-white/10'} ml-3 mr-3 mt-1 animate-in slide-in-from-top-2 duration-200`}>
                                 {item.children.map((child: any) => (
-                                    <NavLink key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-2 rounded-lg transition-all duration-200 text-sm ${isActive ? 'bg-orange-600 text-white' : 'text-white hover:bg-orange-600/20'}`}>
-                                        <child.icon className="w-4 h-4 ltr:mr-3 rtl:ml-3 shrink-0" />{child.label}
+                                    <NavLink key={child.path} to={child.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-2 rounded-lg transition-all duration-200 text-sm font-medium ${isActive ? 'bg-orange-600 text-white' : 'text-white/80 hover:text-white hover:bg-white/5'}`}>
+                                        <child.icon className="w-4 h-4 ltr:mr-3 rtl:ml-3 shrink-0 opacity-70" />{child.label}
                                     </NavLink>
                                 ))}
                             </div>
@@ -145,8 +144,14 @@ export default function Layout() {
                 );
             }
             return (
-                <NavLink key={item.path} to={item.path} onClick={() => setIsSidebarOpen(false)} className={({ isActive }) => `flex items-center px-4 py-3 rounded-xl transition-all duration-200 group font-medium ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-white hover:bg-slate-800'}`}>
-                    <item.icon className="w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0" />{item.label}
+                /* fix: use function pattern for NavLink children to provide access to isActive state */
+                <NavLink key={item.path} to={item.path} onClick={() => { setIsSidebarOpen(false); setOpenMenu(null); }} className={({ isActive }) => `flex items-center px-4 py-3 rounded-xl transition-all duration-200 group font-bold ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'text-white hover:bg-slate-800'}`}>
+                    {({ isActive }) => (
+                        <>
+                            <item.icon className={`w-5 h-5 ltr:mr-3 rtl:ml-3 shrink-0 ${isActive ? 'text-white' : 'text-blue-400'}`} />
+                            {item.label}
+                        </>
+                    )}
                 </NavLink>
             );
           })}
@@ -154,20 +159,20 @@ export default function Layout() {
 
         <div className="p-4 bg-slate-950 border-t border-slate-800 shrink-0">
           <div className="flex items-center gap-3 mb-3 px-2">
-             <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold text-white">{user?.name?.charAt(0) || 'U'}</div>
+             <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center font-bold text-white shadow-inner">{user?.name?.charAt(0) || 'U'}</div>
              <div className="overflow-hidden">
                  <p className="text-sm font-bold truncate text-white">{user?.name}</p>
-                 <p className="text-xs text-white/70 truncate">{user?.role}</p>
+                 <p className="text-xs text-white/50 truncate uppercase tracking-tighter">{user?.role}</p>
              </div>
           </div>
-          <button onClick={handleLogout} className="flex items-center w-full px-4 py-2 text-sm font-medium text-red-400 rounded-lg hover:bg-slate-800 transition-colors">
-            <LogOut className="w-5 h-5 ltr:mr-3 rtl:ml-3" />Sign Out
+          <button onClick={handleLogout} className="flex items-center w-full px-4 py-2 text-sm font-bold text-red-400 rounded-lg hover:bg-red-950/30 transition-colors">
+            <LogOut className="w-5 h-5 ltr:mr-3 rtl:ml-3" />تسجيل الخروج
           </button>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="bg-white shadow-sm h-16 flex items-center justify-between px-6 lg:px-8">
+        <header className="bg-white shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-lg lg:hidden hover:bg-slate-100">
             <Menu className="w-6 h-6" />
           </button>
@@ -178,24 +183,24 @@ export default function Layout() {
               <input 
                 readOnly
                 onClick={() => setIsCommandOpen(true)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer hover:bg-slate-100 transition-colors"
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer hover:bg-slate-100 transition-colors font-medium"
                 placeholder={`${t('cust.search')} (Ctrl+K)`}
               />
               <div className="absolute right-3 top-2 flex gap-1 pointer-events-none">
-                 <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-400 font-mono">⌘</kbd>
-                 <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-400 font-mono">K</kbd>
+                 <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-400 font-mono font-bold">⌘</kbd>
+                 <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-400 font-mono font-bold">K</kbd>
               </div>
             </div>
           </div>
           
           <div className="flex items-center gap-4 ltr:ml-auto rtl:mr-auto">
-             <div className="text-sm text-slate-500 hidden sm:block">
+             <div className="text-sm font-bold text-slate-600 hidden sm:block">
                  {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
              </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto bg-slate-50 p-4 lg:p-8">
+        <main className="flex-1 overflow-y-auto bg-slate-50 p-4 lg:p-8 custom-scrollbar">
           <div className="max-w-7xl mx-auto animate-in fade-in zoom-in duration-300">
             <Outlet />
           </div>
@@ -209,8 +214,8 @@ export default function Layout() {
                  <Search className="w-5 h-5 text-slate-400 mr-3" />
                  <input 
                     autoFocus
-                    className="flex-1 outline-none text-lg text-slate-800"
-                    placeholder="Type to search customers, products, invoices..."
+                    className="flex-1 outline-none text-lg text-slate-800 font-bold"
+                    placeholder="ابحث عن عملاء، أصناف، أو فواتير..."
                     value={commandSearch}
                     onChange={e => setCommandSearch(e.target.value)}
                  />
@@ -235,16 +240,16 @@ export default function Layout() {
                  ) : (
                    <div className="p-10 text-center text-slate-400 flex flex-col items-center">
                       <Command className="w-12 h-12 mb-2 opacity-10" />
-                      <p>Start typing to search Mizan system...</p>
+                      <p className="font-bold">ابدأ الكتابة للبحث في نظام ميزان...</p>
                    </div>
                  )}
               </div>
               <div className="p-3 bg-slate-50 border-t flex justify-between items-center text-[10px] text-slate-400 font-bold">
                  <div className="flex gap-4">
-                    <span>↑↓ TO NAVIGATE</span>
-                    <span>ENTER TO SELECT</span>
+                    <span>↑↓ للتنقل</span>
+                    <span>ENTER للاختيار</span>
                  </div>
-                 <span>ESC TO CLOSE</span>
+                 <span>ESC للإغلاق</span>
               </div>
            </div>
         </div>
