@@ -154,9 +154,9 @@ export default function Reports() {
                     <input type="date" className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
                  </div>
                  <div className="flex gap-2 overflow-x-auto">
-                     <button onClick={() => handleQuickDate('TODAY')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">Today</button>
-                     <button onClick={() => handleQuickDate('MONTH')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">This Month</button>
-                     <button onClick={() => handleQuickDate('YEAR')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">This Year</button>
+                     <button onClick={() => handleQuickDate('TODAY')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">اليوم</button>
+                     <button onClick={() => handleQuickDate('MONTH')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">هذا الشهر</button>
+                     <button onClick={() => handleQuickDate('YEAR')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">هذه السنة</button>
                  </div>
              </div>
          )}
@@ -164,13 +164,13 @@ export default function Reports() {
 
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
           {[
-              { id: 'FINANCIAL', label: 'Financials', icon: DollarSign },
-              { id: 'LEDGER', label: 'General Ledger', icon: BookOpen },
-              { id: 'MONTHLY_SUMMARY', label: 'Monthly Summary', icon: Table2 },
-              { id: 'SALES', label: 'Sales', icon: TrendingUp },
-              { id: 'PURCHASES', label: 'Purchases', icon: Truck },
-              { id: 'TELESALES', label: 'Telesales', icon: Phone },
-              { id: 'REPRESENTATIVES', label: 'Reps', icon: Briefcase },
+              { id: 'FINANCIAL', label: 'التقارير المالية', icon: DollarSign },
+              { id: 'LEDGER', label: 'دفتر الأستاذ', icon: BookOpen },
+              { id: 'MONTHLY_SUMMARY', label: 'الملخص الشهري', icon: Table2 },
+              { id: 'SALES', label: 'المبيعات', icon: TrendingUp },
+              { id: 'PURCHASES', label: 'المشتريات', icon: Truck },
+              { id: 'TELESALES', label: 'تيليسيلز', icon: Phone },
+              { id: 'REPRESENTATIVES', label: 'المندوبين', icon: Briefcase },
           ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-5 py-3 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-100'}`}>
                   <tab.icon className="w-4 h-4" />{tab.label}
@@ -182,43 +182,43 @@ export default function Reports() {
           <div className="animate-in fade-in duration-300 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                      <p className="text-gray-500 text-sm font-medium">Revenue</p>
+                      <p className="text-gray-500 text-sm font-medium">إجمالي الإيرادات</p>
                       <h3 className="text-2xl font-bold text-gray-800 mt-2">{currency}{financialData.revenue.toLocaleString()}</h3>
                   </div>
                   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                      <p className="text-gray-500 text-sm font-medium">Gross Profit</p>
+                      <p className="text-gray-500 text-sm font-medium">مجمل الربح</p>
                       <h3 className="text-2xl font-bold text-emerald-600 mt-2">{currency}{financialData.grossProfit.toLocaleString()}</h3>
                   </div>
                   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                      <p className="text-gray-500 text-sm font-medium">Expenses</p>
+                      <p className="text-gray-500 text-sm font-medium">المصروفات</p>
                       <h3 className="text-2xl font-bold text-red-600 mt-2">-{currency}{financialData.expenses.toLocaleString()}</h3>
                   </div>
                   <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg">
-                      <p className="text-slate-400 text-sm font-medium">Net Profit</p>
+                      <p className="text-slate-400 text-sm font-medium">صافي الأرباح</p>
                       <h3 className="text-3xl font-bold mt-2">{currency}{financialData.netProfit.toLocaleString()}</h3>
                   </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-[400px]">
-                      <h3 className="font-bold text-gray-800 mb-6">Financial Comparison</h3>
+                      <h3 className="font-bold text-gray-800 mb-6">مقارنة المؤشرات المالية</h3>
                       <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={[{name: 'Revenue', value: financialData.revenue}, {name: 'COGS', value: financialData.cogs}, {name: 'Net Profit', value: financialData.netProfit}]}>
+                          <BarChart data={[{name: 'الإيرادات', value: financialData.revenue}, {name: 'التكلفة', value: financialData.cogs}, {name: 'صافي الربح', value: financialData.netProfit}]}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                              <XAxis dataKey="name" />
+                              <XAxis dataKey="name" tick={{fontSize: 12, fontWeights: 'bold'}} />
                               <YAxis />
-                              <Tooltip />
+                              <Tooltip formatter={(value: any) => [`${currency}${value.toLocaleString()}`, '']} />
                               <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                           </BarChart>
                       </ResponsiveContainer>
                   </div>
                   <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-[400px]">
-                      <h3 className="font-bold text-gray-800 mb-6">Expense Distribution</h3>
+                      <h3 className="font-bold text-gray-800 mb-6">توزيع المصروفات</h3>
                       <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                               <Pie data={financialData.expenseChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" paddingAngle={5}>
                                   {financialData.expenseChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                               </Pie>
-                              <Tooltip />
+                              <Tooltip formatter={(value: any) => [`${currency}${value.toLocaleString()}`, '']} />
                               <Legend />
                           </PieChart>
                       </ResponsiveContainer>
@@ -231,18 +231,18 @@ export default function Reports() {
           <div className="animate-in fade-in duration-300 space-y-6">
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                   <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
-                      <h3 className="font-bold text-slate-800">Double-Entry Journal</h3>
-                      <div className="text-xs text-slate-500 font-mono">System Integrity Verified</div>
+                      <h3 className="font-bold text-slate-800">قيود اليومية / دفتر الأستاذ</h3>
+                      <div className="text-xs text-slate-500 font-mono">نظام المحاسبة المزدوج</div>
                   </div>
                   <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-left rtl:text-right">
+                      <table className="w-full text-sm text-right">
                           <thead className="bg-slate-800 text-white uppercase text-xs">
                               <tr>
-                                  <th className="p-4">Date</th>
-                                  <th className="p-4">Account</th>
-                                  <th className="p-4">Description</th>
-                                  <th className="p-4 text-right">Debit</th>
-                                  <th className="p-4 text-right">Credit</th>
+                                  <th className="p-4">التاريخ</th>
+                                  <th className="p-4">الحساب</th>
+                                  <th className="p-4">البيان</th>
+                                  <th className="p-4 text-left">مدين (+)</th>
+                                  <th className="p-4 text-left">دائن (-)</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -251,10 +251,15 @@ export default function Reports() {
                                       <td className="p-4 text-gray-500 whitespace-nowrap">{new Date(entry.date).toLocaleDateString()}</td>
                                       <td className="p-4 font-bold text-blue-600">{entry.account}</td>
                                       <td className="p-4 text-gray-600">{entry.description}</td>
-                                      <td className="p-4 text-right font-mono">{entry.debit > 0 ? `${currency}${entry.debit.toLocaleString()}` : '-'}</td>
-                                      <td className="p-4 text-right font-mono">{entry.credit > 0 ? `${currency}${entry.credit.toLocaleString()}` : '-'}</td>
+                                      <td className="p-4 text-left font-mono">{entry.debit > 0 ? `${currency}${entry.debit.toLocaleString()}` : '-'}</td>
+                                      <td className="p-4 text-left font-mono">{entry.credit > 0 ? `${currency}${entry.credit.toLocaleString()}` : '-'}</td>
                                   </tr>
                               ))}
+                              {ledgerData.length === 0 && (
+                                  <tr>
+                                      <td colSpan={5} className="p-10 text-center text-slate-400 font-bold italic">لا توجد قيود مسجلة في هذه الفترة</td>
+                                  </tr>
+                              )}
                           </tbody>
                       </table>
                   </div>
@@ -265,24 +270,24 @@ export default function Reports() {
       {activeTab === 'MONTHLY_SUMMARY' && (
           <div className="animate-in fade-in duration-300 space-y-6">
               <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center gap-4">
-                  <span className="font-bold">Select Month:</span>
-                  <input type="month" className="border rounded-lg px-3 py-2 font-bold" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} />
+                  <span className="font-bold text-slate-700">اختر الشهر:</span>
+                  <input type="month" className="border rounded-lg px-3 py-2 font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} />
               </div>
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden overflow-x-auto">
                   <table className="w-full text-sm text-center">
                       <thead className="bg-slate-800 text-white uppercase text-xs">
                           <tr>
-                              <th className="p-4 text-left">Date</th>
-                              <th className="p-4">Sales</th>
-                              <th className="p-4">Cash In</th>
-                              <th className="p-4">Credit</th>
-                              <th className="p-4">Expenses</th>
+                              <th className="p-4 text-right">التاريخ</th>
+                              <th className="p-4">المبيعات</th>
+                              <th className="p-4">المقبوضات</th>
+                              <th className="p-4">الآجل (المديونية)</th>
+                              <th className="p-4">المصروفات</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                           {monthlySummaryData.dailyData.map((day, i) => (
                               <tr key={i} className="hover:bg-slate-50">
-                                  <td className="p-4 text-left font-bold text-gray-600">{new Date(day.date).toLocaleDateString(undefined, {day:'numeric', month:'short'})}</td>
+                                  <td className="p-4 text-right font-bold text-gray-600">{new Date(day.date).toLocaleDateString(undefined, {day:'numeric', month:'short'})}</td>
                                   <td className="p-4 text-emerald-600 font-bold">{day.sales > 0 ? `${currency}${day.sales.toLocaleString()}` : '-'}</td>
                                   <td className="p-4 text-blue-600">{day.cashIn > 0 ? `${currency}${day.cashIn.toLocaleString()}` : '-'}</td>
                                   <td className="p-4 text-orange-600">{day.credit > 0 ? `${currency}${day.credit.toLocaleString()}` : '-'}</td>
@@ -292,7 +297,7 @@ export default function Reports() {
                       </tbody>
                       <tfoot className="bg-slate-100 font-black">
                           <tr>
-                              <td className="p-4 text-left">TOTAL</td>
+                              <td className="p-4 text-right">الإجمالي الكلي</td>
                               <td className="p-4">{currency}{monthlySummaryData.totals.sales.toLocaleString()}</td>
                               <td className="p-4">{currency}{monthlySummaryData.totals.cashIn.toLocaleString()}</td>
                               <td className="p-4">{currency}{monthlySummaryData.totals.credit.toLocaleString()}</td>
