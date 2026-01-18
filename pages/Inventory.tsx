@@ -1,4 +1,6 @@
 
+
+
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
@@ -6,7 +8,7 @@ import { ArabicSmartSearch, SEARCH_CONFIG } from '../utils/search';
 import { 
   Search, Package, Filter, X, Zap, Brain, Sparkles,
   Command, Hash, Tag, DollarSign, Percent, Star, PlusCircle,
-  FileSpreadsheet, Loader2, Download, Upload, FileOutput, TrendingUp, AlertCircle, RefreshCw, Wifi, WifiOff
+  FileSpreadsheet, Loader2, Download, Upload, FileOutput, TrendingUp, AlertCircle, RefreshCw, Wifi, WifiOff, Award
 } from 'lucide-react';
 import { exportFilteredProductsToExcel, readExcelFile, downloadInventoryTemplate } from '../utils/excel';
 // @ts-ignore
@@ -26,7 +28,8 @@ const Inventory: React.FC = () => {
   const [showOutOfStock, setShowOutOfStock] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchTimeoutRef = useRef<any>();
+  // Initializing searchTimeoutRef with null to satisfy TypeScript requirement for useRef arguments.
+  const searchTimeoutRef = useRef<any>(null);
   
   const settings = db.getSettings();
   const currency = settings.currency;
@@ -47,6 +50,27 @@ const Inventory: React.FC = () => {
     }, 3000);
     return () => clearInterval(checkLoad);
   }, [loadProducts, dbFullLoaded, isOffline]);
+
+  // حساب أفضل مورد لكل صنف بناءً على تاريخ المشتريات
+  const bestSuppliersMap = useMemo(() => {
+    const purchaseInvoices = db.getPurchaseInvoices();
+    const suppliers = db.getSuppliers();
+    const map: Record<string, string> = {};
+    const bestPrices: Record<string, number> = {};
+
+    purchaseInvoices.forEach(inv => {
+      if (inv.type === 'PURCHASE') {
+        const supplier = suppliers.find(s => s.id === inv.supplier_id);
+        inv.items.forEach(item => {
+          if (!bestPrices[item.product_id] || item.cost_price < bestPrices[item.product_id]) {
+            bestPrices[item.product_id] = item.cost_price;
+            map[item.product_id] = supplier?.name || '---';
+          }
+        });
+      }
+    });
+    return map;
+  }, [products]);
 
   useEffect(() => {
     if (searchTimeoutRef.current) { clearTimeout(searchTimeoutRef.current); }
@@ -153,6 +177,7 @@ const Inventory: React.FC = () => {
                 <tr>
                   <th className="px-6 py-4 text-right">الصنف</th>
                   <th className="px-6 py-4 text-center">كود</th>
+                  <th className="px-6 py-4 text-center">أفضل مورد</th>
                   <th className="px-6 py-4 text-center">سعر التكلفة</th>
                   <th className="px-6 py-4 text-center">سعر البيع</th>
                   <th className="px-6 py-4 text-center">الرصيد</th>
@@ -160,7 +185,13 @@ const Inventory: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {displayedProducts.map((product) => (
-                  <ProductRow key={product.id} product={product} searchQuery={searchQuery} currency={currency} />
+                  <ProductRow 
+                    key={product.id} 
+                    product={product} 
+                    searchQuery={searchQuery} 
+                    currency={currency} 
+                    bestSupplier={bestSuppliersMap[product.id] || '---'}
+                  />
                 ))}
               </tbody>
             </table>
@@ -178,7 +209,7 @@ const Inventory: React.FC = () => {
   );
 };
 
-const ProductRow = React.memo(({ product, searchQuery, currency }: { product: any; searchQuery: string; currency: string }) => {
+const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier }: { product: any; searchQuery: string; currency: string; bestSupplier: string }) => {
   const totalQty = product.batches?.reduce((sum: number, b: any) => sum + (b.quantity || 0), 0) || 0;
   
   // جلب الأسعار من آخر تشغيلة أو من بيانات المنتج الأساسية
@@ -208,6 +239,12 @@ const ProductRow = React.memo(({ product, searchQuery, currency }: { product: an
       </td>
       <td className="px-6 py-4 text-center">
         <code className="text-[11px] font-mono text-slate-400" dangerouslySetInnerHTML={{ __html: highlightMatch(product.code || '---', searchQuery) }} />
+      </td>
+      <td className="px-6 py-4 text-center">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100">
+           <Award className="w-3 h-3" />
+           {bestSupplier}
+        </span>
       </td>
       <td className="px-6 py-4 text-center">
         <span className="font-mono text-slate-600">{currency}{costPrice.toLocaleString()}</span>
