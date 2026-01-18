@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseOrder, PurchaseItem } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus, Info, Tag, Award, BarChart4 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
 
@@ -26,7 +26,12 @@ export default function PurchaseOrders() {
   const [qty, setQty] = useState(1);
   const [cost, setCost] = useState(0); 
   const [sellingPrice, setSellingPrice] = useState(0); 
-  const [prodStats, setProdStats] = useState<{lastPrices: number[], monthlyAvg: number, currentStock: number} | null>(null);
+  const [prodStats, setProdStats] = useState<{
+      lastPrices: {price: number, supplier: string}[], 
+      monthlyAvg: number, 
+      currentStock: number,
+      bestPrice: {price: number, supplier: string} | null
+  } | null>(null);
 
   // --- QUICK ADD PRODUCT STATE ---
   const [isAddProdModalOpen, setIsAddProdModalOpen] = useState(false);
@@ -43,18 +48,33 @@ export default function PurchaseOrders() {
   }, [warehouses]);
 
   // --- HELPERS ---
-  const getLastTwoPrices = (prodId: string): number[] => {
+  const getPriceIntelligence = (prodId: string) => {
       const history = db.getPurchaseInvoices() || [];
-      const prices: {date: string, price: number}[] = [];
+      const allPrices: {price: number, supplier: string, date: string}[] = [];
       
-      history.forEach((inv: any) => {
+      history.forEach((inv) => {
           if (inv.type === 'PURCHASE') {
-              const item = inv.items.find((i: any) => i.product_id === prodId);
-              if(item) prices.push({ date: inv.date, price: item.cost_price });
+              const item = inv.items.find((i) => i.product_id === prodId);
+              if(item) {
+                  const supplier = suppliers.find(s => s.id === inv.supplier_id)?.name || 'Unknown';
+                  allPrices.push({ price: item.cost_price, supplier, date: inv.date });
+              }
           }
       });
-      prices.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      return prices.slice(0, 2).map(p => p.price);
+
+      // Sort by date to get last prices
+      const sortedByDate = [...allPrices].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      // Find best price (lowest)
+      let bestPrice = null;
+      if (allPrices.length > 0) {
+          bestPrice = allPrices.reduce((min, p) => p.price < min.price ? p : min, allPrices[0]);
+      }
+
+      return {
+          lastPrices: sortedByDate.slice(0, 3), // Get up to last 3 entries
+          bestPrice
+      };
   };
 
   const getMonthlyAvg = (prodId: string): number => {
@@ -79,23 +99,30 @@ export default function PurchaseOrders() {
           const p = products.find(x => x.id === selProd);
           if (p) {
               const currentStock = p.batches.reduce((sum, b) => sum + b.quantity, 0);
-              const lastPrices = getLastTwoPrices(selProd);
+              const intelligence = getPriceIntelligence(selProd);
               const monthlyAvg = getMonthlyAvg(selProd);
-              setProdStats({ lastPrices, monthlyAvg, currentStock });
               
-              // --- التعديل المطلوب: جلب سعر التكلفة من المخزون في حال عدم وجود فواتير سابقة ---
-              let initialCost = lastPrices[0];
-              if (initialCost === undefined && p.batches.length > 0) {
-                  // إذا لم تتوفر فواتير، نأخذ سعر الشراء من آخر تشغيلة في المخزن
-                  initialCost = p.batches[p.batches.length - 1].purchase_price;
+              setProdStats({ 
+                  lastPrices: intelligence.lastPrices, 
+                  monthlyAvg, 
+                  currentStock,
+                  bestPrice: intelligence.bestPrice 
+              });
+              
+              // Auto-set cost to last purchase price or stock cost
+              const latestPrice = intelligence.lastPrices[0]?.price;
+              if (latestPrice !== undefined) {
+                  setCost(latestPrice);
+              } else if (p.batches.length > 0) {
+                  setCost(p.batches[p.batches.length - 1].purchase_price);
+              } else {
+                  setCost(0);
               }
-              setCost(initialCost || 0);
               
-              // جلب سعر البيع الافتراضي من آخر تشغيلة
               if (p.batches.length > 0) {
                   setSellingPrice(p.batches[p.batches.length - 1].selling_price);
               } else {
-                  setSellingPrice(0);
+                  setSellingPrice(p.selling_price || 0);
               }
           }
       } else {
@@ -115,7 +142,7 @@ export default function PurchaseOrders() {
           quantity: qty,
           cost_price: cost,
           selling_price: sellingPrice,
-          last_cost: prodStats?.lastPrices[0] || 0,
+          last_cost: prodStats?.lastPrices[0]?.price || 0,
           current_stock: prodStats?.currentStock || 0,
           monthly_avg: prodStats?.monthlyAvg || 0
       }]);
@@ -146,7 +173,6 @@ export default function PurchaseOrders() {
 
       const res = await db.createPurchaseOrder(selectedSupplier, itemsPayload);
       if (res.success) {
-          alert(t('common.success_import') || "Order Saved");
           setOrders(db.getPurchaseOrders());
           setCart([]);
           setSelectedSupplier('');
@@ -199,24 +225,13 @@ export default function PurchaseOrders() {
 
   const handleConvert = async () => {
       if (!reviewOrder) return;
-      if (reviewItems.length === 0) {
-          alert("Order is empty!");
-          return;
-      }
-      for (const item of reviewItems) {
-          if (!item.batch_number || !item.expiry_date || item.quantity <= 0 || item.cost_price < 0) {
-              alert(`Invalid data for item. Please check Batch, Expiry, Qty and Cost.`);
-              return;
-          }
-      }
+      if (reviewItems.length === 0) return;
+      
       const res = await db.createPurchaseInvoice(reviewOrder.supplier_id, reviewItems, 0, false);
       if (res.success) {
           db.updatePurchaseOrderStatus(reviewOrder.id, 'COMPLETED');
-          alert(t('pur.convert_success'));
           setOrders(db.getPurchaseOrders());
           setReviewOrder(null);
-      } else {
-          alert(res.message);
       }
   };
 
@@ -250,22 +265,22 @@ export default function PurchaseOrders() {
                     onClick={() => setActiveTab('NEW')}
                     className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'NEW' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                    <Plus className="w-4 h-4 inline mr-2" />
+                    <Plus className="w-4 h-4 inline ltr:mr-2 rtl:ml-2" />
                     {t('pur.new_order')}
                 </button>
                 <button 
                     onClick={() => setActiveTab('LOG')}
                     className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'LOG' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                    <Clock className="w-4 h-4 inline mr-2" />
+                    <Clock className="w-4 h-4 inline ltr:mr-2 rtl:ml-2" />
                     {t('stock.order_history')}
                 </button>
             </div>
         </div>
 
         {activeTab === 'NEW' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
-                <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in slide-in-from-bottom-4">
+                <div className="lg:col-span-8 space-y-6">
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                         <h3 className="font-bold text-gray-700 mb-4">{t('pur.select_supplier')}</h3>
                         <SearchableSelect 
@@ -287,7 +302,7 @@ export default function PurchaseOrders() {
                                 إضافة صنف جديد
                             </button>
                         </div>
-                        <div className="flex flex-wrap md:flex-nowrap gap-4 items-end mb-4">
+                        <div className="flex flex-wrap md:flex-nowrap gap-4 items-end mb-6">
                             <div className="flex-1 min-w-[200px]">
                                 <SearchableSelect 
                                     options={productOptions}
@@ -301,18 +316,9 @@ export default function PurchaseOrders() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('pur.cost')}</label>
                                 <input 
                                     type="number" 
-                                    className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
+                                    className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-bold"
                                     value={cost}
                                     onChange={e => setCost(Number(e.target.value))}
-                                />
-                            </div>
-                            <div className="w-32">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">{t('pur.sell')}</label>
-                                <input 
-                                    type="number" 
-                                    className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-emerald-700"
-                                    value={sellingPrice}
-                                    onChange={e => setSellingPrice(Number(e.target.value))}
                                 />
                             </div>
                             <div className="w-32">
@@ -336,29 +342,62 @@ export default function PurchaseOrders() {
                         </div>
 
                         {prodStats && (
-                            <div className="bg-purple-50 border border-purple-100 p-4 rounded-xl flex flex-wrap gap-4 text-sm animate-in zoom-in duration-200">
-                                <div className="flex-1 min-w-[120px]">
-                                    <div className="text-purple-400 text-xs font-bold uppercase mb-1">{t('rep.last_cost_1')} / {t('rep.last_cost_2')}</div>
-                                    <div className="font-mono font-bold text-purple-900">
-                                        {prodStats.lastPrices[0] ? `${currency}${prodStats.lastPrices[0]}` : '-'} 
-                                        <span className="text-purple-300 mx-2">|</span>
-                                        {prodStats.lastPrices[1] ? `${currency}${prodStats.lastPrices[1]}` : '-'}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-700 animate-in zoom-in duration-300">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2">
+                                        <Award className="w-4 h-4 text-yellow-500" /> أقل سعر شراء مسجل
+                                    </h4>
+                                    {prodStats.bestPrice ? (
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <div className="text-3xl font-black text-white">{currency}{prodStats.bestPrice.price.toLocaleString()}</div>
+                                                <div className="text-xs text-emerald-400 font-bold mt-1 flex items-center gap-1">
+                                                    <Truck className="w-3 h-3" /> {prodStats.bestPrice.supplier}
+                                                </div>
+                                            </div>
+                                            <div className="p-3 bg-white/10 rounded-xl">
+                                                <Tag className="w-6 h-6 text-emerald-400" />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-slate-500 text-sm italic">لا توجد بيانات سابقة</div>
+                                    )}
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border-2 border-slate-100 animate-in slide-in-from-left-4 duration-300">
+                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-3 flex items-center gap-2">
+                                        <Clock className="w-4 h-4 text-blue-500" /> آخر 3 أسعار شراء
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {prodStats.lastPrices.length > 0 ? prodStats.lastPrices.map((p, i) => (
+                                            <div key={i} className="flex justify-between items-center text-sm border-b border-dashed border-slate-100 pb-1 last:border-0">
+                                                <span className="font-bold text-slate-700">{currency}{p.price.toLocaleString()}</span>
+                                                <span className="text-[10px] text-slate-400">{p.supplier}</span>
+                                            </div>
+                                        )) : <div className="text-slate-300 text-xs italic">لا توجد مشتريات سابقة</div>}
                                     </div>
                                 </div>
-                                <div className="w-px bg-purple-200 hidden sm:block"></div>
-                                <div className="flex-1 min-w-[120px]">
-                                    <div className="text-purple-400 text-xs font-bold uppercase mb-1 flex items-center gap-1">
-                                        <TrendingUp className="w-3 h-3" /> {t('rep.monthly_avg')}
+
+                                <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                                        <p className="text-[10px] font-bold text-blue-400 uppercase">المخزون الحالي</p>
+                                        <p className="text-lg font-black text-blue-700">{prodStats.currentStock}</p>
                                     </div>
-                                    <div className="font-mono font-bold text-purple-900 text-lg">
-                                        {prodStats.monthlyAvg}
+                                    <div className="bg-orange-50 p-3 rounded-xl border border-orange-100">
+                                        <p className="text-[10px] font-bold text-orange-400 uppercase">معدل البيع (30يوم)</p>
+                                        <p className="text-lg font-black text-orange-700">{prodStats.monthlyAvg}</p>
                                     </div>
-                                </div>
-                                <div className="w-px bg-purple-200 hidden sm:block"></div>
-                                <div className="flex-1 min-w-[120px]">
-                                    <div className="text-purple-400 text-xs font-bold uppercase mb-1">{t('rep.short.current')}</div>
-                                    <div className={`font-mono font-bold text-lg ${prodStats.currentStock <= db.getSettings().lowStockThreshold ? 'text-red-500' : 'text-purple-900'}`}>
-                                        {prodStats.currentStock}
+                                    <div className="bg-purple-50 p-3 rounded-xl border border-purple-100 col-span-2">
+                                        <p className="text-[10px] font-bold text-purple-400 uppercase">سعر البيع المقترح</p>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                className="bg-transparent text-lg font-black text-purple-700 outline-none w-full"
+                                                value={sellingPrice}
+                                                onChange={e => setSellingPrice(Number(e.target.value))}
+                                            />
+                                            <TrendingUp className="w-4 h-4 text-purple-400" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -366,8 +405,8 @@ export default function PurchaseOrders() {
                     </div>
                 </div>
 
-                <div className="lg:col-span-1">
-                    <div className="bg-white p-6 rounded-xl shadow-lg border border-purple-100 h-full flex flex-col">
+                <div className="lg:col-span-4">
+                    <div className="bg-white p-6 rounded-xl shadow-lg border border-purple-100 h-full flex flex-col sticky top-6">
                         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                             <FileText className="w-5 h-5 text-purple-600" />
                             {t('pur.order_summary')}
@@ -375,19 +414,22 @@ export default function PurchaseOrders() {
                         
                         <div className="flex-1 overflow-y-auto min-h-[300px] space-y-3">
                             {cart.length === 0 ? (
-                                <div className="text-center text-gray-400 py-10">{t('pur.add_to_order')}</div>
+                                <div className="text-center text-gray-400 py-10">
+                                    <ShoppingBag className="w-12 h-12 mx-auto mb-2 opacity-10" />
+                                    {t('pur.add_to_order')}
+                                </div>
                             ) : (
                                 cart.map((item, idx) => (
-                                    <div key={idx} className="bg-gray-50 p-3 rounded-lg border border-gray-100 flex justify-between items-center group">
+                                    <div key={idx} className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex justify-between items-center group animate-in slide-in-from-right-2">
                                         <div>
-                                            <div className="font-bold text-gray-800">{item.product.name}</div>
-                                            <div className="text-xs text-blue-600 font-bold mb-1">سعر الشراء: {currency}{item.cost_price}</div>
-                                            <div className="text-xs text-gray-500 flex gap-2">
+                                            <div className="font-bold text-gray-800 text-sm">{item.product.name}</div>
+                                            <div className="text-xs text-blue-600 font-bold mb-1">شراء: {currency}{item.cost_price}</div>
+                                            <div className="text-[10px] text-gray-500 flex gap-2">
                                                 <span>{t('stock.qty')}: <b>{item.quantity}</b></span>
-                                                {item.selling_price > 0 && <span className="text-emerald-600">بيع: {currency}{item.selling_price}</span>}
+                                                <span className="text-emerald-600">بيع: {currency}{item.selling_price}</span>
                                             </div>
                                         </div>
-                                        <button onClick={() => handleRemoveItem(idx)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => handleRemoveItem(idx)} className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-all">
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </div>
@@ -395,11 +437,15 @@ export default function PurchaseOrders() {
                             )}
                         </div>
 
-                        <div className="pt-4 border-t mt-4">
+                        <div className="pt-4 border-t mt-4 space-y-3">
+                            <div className="flex justify-between items-center text-sm font-bold text-gray-600">
+                                <span>إجمالي الفاتورة:</span>
+                                <span className="text-xl font-black text-slate-900">{currency}{cart.reduce((a,b) => a + (b.quantity * b.cost_price), 0).toLocaleString()}</span>
+                            </div>
                             <button 
                                 onClick={handleSaveOrder}
                                 disabled={cart.length === 0 || !selectedSupplier}
-                                className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-purple-200 hover:bg-purple-700 disabled:bg-gray-300 disabled:shadow-none transition-all flex items-center justify-center gap-2"
+                                className="w-full bg-purple-600 text-white py-4 rounded-xl font-black shadow-lg shadow-purple-200 hover:bg-purple-700 disabled:bg-gray-300 disabled:shadow-none transition-all flex items-center justify-center gap-2"
                             >
                                 <Save className="w-5 h-5" />
                                 {t('pur.save_order_log')}
@@ -597,8 +643,8 @@ export default function PurchaseOrders() {
                     </div>
 
                     <div className="px-6 py-4 bg-white border-t flex justify-between items-center">
-                        <div className="text-sm text-slate-500">
-                            Total: <span className="font-bold text-slate-800 text-lg ml-2">{currency}{reviewItems.reduce((a,b) => a + (b.quantity * b.cost_price), 0).toLocaleString()}</span>
+                        <div className="text-sm text-slate-500 font-bold uppercase">
+                            إجمالي القيمة: <span className="font-black text-slate-900 text-lg ml-2">{currency}{reviewItems.reduce((a,b) => a + (b.quantity * b.cost_price), 0).toLocaleString()}</span>
                         </div>
                         <div className="flex gap-3">
                             <button onClick={() => setReviewOrder(null)} className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl font-bold transition-colors">
