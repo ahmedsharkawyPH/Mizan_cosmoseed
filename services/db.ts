@@ -320,13 +320,13 @@ class DatabaseService {
   }
 
   async saveDailyClosing(closing: Omit<DailyClosing, 'id' | 'updated_at'>) {
-    const id = `DC${Date.now()}`;
+    // استخدام crypto.randomUUID لضمان التوافق مع نوع UUID في Supabase
+    const id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `DC-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newClosing: DailyClosing = { 
         ...closing, 
         id, 
         updated_at: new Date().toISOString() 
     };
-    this.dailyClosings.push(newClosing);
     
     if (isSupabaseConfigured) {
         const { error } = await supabase.from('daily_closings').insert({
@@ -339,11 +339,16 @@ class DatabaseService {
             inventory_value: newClosing.inventory_value,
             updated_at: newClosing.updated_at
         });
+        
         if (error) {
             console.error("Supabase Closing Error:", error.message);
+            toast.error(`فشل الحفظ في السحابة: ${error.message}`);
             return false;
         }
     }
+    
+    // إضافة للذاكرة المحلية فقط عند نجاح الإرسال للسحابة
+    this.dailyClosings.push(newClosing);
     return true;
   }
 
