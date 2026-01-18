@@ -1,13 +1,13 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Send, X, Bot, User, Loader2, MessageSquare, Key, ExternalLink } from 'lucide-react';
+import { Sparkles, Send, X, Loader2, MessageSquare, Key, ExternalLink, ShieldCheck } from 'lucide-react';
 import { db } from '../services/db';
 import { sendAiMessage } from '../services/ai';
 
 export default function AiAssistant() {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<{ role: 'user' | 'model', text: string, needsKey?: boolean }[]>([
-        { role: 'model', text: 'مرحباً بك في ميزان AI! أنا مساعدك المالي الذكي. كيف يمكنني مساعدتك اليوم؟' }
+        { role: 'model', text: 'مرحباً بك في ميزان AI! أنا مساعدك المالي الذكي. يرجى تفعيل الخدمة للبدء في تحليل حساباتك.' }
     ]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -21,10 +21,11 @@ export default function AiAssistant() {
 
     const handleSelectKey = async () => {
         try {
-            await (window as any).aistudio.openSelectKey();
+            await window.aistudio.openSelectKey();
+            // مباشرة بعد الضغط، نفترض النجاح لتجاوز أي Race condition
             setMessages(prev => [
                 ...prev.filter(m => !m.needsKey),
-                { role: 'model', text: '✅ تم ربط المفتاح بنجاح! يمكنك الآن سؤالي عن أي شيء في حساباتك.' }
+                { role: 'model', text: '✅ تم تفعيل المساعد بنجاح! يمكنك الآن سؤالي عن الأرصدة، النواقص، أو ملخص مبيعات اليوم.' }
             ]);
         } catch (e) {
             console.error("Key selection failed", e);
@@ -41,21 +42,21 @@ export default function AiAssistant() {
 
         try {
             const snapshot = db.getSystemSnapshot();
-            const systemInstruction = `أنت "ميزان AI"، خبير مالي. بياناتك الحالية: ${snapshot}. رد بالعربية، كن دقيقاً ومختصراً.`;
+            const systemInstruction = `أنت "ميزان AI"، مستشار مالي محترف لنظام "ميزان أونلاين". البيانات الحالية للنظام: ${snapshot}. رد باللغة العربية بأسلوب مهني ومختصر.`;
 
             const reply = await sendAiMessage(userMsg, systemInstruction);
             
             if (reply === "NEED_KEY_SELECTION") {
                 setMessages(prev => [...prev, { 
                     role: 'model', 
-                    text: '⚠️ يبدو أن مفتاح الـ API غير مضبوط في النظام. يرجى الضغط على الزر أدناه لتفعيل المساعد باستخدام مفتاحك الخاص.',
+                    text: '⚠️ المساعد يحتاج إلى مفتاح API صالح للعمل. يرجى اختيار مفتاحك من Google AI Studio لتفعيل المزايا الذكية.',
                     needsKey: true 
                 }]);
             } else {
                 setMessages(prev => [...prev, { role: 'model', text: reply }]);
             }
         } catch (error) {
-            setMessages(prev => [...prev, { role: 'model', text: "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً." }]);
+            setMessages(prev => [...prev, { role: 'model', text: "عذراً، حدث خطأ في الاتصال بالمحرك. يرجى المحاولة مرة أخرى." }]);
         } finally {
             setLoading(false);
         }
@@ -74,7 +75,7 @@ export default function AiAssistant() {
                                 <span className="font-bold text-sm block">مساعد ميزان الذكي</span>
                                 <span className="text-[10px] text-emerald-400 flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-                                    بتقنية Gemini 3
+                                    Gemini 3 Pro Active
                                 </span>
                             </div>
                         </div>
@@ -94,19 +95,22 @@ export default function AiAssistant() {
                                     <p className="whitespace-pre-wrap">{msg.text}</p>
                                     
                                     {msg.needsKey && (
-                                        <div className="mt-4 space-y-3">
+                                        <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-3">
+                                            <div className="flex items-center gap-2 text-blue-800 font-bold text-xs mb-1">
+                                                <ShieldCheck className="w-4 h-4" /> تفعيل المساعد
+                                            </div>
                                             <button 
                                                 onClick={handleSelectKey}
-                                                className="w-full bg-slate-900 text-white py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-black transition-all"
+                                                className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-black text-xs flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-md"
                                             >
-                                                <Key className="w-4 h-4" /> اختيار مفتاح API
+                                                <Key className="w-4 h-4" /> ربط مفتاح API الآن
                                             </button>
                                             <a 
                                                 href="https://ai.google.dev/gemini-api/docs/billing" 
                                                 target="_blank" 
-                                                className="text-[10px] text-blue-600 flex items-center justify-center gap-1 hover:underline"
+                                                className="text-[10px] text-blue-500 flex items-center justify-center gap-1 hover:underline font-bold"
                                             >
-                                                <ExternalLink className="w-3 h-3" /> تعليمات تفعيل الفواتير والمفاتيح
+                                                <ExternalLink className="w-3 h-3" /> متطلبات التشغيل والفواتير
                                             </a>
                                         </div>
                                     )}
@@ -117,7 +121,7 @@ export default function AiAssistant() {
                             <div className="flex justify-start">
                                 <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm rounded-bl-none flex items-center gap-3">
                                     <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                                    <span className="text-xs text-slate-500 font-bold">جاري التفكير...</span>
+                                    <span className="text-xs text-slate-500 font-bold">جاري تحليل البيانات...</span>
                                 </div>
                             </div>
                         )}
@@ -127,7 +131,7 @@ export default function AiAssistant() {
                         <div className="flex gap-2 relative">
                             <input 
                                 className="flex-1 border border-slate-200 rounded-2xl pr-4 pl-12 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-slate-50 transition-all font-medium"
-                                placeholder="اسأل ميزان عن حساباتك..."
+                                placeholder="اسأل ميزان عن أي شيء..."
                                 value={input}
                                 onChange={e => setInput(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleSend()}

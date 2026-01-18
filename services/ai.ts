@@ -1,67 +1,50 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { isSupabaseConfigured, supabase } from "./supabase";
 
 /**
- * خدمة ميزان للذكاء الاصطناعي
- * تعالج طلبات المستخدم بناءً على لقطة حية من قاعدة البيانات
+ * خدمة ميزان للذكاء الاصطناعي - إصدار Gemini 3 Pro
+ * تعتمد على مفتاح البيئة أو المفتاح المختار من قبل المستخدم
  */
 export const sendAiMessage = async (message: string, context: string): Promise<string> => {
-  
-  // 1. محاولة الاتصال عبر بروكسي آمن (Edge Function) إذا كان متاحاً
-  if (isSupabaseConfigured) {
-    try {
-      const { data, error } = await supabase.functions.invoke('gemini-chat', {
-        body: { message, context }
-      });
-      if (!error && data?.reply) return data.reply;
-    } catch (e) {
-      console.debug("Edge Function unavailable, falling back to local client.");
-    }
-  }
-
-  // 2. الاتصال المباشر باستخدام SDK
   try {
-    // محاولة جلب المفتاح من عدة مصادر محتملة (process.env أو الذاكرة المحلية لـ AI Studio)
-    const apiKey = process.env.API_KEY;
+    // 1. التحقق من وجود مفتاح API (سواء في البيئة أو عبر أداة الاختيار)
+    const hasKey = await window.aistudio.hasSelectedApiKey();
+    const envKey = process.env.API_KEY;
 
-    if (!apiKey || apiKey === 'ضع_مفتاح_جوجل_هنا') {
-      // إذا لم يوجد مفتاح، نتحقق مما إذا كان المستخدم قد اختار مفتاحاً عبر النافذة المنبثقة
-      const hasKey = await (window as any).aistudio?.hasSelectedApiKey();
-      if (!hasKey) {
-        throw new Error("API_KEY_MISSING");
-      }
+    if (!hasKey && (!envKey || envKey.length < 10)) {
+      return "NEED_KEY_SELECTION";
     }
 
-    // إنشاء عميل جديد لكل طلب لضمان استخدام المفتاح الحالي
-    const ai = new GoogleGenAI({ apiKey: apiKey || process.env.API_KEY || '' });
+    // 2. إنشاء مثيل جديد من المحرك قبل كل طلب لضمان استخدام أحدث مفتاح
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
+    // 3. طلب توليد المحتوى باستخدام موديل gemini-3-pro-preview
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: [{ role: 'user', parts: [{ text: message }] }],
+      contents: message,
       config: {
         systemInstruction: context,
-        temperature: 0.4,
-        topP: 0.9,
+        temperature: 0.3, // دقة عالية للحسابات المالية
       },
     });
 
-    const replyText = response.text;
-    if (!replyText) throw new Error("EMPTY_RESPONSE");
+    // 4. استخراج النص مباشرة
+    const reply = response.text;
+    
+    if (!reply) {
+      throw new Error("لم يتم استلام رد من المحرك.");
+    }
 
-    return replyText;
+    return reply;
 
   } catch (error: any) {
-    console.error("Mizan AI Error:", error);
-    
-    if (error.message === "API_KEY_MISSING") {
-      return "NEED_KEY_SELECTION"; // إشارة للواجهة لإظهار زر الاختيار
-    }
+    console.error("Mizan AI Core Error:", error);
     
     if (error.message?.includes("Requested entity was not found")) {
-      return "عذراً، الموديل المطلوب غير متاح لهذا المفتاح. يرجى اختيار مفتاح صالح من مشروع مفعل.";
+      // إعادة ضبط حالة المفتاح إذا كان غير صالح للموديل المطلوب
+      return "NEED_KEY_SELECTION";
     }
 
-    return "نعتذر، واجه المساعد مشكلة في الاتصال. يرجى التأكد من إعدادات المفتاح والإنترنت.";
+    throw error;
   }
 }
