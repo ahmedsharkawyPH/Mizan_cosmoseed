@@ -83,6 +83,12 @@ const Inventory: React.FC = () => {
 
   const handleExport = () => { exportFilteredProductsToExcel(searchResults.length > 0 ? searchResults : products); };
 
+  const displayedProducts = useMemo(() => {
+    if (searchResults.length > 0) return searchResults;
+    if (searchQuery || showLowStock || showOutOfStock) return [];
+    return products.slice(0, 100);
+  }, [searchResults, searchQuery, showLowStock, showOutOfStock, products]);
+
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-6 pb-20">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -140,13 +146,28 @@ const Inventory: React.FC = () => {
           </div>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {(searchResults.length > 0 ? searchResults : (!searchQuery && !showLowStock && !showOutOfStock ? products.slice(0, 50) : [])).map((product) => (
-            <ProductCard key={product.id} product={product} searchQuery={searchQuery} />
-          ))}
+        <div className="bg-white rounded-3xl shadow-soft border border-slate-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-right border-collapse">
+              <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-black border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-4 text-right">الصنف</th>
+                  <th className="px-6 py-4 text-center">كود</th>
+                  <th className="px-6 py-4 text-center">سعر التكلفة</th>
+                  <th className="px-6 py-4 text-center">سعر البيع</th>
+                  <th className="px-6 py-4 text-center">الرصيد</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {displayedProducts.map((product) => (
+                  <ProductRow key={product.id} product={product} searchQuery={searchQuery} currency={currency} />
+                ))}
+              </tbody>
+            </table>
+          </div>
           
-          {(searchResults.length === 0 && (searchQuery || showLowStock || showOutOfStock)) && (
-            <div className="col-span-full py-20 text-center bg-white rounded-3xl border-2 border-dashed border-slate-200">
+          {displayedProducts.length === 0 && (
+            <div className="py-20 text-center bg-white rounded-3xl border-2 border-dashed border-slate-200 m-4">
               <Search className="w-10 h-10 text-slate-300 mx-auto mb-4" />
               <h3 className="text-xl font-bold text-slate-600">لم يتم العثور على نتائج</h3>
             </div>
@@ -157,10 +178,18 @@ const Inventory: React.FC = () => {
   );
 };
 
-// استخدام React.memo لمنع إعادة رسم البطاقة إلا عند تغير البيانات
-const ProductCard = React.memo(({ product, searchQuery }: { product: any; searchQuery: string }) => {
+const ProductRow = React.memo(({ product, searchQuery, currency }: { product: any; searchQuery: string; currency: string }) => {
   const totalQty = product.batches?.reduce((sum: number, b: any) => sum + (b.quantity || 0), 0) || 0;
   
+  // جلب الأسعار من آخر تشغيلة أو من بيانات المنتج الأساسية
+  const costPrice = product.batches && product.batches.length > 0 
+    ? product.batches[product.batches.length - 1].purchase_price 
+    : (product.purchase_price || 0);
+    
+  const sellingPrice = product.batches && product.batches.length > 0 
+    ? product.batches[product.batches.length - 1].selling_price 
+    : (product.selling_price || 0);
+
   const highlightMatch = (text: string, query: string) => {
     if (!text || !query) return text;
     const tokens = ArabicSmartSearch.tokenizeQuery(query);
@@ -173,19 +202,25 @@ const ProductCard = React.memo(({ product, searchQuery }: { product: any; search
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden hover:shadow-xl transition-all duration-300 group hover:-translate-y-1">
-      <div className="p-4 flex flex-col h-full">
-        <h3 className="font-bold text-slate-800 text-base mb-1 leading-tight group-hover:text-blue-600 transition-colors h-10 overflow-hidden" dangerouslySetInnerHTML={{ __html: highlightMatch(product.name, searchQuery) }} />
-        <div className="flex items-center gap-1 mb-4">
-          <code className="text-[10px] font-mono text-slate-400" dangerouslySetInnerHTML={{ __html: highlightMatch(product.code || '---', searchQuery) }} />
-        </div>
-        <div className="mt-auto flex justify-between items-center bg-slate-50 p-2 rounded-xl">
-            <span className="text-[10px] font-bold text-slate-400">الرصيد</span>
-            <span className={`text-lg font-black ${totalQty <= 0 ? 'text-red-500' : totalQty < 10 ? 'text-amber-500' : 'text-slate-800'}`}>{totalQty}</span>
-        </div>
-      </div>
-      <div className={`h-1 w-full ${totalQty <= 0 ? 'bg-red-500' : totalQty < 10 ? 'bg-amber-500' : 'bg-blue-600'}`} />
-    </div>
+    <tr className="hover:bg-blue-50/50 transition-colors group">
+      <td className="px-6 py-4">
+        <div className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors" dangerouslySetInnerHTML={{ __html: highlightMatch(product.name, searchQuery) }} />
+      </td>
+      <td className="px-6 py-4 text-center">
+        <code className="text-[11px] font-mono text-slate-400" dangerouslySetInnerHTML={{ __html: highlightMatch(product.code || '---', searchQuery) }} />
+      </td>
+      <td className="px-6 py-4 text-center">
+        <span className="font-mono text-slate-600">{currency}{costPrice.toLocaleString()}</span>
+      </td>
+      <td className="px-6 py-4 text-center">
+        <span className="font-bold text-blue-600 font-mono">{currency}{sellingPrice.toLocaleString()}</span>
+      </td>
+      <td className="px-6 py-4 text-center">
+        <span className={`inline-flex items-center justify-center min-w-[40px] px-2 py-1 rounded-lg font-black text-sm ${totalQty <= 0 ? 'bg-red-50 text-red-600 border border-red-100' : totalQty < 10 ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
+          {totalQty}
+        </span>
+      </td>
+    </tr>
   );
 });
 
