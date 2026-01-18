@@ -169,7 +169,7 @@ export default function Reports() {
               { id: 'MONTHLY_SUMMARY', label: 'الملخص الشهري', icon: Table2 },
               { id: 'SALES', label: 'المبيعات', icon: TrendingUp },
               { id: 'PURCHASES', label: 'المشتريات', icon: Truck },
-              { id: 'TELESALES', label: 'تيليسيلز', icon: Phone },
+              { id: 'TELESALES', label: 'التيليسيلز', icon: Phone },
               { id: 'REPRESENTATIVES', label: 'المندوبين', icon: Briefcase },
           ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-5 py-3 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-100'}`}>
@@ -204,7 +204,7 @@ export default function Reports() {
                       <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={[{name: 'الإيرادات', value: financialData.revenue}, {name: 'التكلفة', value: financialData.cogs}, {name: 'صافي الربح', value: financialData.netProfit}]}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                              <XAxis dataKey="name" tick={{fontSize: 12, fontWeights: 'bold'}} />
+                              <XAxis dataKey="name" tick={{fontSize: 12, fontWeight: 'bold'}} />
                               <YAxis />
                               <Tooltip formatter={(value: any) => [`${currency}${value.toLocaleString()}`, '']} />
                               <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
