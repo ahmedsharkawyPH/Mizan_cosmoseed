@@ -1,15 +1,24 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
 import { authService } from '../services/auth';
-import { LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { 
+  LogOut, User, Menu, X, ShoppingCart, FileText, Package, Activity, 
+  Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, 
+  Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, 
+  LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList, RefreshCw, CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
 import AiAssistant from './AiAssistant';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
@@ -18,6 +27,46 @@ export default function Layout() {
   
   const user = authService.getCurrentUser();
   const settings = db.getSettings();
+
+  // التحقق من تقفيل اليوم السابق
+  const isPreviousDayUnclosed = useMemo(() => {
+    const closings = db.getDailyClosings();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    
+    // إذا لم يوجد تقفيل لهذا التاريخ في السجل
+    return !closings.some(c => c.date === yesterdayStr);
+  }, [location.pathname]); // إعادة التحقق عند تغيير المسار لضمان المزامنة
+
+  useEffect(() => {
+    // إظهار تنبيه منبثق عند فتح أي تبويب إذا لم يتم التقفيل
+    if (isPreviousDayUnclosed) {
+      toast.custom((t_toast: any) => (
+        <div className={`${t_toast.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-lg rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border-r-4 border-red-500`}>
+          <div className="flex-1 w-0 p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0 pt-0.5">
+                <AlertCircle className="h-10 w-10 text-red-500" />
+              </div>
+              <div className="ml-3 rtl:mr-3 flex-1">
+                <p className="text-sm font-bold text-gray-900">تحذير النظام</p>
+                <p className="mt-1 text-sm text-gray-500">لم يتم تقفيل الخزينة لليوم السابق. يرجى التوجه لتبويب "تقفيل اليومية" لتسوية الحسابات.</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex border-l border-gray-200">
+            <button
+              onClick={() => toast.dismiss(t_toast.id)}
+              className="w-full border border-transparent rounded-none rounded-r-2xl p-4 flex items-center justify-center text-sm font-medium text-gray-400 hover:text-gray-500 focus:outline-none"
+            >
+              إغلاق
+            </button>
+          </div>
+        </div>
+      ), { duration: 4000 });
+    }
+  }, [location.pathname, isPreviousDayUnclosed]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -29,7 +78,6 @@ export default function Layout() {
     };
     window.addEventListener('keydown', handleKeyDown);
     
-    // مراقبة حالة تحميل البيانات
     const checkLoad = setInterval(() => {
         if (db.isFullyLoaded !== dbFullLoaded) setDbFullLoaded(db.isFullyLoaded);
     }, 2000);
@@ -187,42 +235,47 @@ export default function Layout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="bg-white shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0">
+        {/* Header - يتغير لونه للأحمر عند توفر الشرط */}
+        <header className={`${isPreviousDayUnclosed ? 'bg-red-600 text-white' : 'bg-white text-slate-800'} shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0 transition-colors duration-500`}>
           <div className="flex items-center gap-4">
-              <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 rounded-lg lg:hidden hover:bg-slate-100">
+              <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-lg lg:hidden ${isPreviousDayUnclosed ? 'text-white hover:bg-red-700' : 'text-slate-500 hover:bg-slate-100'}`}>
                 <Menu className="w-6 h-6" />
               </button>
               
-              {/* Sync Status Indicator */}
               <div className="flex items-center gap-2">
                   {!dbFullLoaded ? (
-                      <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded-full border border-blue-100 animate-pulse">
-                          <RefreshCw className="w-3 h-3 text-blue-600 animate-spin" />
-                          <span className="text-[10px] font-bold text-blue-700 whitespace-nowrap">جاري تحميل كامل البيانات...</span>
+                      <div className={`flex items-center gap-2 px-3 py-1 rounded-full border animate-pulse ${isPreviousDayUnclosed ? 'bg-red-700 border-red-500 text-white' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span className="text-[10px] font-bold whitespace-nowrap uppercase">Syncing...</span>
                       </div>
                   ) : (
-                      <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100 group cursor-default">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span className="text-[10px] font-bold text-emerald-700 hidden group-hover:block transition-all">البيانات مكتملة</span>
+                      <div className={`flex items-center gap-2 px-3 py-1 rounded-full border group cursor-default ${isPreviousDayUnclosed ? 'bg-red-700 border-red-500 text-white' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}>
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span className="text-[10px] font-bold hidden group-hover:block transition-all">البيانات مكتملة</span>
                       </div>
+                  )}
+                  {isPreviousDayUnclosed && (
+                    <div className="hidden sm:flex items-center gap-1 px-3 py-1 bg-white/20 rounded-full border border-white/30 text-[10px] font-black uppercase tracking-widest animate-pulse">
+                      <AlertTriangle className="w-3 h-3" /> اليوم السابق لم يُقفل
+                    </div>
                   )}
               </div>
           </div>
           
           <div className="flex-1 flex justify-center max-w-lg mx-auto">
             <div className="relative w-full hidden md:block">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Search className={`absolute left-3 top-2.5 h-4 w-4 ${isPreviousDayUnclosed ? 'text-white/70' : 'text-slate-400'}`} />
               <input 
                 readOnly
                 onClick={() => setIsCommandOpen(true)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer hover:bg-slate-100 transition-colors font-medium"
+                className={`w-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none cursor-pointer transition-colors font-medium ${isPreviousDayUnclosed ? 'bg-white/10 border-white/20 text-white placeholder-white/60 hover:bg-white/20' : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100'}`}
                 placeholder={`${t('cust.search')} (Ctrl+K)`}
               />
             </div>
           </div>
           
           <div className="flex items-center gap-4 ltr:ml-auto rtl:mr-auto">
-             <div className="text-xs font-bold text-slate-400 hidden sm:block">
+             <div className={`text-xs font-bold hidden sm:block ${isPreviousDayUnclosed ? 'text-white/80' : 'text-slate-400'}`}>
                  {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
              </div>
           </div>
