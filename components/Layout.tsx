@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
-import AiAssistant from './AiAssistant';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -24,25 +23,22 @@ export default function Layout() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const [dbFullLoaded, setDbFullLoaded] = useState(db.isFullyLoaded);
-  const [closingsVersion, setClosingsVersion] = useState(0); // مستخدم لإجبار المكون على إعادة التحقق عند الحفظ
+  const [closingsVersion, setClosingsVersion] = useState(0); 
   
   const user = authService.getCurrentUser();
   const settings = db.getSettings();
 
-  // الحصول على التاريخ المحلي بتنسيق YYYY-MM-DD
   const getLocalDate = (date: Date) => {
     const offset = date.getTimezoneOffset();
     const localDate = new Date(date.getTime() - (offset * 60 * 1000));
     return localDate.toISOString().split('T')[0];
   };
 
-  // التحقق من كافة الأيام السابقة التي لم يتم تقفيلها
   const missingClosings = useMemo(() => {
     const closings = db.getDailyClosings();
     const today = new Date();
     const missingDays: string[] = [];
     
-    // نتحقق من آخر 7 أيام سابقة فقط للتأكد من انتظام التقفيل
     for (let i = 1; i <= 7; i++) {
         const checkDate = new Date();
         checkDate.setDate(today.getDate() - i);
@@ -71,7 +67,6 @@ export default function Layout() {
                 <p className="text-sm font-black text-gray-900">تنبيه تقفيل الخزينة</p>
                 <p className="mt-1 text-xs text-gray-500 leading-relaxed">
                     يوجد <span className="text-red-600 font-bold">{missingClosings.length}</span> أيام لم يتم تقفيلها. 
-                    {missingClosings.length === 1 ? ` اليوم المطلوب تقفيله هو: ${missingClosings[0]}` : ` أقدم يوم مطلوب تقفيله هو: ${missingClosings[missingClosings.length-1]}`}
                 </p>
               </div>
             </div>
@@ -99,10 +94,8 @@ export default function Layout() {
     };
     window.addEventListener('keydown', handleKeyDown);
     
-    // مراقبة دورية للتغيرات في قاعدة البيانات
     const checkInterval = setInterval(() => {
         if (db.isFullyLoaded !== dbFullLoaded) setDbFullLoaded(db.isFullyLoaded);
-        // نحدث نسخة التقفيلات لمطابقة الواقع في حال تمت إضافة تقفيل جديد
         setClosingsVersion(db.getDailyClosings().length);
     }, 2000);
 
@@ -259,7 +252,6 @@ export default function Layout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header */}
         <header className={`${isPreviousDayUnclosed ? 'bg-red-600 text-white shadow-red-200' : 'bg-white text-slate-800'} shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0 transition-all duration-500 z-10`}>
           <div className="flex items-center gap-4">
               <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-lg lg:hidden ${isPreviousDayUnclosed ? 'text-white hover:bg-red-700' : 'text-slate-500 hover:bg-slate-100'}`}>
@@ -332,8 +324,6 @@ export default function Layout() {
            </div>
         </div>
       )}
-
-      <AiAssistant />
     </div>
   );
 }
