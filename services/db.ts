@@ -135,15 +135,12 @@ class DatabaseService {
   async init() {
     if(this.isInitialized) return;
     
-    // محاولة التحميل من الكاش أولاً لسرعة البرق
     const hasCache = this.loadFromLocalCache();
     if (hasCache) {
         this.isInitialized = true;
-        console.log("[DB] Loaded from Local Cache. App interactive.");
     }
 
     try {
-        // المرحلة 1: تحديث البيانات الأساسية من السيرفر
         const { data: set } = await supabase.from('settings').select('*').eq('id', 1).maybeSingle();
         if (set) this.settings = this.mapFromDb(set);
 
@@ -165,15 +162,12 @@ class DatabaseService {
         }
 
         this.rebuildIndexes();
-        this.saveToLocalCache(); // حفظ النسخة الجديدة محلياً
+        this.saveToLocalCache();
         
         if (!this.isInitialized) this.isInitialized = true;
-        
-        console.log("[DB] Essential data synced with server.");
         this.loadRemainingData();
 
     } catch (error) {
-        console.error("[DB] Remote init failure:", error);
         if (!this.isInitialized) this.isInitialized = true; 
     }
   }
@@ -199,7 +193,6 @@ class DatabaseService {
           this.rebuildIndexes();
           this.isFullyLoaded = true;
           this.saveToLocalCache();
-          console.log("[DB] Full sync complete.");
       } catch (err) {
           console.error("[DB] Background sync failed", err);
       }
@@ -304,19 +297,53 @@ class DatabaseService {
 
   getDailySummary(date: string) {
     const targetDate = date;
+    const daySales = this.invoices.filter(i => i.date.startsWith(targetDate) && i.type === 'SALE').reduce((sum, i) => sum + i.net_total, 0);
     const collections = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.RECEIPT).reduce((sum, t) => sum + t.amount, 0);
-    const expenses = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category !== 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
+    const dayExpenses = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category !== 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
     const cashPurchases = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category === 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
+    
+    // حساب قيمة المخزون الحالية
+    const inventoryValue = this.batches.reduce((sum, b) => sum + (b.quantity * b.purchase_price), 0);
+    
     const openingCash = this.cashTransactions.filter(t => t.date.split('T')[0] < targetDate).reduce((sum, t) => t.type === CashTransactionType.RECEIPT ? sum + t.amount : sum - t.amount, 0);
-    const expectedCash = openingCash + collections - expenses - cashPurchases;
-    return { openingCash, collections, expenses, cashPurchases, expectedCash, cashSales: 0 };
+    const expectedCash = openingCash + collections - dayExpenses - cashPurchases;
+    
+    return { 
+        openingCash, 
+        collections, 
+        expenses: dayExpenses, 
+        cashPurchases, 
+        expectedCash, 
+        cashSales: daySales,
+        inventoryValue
+    };
   }
 
-  async saveDailyClosing(closing: Omit<DailyClosing, 'id' | 'created_at'>) {
+  async saveDailyClosing(closing: Omit<DailyClosing, 'id' | 'updated_at'>) {
     const id = `DC${Date.now()}`;
-    const newClosing: DailyClosing = { ...closing, id, created_at: new Date().toISOString() };
+    const newClosing: DailyClosing = { 
+        ...closing, 
+        id, 
+        updated_at: new Date().toISOString() 
+    };
     this.dailyClosings.push(newClosing);
-    if (isSupabaseConfigured) await supabase.from('daily_closings').insert(newClosing);
+    
+    if (isSupabaseConfigured) {
+        const { error } = await supabase.from('daily_closings').insert({
+            id: newClosing.id,
+            date: newClosing.date,
+            total_sales: newClosing.total_sales,
+            total_expenses: newClosing.total_expenses,
+            cash_balance: newClosing.cash_balance,
+            bank_balance: newClosing.bank_balance || 0,
+            inventory_value: newClosing.inventory_value,
+            updated_at: newClosing.updated_at
+        });
+        if (error) {
+            console.error("Supabase Closing Error:", error.message);
+            return false;
+        }
+    }
     return true;
   }
 

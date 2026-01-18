@@ -197,17 +197,14 @@ export interface PendingAdjustment {
 export interface DailyClosing {
   id: string;
   date: string;
-  opening_cash: number;
-  cash_sales: number;
-  collections: number;
-  cash_purchases: number;
-  expenses: number;
-  expected_cash: number;
-  actual_cash: number;
-  difference: number;
-  closed_by: string;
+  total_sales: number;
+  total_expenses: number;
+  cash_balance: number;
+  bank_balance: number;
+  inventory_value: number;
+  updated_at: string;
   notes?: string;
-  created_at: string;
+  closed_by?: string;
 }
 
 // Accounting Types

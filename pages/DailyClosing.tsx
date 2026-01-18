@@ -8,11 +8,14 @@ import {
   Wallet, Save, History, Printer, CheckCircle2, AlertTriangle, 
   Search, FileText
 } from 'lucide-react';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 export default function DailyClosing() {
   const [activeTab, setActiveTab] = useState<'NEW' | 'HISTORY'>('NEW');
   const [targetDate, setTargetDate] = useState(new Date().toISOString().split('T')[0]);
   const [actualCash, setActualCash] = useState<number>(0);
+  const [bankBalance, setBankBalance] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const user = authService.getCurrentUser();
@@ -29,21 +32,22 @@ export default function DailyClosing() {
     setIsSaving(true);
     const success = await db.saveDailyClosing({
       date: targetDate,
-      opening_cash: summary.openingCash,
-      cash_sales: summary.cashSales,
-      collections: summary.collections,
-      cash_purchases: summary.cashPurchases,
-      expenses: summary.expenses,
-      expected_cash: summary.expectedCash,
-      actual_cash: actualCash,
-      difference: difference,
-      closed_by: user?.name || 'Unknown',
-      notes: notes
+      total_sales: summary.cashSales,
+      total_expenses: summary.expenses + summary.cashPurchases,
+      cash_balance: actualCash,
+      bank_balance: bankBalance,
+      inventory_value: summary.inventoryValue,
+      notes: notes,
+      closed_by: user?.name || 'Unknown'
     });
 
     if (success) {
-      alert("تم حفظ التقفيل بنجاح");
+      // Fix: added missing toast import to enable success notification
+      toast.success("تم حفظ التقفيل بنجاح");
       setActiveTab('HISTORY');
+    } else {
+      // Fix: added missing toast import to enable error notification
+      toast.error("فشل حفظ التقفيل في السحابة");
     }
     setIsSaving(false);
   };
@@ -105,11 +109,11 @@ export default function DailyClosing() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/30">
-                      <p className="text-xs font-bold text-emerald-600 uppercase mb-1 flex items-center gap-1"><ArrowDownCircle className="w-3 h-3" /> التحصيلات</p>
-                      <h4 className="text-xl font-black text-emerald-700">{currency}{summary.collections.toLocaleString()}</h4>
+                      <p className="text-xs font-bold text-emerald-600 uppercase mb-1 flex items-center gap-1"><ArrowDownCircle className="w-3 h-3" /> إيراد مبيعات</p>
+                      <h4 className="text-xl font-black text-emerald-700">{currency}{summary.cashSales.toLocaleString()}</h4>
                     </div>
                     <div className="p-4 rounded-xl border border-red-100 bg-red-50/30">
-                      <p className="text-xs font-bold text-red-600 uppercase mb-1 flex items-center gap-1"><ArrowUpCircle className="w-3 h-3" /> المصروفات</p>
+                      <p className="text-xs font-bold text-red-600 uppercase mb-1 flex items-center gap-1"><ArrowUpCircle className="w-3 h-3" /> مصروفات</p>
                       <h4 className="text-xl font-black text-red-700">{currency}{summary.expenses.toLocaleString()}</h4>
                     </div>
                     <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/30">
@@ -119,7 +123,10 @@ export default function DailyClosing() {
                   </div>
 
                   <div className="pt-4 border-t-2 border-dashed border-slate-100 flex justify-between items-center">
-                    <span className="text-xl font-bold text-slate-800">الرصيد الدفتري المتوقع</span>
+                    <div>
+                        <span className="text-xl font-bold text-slate-800">الرصيد الدفتري المتوقع</span>
+                        <p className="text-[10px] text-slate-400 font-bold">قيمة المخزون المقدرة: {currency}{summary.inventoryValue.toLocaleString()}</p>
+                    </div>
                     <span className="text-3xl font-black text-blue-600">{currency}{summary.expectedCash.toLocaleString()}</span>
                   </div>
                </div>
@@ -143,21 +150,22 @@ export default function DailyClosing() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">رصيد البنك (اختياري)</label>
+                  <input 
+                    type="number" 
+                    className="w-full border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none"
+                    placeholder="0.00"
+                    value={bankBalance || ''}
+                    onChange={e => setBankBalance(parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+
                 <div className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center ${difference === 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : difference > 0 ? 'bg-blue-50 border-blue-100 text-blue-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
                   <p className="text-xs font-bold uppercase mb-1">الفارق (عجز / زيادة)</p>
                   <h4 className="text-2xl font-black">{difference > 0 ? '+' : ''}{currency}{difference.toLocaleString()}</h4>
                   {difference === 0 && <p className="text-[10px] font-bold flex items-center gap-1 mt-1"><CheckCircle2 className="w-3 h-3" /> مطابق تماماً</p>}
                   {difference !== 0 && <p className="text-[10px] font-bold flex items-center gap-1 mt-1"><AlertTriangle className="w-3 h-3" /> يوجد اختلاف</p>}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">ملاحظات</label>
-                  <textarea 
-                    className="w-full border p-3 rounded-xl text-sm min-h-[80px]" 
-                    placeholder="أسباب الفارق أو أي ملاحظات إضافية..."
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                  ></textarea>
                 </div>
 
                 <button 
@@ -178,53 +186,30 @@ export default function DailyClosing() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden animate-in slide-in-from-bottom-2">
           <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
             <h3 className="font-bold text-slate-700">سجل التقفيلات السابقة</h3>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-              <input type="text" className="pl-9 pr-4 py-2 border rounded-lg text-sm outline-none" placeholder="بحث بالتاريخ..." />
-            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-right">
               <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
                 <tr>
                   <th className="p-4">التاريخ</th>
-                  <th className="p-4 text-center">المتوقع</th>
-                  <th className="p-4 text-center">الفعلي</th>
-                  <th className="p-4 text-center">الفارق</th>
+                  <th className="p-4 text-center">إجمالي المبيعات</th>
+                  <th className="p-4 text-center">الخزينة (فعلي)</th>
+                  <th className="p-4 text-center">المخزون</th>
                   <th className="p-4">المسئول</th>
-                  <th className="p-4 text-center">الإجراء</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {history.map(closing => (
                   <tr key={closing.id} className="hover:bg-slate-50 transition-colors">
                     <td className="p-4 font-bold text-slate-700">{closing.date}</td>
-                    <td className="p-4 text-center font-mono">{currency}{closing.expected_cash.toLocaleString()}</td>
-                    <td className="p-4 text-center font-bold text-blue-600">{currency}{closing.actual_cash.toLocaleString()}</td>
-                    <td className={`p-4 text-center font-black ${closing.difference === 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                      {closing.difference > 0 ? '+' : ''}{closing.difference.toLocaleString()}
-                    </td>
+                    <td className="p-4 text-center font-mono">{currency}{closing.total_sales.toLocaleString()}</td>
+                    <td className="p-4 text-center font-bold text-blue-600">{currency}{closing.cash_balance.toLocaleString()}</td>
+                    <td className="p-4 text-center text-slate-500">{currency}{closing.inventory_value.toLocaleString()}</td>
                     <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold">{closing.closed_by.charAt(0)}</div>
-                        <span className="text-xs">{closing.closed_by}</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <button className="p-2 hover:bg-white rounded-lg text-gray-400 hover:text-blue-600 transition-colors">
-                        <FileText className="w-4 h-4" />
-                      </button>
+                      <span className="text-xs text-slate-500 font-bold">{closing.closed_by || '-'}</span>
                     </td>
                   </tr>
                 ))}
-                {history.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="p-12 text-center text-slate-400">
-                      <History className="w-12 h-12 mx-auto mb-2 opacity-10" />
-                      <p className="font-bold">لا توجد سجلات تقفيل سابقة</p>
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
