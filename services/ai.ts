@@ -1,45 +1,57 @@
 
-import { supabase, isSupabaseConfigured } from './supabase';
 import { GoogleGenAI } from "@google/genai";
+import { isSupabaseConfigured, supabase } from "./supabase";
 
 /**
- * Sends a message to the AI, preferring a secure backend proxy (Edge Function).
- * Falls back to client-side execution for local development.
+ * خدمة ميزان للذكاء الاصطناعي
+ * تقوم بمعالجة طلبات المستخدم بناءً على بيانات النظام الحالية
  */
 export const sendAiMessage = async (message: string, context: string): Promise<string> => {
-  // 1. PATH A: Secure Edge Function (Production Best Practice)
+  
+  // 1. محاولة الاتصال عبر بروكسي آمن (Edge Function) إذا كان متاحاً في الإنتاج
   if (isSupabaseConfigured) {
-      try {
-          const { data, error } = await supabase.functions.invoke('gemini-chat', {
-              body: { message, context }
-          });
-          
-          if (!error && data?.reply) {
-              return data.reply;
-          }
-          if (error) {
-             console.debug("Edge Function skipped (Dev Mode):", error.message);
-          }
-      } catch (e) {
-          console.debug("Edge Function connection failed, falling back to local client.");
-      }
+    try {
+      const { data, error } = await supabase.functions.invoke('gemini-chat', {
+        body: { message, context }
+      });
+      if (!error && data?.reply) return data.reply;
+    } catch (e) {
+      console.debug("Edge Function unavailable, falling back to local client.");
+    }
   }
 
-  // 2. PATH B: Local Client-Side (Development / Demo)
+  // 2. الاتصال المباشر الآمن باستخدام SDK (يستخدم process.env.API_KEY)
   try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-          model: 'gemini-3-pro-preview',
-          contents: message,
-          config: {
-              systemInstruction: context,
-          }
-      });
-      
-      // Directly access the .text property as per updated SDK guidelines
-      return response.text || "I processed the data but couldn't generate a text response.";
+    // التحقق من وجود المفتاح قبل المحاولة
+    if (!process.env.API_KEY || process.env.API_KEY === 'ضع_مفتاح_جوجل_هنا') {
+      throw new Error("API_KEY_MISSING");
+    }
+
+    // إنشاء مثيل جديد لكل طلب لضمان تحديث المفتاح
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: [{ role: 'user', parts: [{ text: message }] }],
+      config: {
+        systemInstruction: context,
+        temperature: 0.5, // تقليل العشوائية لضمان دقة الأرقام المحاسبية
+        topP: 0.95,
+      },
+    });
+
+    return response.text || "تمت معالجة البيانات ولكن لم يتم إنشاء رد نصي.";
   } catch (error: any) {
-      console.error("AI Service Error:", error);
-      return "I apologize, but I'm currently unable to connect to the AI service. Please check your internet connection or API key configuration.";
+    console.error("AI Service Error:", error);
+    
+    if (error.message === "API_KEY_MISSING") {
+      return "⚠️ مفتاح الـ API غير مضبوط. يرجى إضافة مفتاح Gemini في ملف .env لتفعيل المساعد الذكي.";
+    }
+    
+    if (error.message?.includes("Requested entity was not found")) {
+      return "عذراً، موديل Gemini 3 غير متاح حالياً لهذا المفتاح أو يرجى التأكد من صلاحيته.";
+    }
+
+    return "نعتذر، واجه المساعد الذكي مشكلة في الاتصال. تأكد من جودة الإنترنت وحاول مرة أخرى.";
   }
 }
