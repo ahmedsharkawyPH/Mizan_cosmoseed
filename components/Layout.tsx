@@ -24,49 +24,70 @@ export default function Layout() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const [dbFullLoaded, setDbFullLoaded] = useState(db.isFullyLoaded);
+  const [closingsVersion, setClosingsVersion] = useState(0); // مستخدم لإجبار المكون على إعادة التحقق عند الحفظ
   
   const user = authService.getCurrentUser();
   const settings = db.getSettings();
 
-  // التحقق من تقفيل اليوم السابق
-  const isPreviousDayUnclosed = useMemo(() => {
+  // الحصول على التاريخ المحلي بتنسيق YYYY-MM-DD
+  const getLocalDate = (date: Date) => {
+    const offset = date.getTimezoneOffset();
+    const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  };
+
+  // التحقق من كافة الأيام السابقة التي لم يتم تقفيلها
+  const missingClosings = useMemo(() => {
     const closings = db.getDailyClosings();
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const today = new Date();
+    const missingDays: string[] = [];
     
-    // إذا لم يوجد تقفيل لهذا التاريخ في السجل
-    return !closings.some(c => c.date === yesterdayStr);
-  }, [location.pathname]); // إعادة التحقق عند تغيير المسار لضمان المزامنة
+    // نتحقق من آخر 7 أيام سابقة فقط للتأكد من انتظام التقفيل
+    for (let i = 1; i <= 7; i++) {
+        const checkDate = new Date();
+        checkDate.setDate(today.getDate() - i);
+        const dateStr = getLocalDate(checkDate);
+        
+        const isClosed = closings.some(c => c.date === dateStr);
+        if (!isClosed) {
+            missingDays.push(dateStr);
+        }
+    }
+    return missingDays;
+  }, [location.pathname, closingsVersion, db.isFullyLoaded]);
+
+  const isPreviousDayUnclosed = missingClosings.length > 0;
 
   useEffect(() => {
-    // إظهار تنبيه منبثق عند فتح أي تبويب إذا لم يتم التقفيل
     if (isPreviousDayUnclosed) {
       toast.custom((t_toast: any) => (
-        <div className={`${t_toast.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-lg rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border-r-4 border-red-500`}>
+        <div className={`${t_toast.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border-r-4 border-red-500`}>
           <div className="flex-1 w-0 p-4">
             <div className="flex items-start">
               <div className="flex-shrink-0 pt-0.5">
                 <AlertCircle className="h-10 w-10 text-red-500" />
               </div>
               <div className="ml-3 rtl:mr-3 flex-1">
-                <p className="text-sm font-bold text-gray-900">تحذير النظام</p>
-                <p className="mt-1 text-sm text-gray-500">لم يتم تقفيل الخزينة لليوم السابق. يرجى التوجه لتبويب "تقفيل اليومية" لتسوية الحسابات.</p>
+                <p className="text-sm font-black text-gray-900">تنبيه تقفيل الخزينة</p>
+                <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+                    يوجد <span className="text-red-600 font-bold">{missingClosings.length}</span> أيام لم يتم تقفيلها. 
+                    {missingClosings.length === 1 ? ` اليوم المطلوب تقفيله هو: ${missingClosings[0]}` : ` أقدم يوم مطلوب تقفيله هو: ${missingClosings[missingClosings.length-1]}`}
+                </p>
               </div>
             </div>
           </div>
           <div className="flex border-l border-gray-200">
             <button
-              onClick={() => toast.dismiss(t_toast.id)}
-              className="w-full border border-transparent rounded-none rounded-r-2xl p-4 flex items-center justify-center text-sm font-medium text-gray-400 hover:text-gray-500 focus:outline-none"
+              onClick={() => { toast.dismiss(t_toast.id); navigate('/daily-closing'); }}
+              className="w-full border border-transparent rounded-none rounded-l-2xl p-4 flex items-center justify-center text-xs font-black text-blue-600 hover:text-blue-700 bg-blue-50/50"
             >
-              إغلاق
+              توجه للتقفيل
             </button>
           </div>
         </div>
-      ), { duration: 4000 });
+      ), { duration: 5000, id: 'closing-alert' });
     }
-  }, [location.pathname, isPreviousDayUnclosed]);
+  }, [location.pathname, isPreviousDayUnclosed, missingClosings]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -78,13 +99,16 @@ export default function Layout() {
     };
     window.addEventListener('keydown', handleKeyDown);
     
-    const checkLoad = setInterval(() => {
+    // مراقبة دورية للتغيرات في قاعدة البيانات
+    const checkInterval = setInterval(() => {
         if (db.isFullyLoaded !== dbFullLoaded) setDbFullLoaded(db.isFullyLoaded);
+        // نحدث نسخة التقفيلات لمطابقة الواقع في حال تمت إضافة تقفيل جديد
+        setClosingsVersion(db.getDailyClosings().length);
     }, 2000);
 
     return () => {
         window.removeEventListener('keydown', handleKeyDown);
-        clearInterval(checkLoad);
+        clearInterval(checkInterval);
     };
   }, [dbFullLoaded]);
 
@@ -235,8 +259,8 @@ export default function Layout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Header - يتغير لونه للأحمر عند توفر الشرط */}
-        <header className={`${isPreviousDayUnclosed ? 'bg-red-600 text-white' : 'bg-white text-slate-800'} shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0 transition-colors duration-500`}>
+        {/* Header */}
+        <header className={`${isPreviousDayUnclosed ? 'bg-red-600 text-white shadow-red-200' : 'bg-white text-slate-800'} shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0 transition-all duration-500 z-10`}>
           <div className="flex items-center gap-4">
               <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-lg lg:hidden ${isPreviousDayUnclosed ? 'text-white hover:bg-red-700' : 'text-slate-500 hover:bg-slate-100'}`}>
                 <Menu className="w-6 h-6" />
@@ -255,8 +279,8 @@ export default function Layout() {
                       </div>
                   )}
                   {isPreviousDayUnclosed && (
-                    <div className="hidden sm:flex items-center gap-1 px-3 py-1 bg-white/20 rounded-full border border-white/30 text-[10px] font-black uppercase tracking-widest animate-pulse">
-                      <AlertTriangle className="w-3 h-3" /> اليوم السابق لم يُقفل
+                    <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-white/20 rounded-full border border-white/30 text-[10px] font-black uppercase tracking-widest animate-pulse cursor-pointer hover:bg-white/30 transition-colors" onClick={() => navigate('/daily-closing')}>
+                      <AlertTriangle className="w-3 h-3" /> {missingClosings.length} أيام لم تقفل
                     </div>
                   )}
               </div>
