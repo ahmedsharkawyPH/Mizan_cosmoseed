@@ -12,23 +12,24 @@ import { Toaster } from 'react-hot-toast';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const NewInvoice = lazy(() => import('./pages/NewInvoice'));
 const Invoices = lazy(() => import('./pages/Invoices'));
+const TodayItems = lazy(() => import('./pages/TodayItems'));
 const Inventory = lazy(() => import('./pages/Inventory'));
-const Customers = lazy(() => import('./pages/Customers'));
-const CashRegister = lazy(() => import('./pages/CashRegister'));
-const Settings = lazy(() => import('./pages/Settings'));
+const InventoryAnalysis = lazy(() => import('./pages/InventoryAnalysis'));
+const Shortages = lazy(() => import('./pages/Shortages'));
 const PurchaseInvoice = lazy(() => import('./pages/PurchaseInvoice'));
 const PurchaseList = lazy(() => import('./pages/PurchaseList'));
 const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
+const Customers = lazy(() => import('./pages/Customers'));
+const Suppliers = lazy(() => import('./pages/Suppliers'));
 const Representatives = lazy(() => import('./pages/Representatives'));
 const Telesales = lazy(() => import('./pages/Telesales'));
-const Suppliers = lazy(() => import('./pages/Suppliers'));
 const Warehouses = lazy(() => import('./pages/Warehouses'));
 const StockTake = lazy(() => import('./pages/StockTake'));
 const DailyClosing = lazy(() => import('./pages/DailyClosing'));
-const Login = lazy(() => import('./pages/Login'));
-const InventoryAnalysis = lazy(() => import('./pages/InventoryAnalysis'));
-const Shortages = lazy(() => import('./pages/Shortages'));
+const CashRegister = lazy(() => import('./pages/CashRegister'));
 const Reports = lazy(() => import('./pages/Reports'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Login = lazy(() => import('./pages/Login'));
 
 const PageLoader = () => (
     <div className="h-full w-full flex flex-col items-center justify-center p-20 gap-4">
@@ -82,6 +83,7 @@ function App() {
                   <Route path="invoice/new" element={<NewInvoice />} />
                   <Route path="invoice/edit/:id" element={<NewInvoice />} />
                   <Route path="invoices" element={<Invoices />} />
+                  <Route path="today-items" element={<TodayItems />} />
                   
                   <Route path="inventory" element={<Inventory />} />
                   <Route path="inventory/analysis" element={<InventoryAnalysis />} />

@@ -8,7 +8,7 @@ import {
   Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, 
   Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, 
   LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList, RefreshCw, CheckCircle2,
-  AlertCircle
+  AlertCircle, ListChecks
 } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
@@ -124,7 +124,8 @@ export default function Layout() {
         roles: ['ADMIN', 'REP', 'TELESALES'],
         children: [
             { label: t('nav.new_invoice'), path: '/invoice/new', icon: PlusCircle },
-            { label: t('nav.invoices'), path: '/invoices', icon: FileText }
+            { label: t('nav.invoices'), path: '/invoices', icon: FileText },
+            { label: 'أصناف اليوم', path: '/today-items', icon: ListChecks }
         ]
     },
     {
