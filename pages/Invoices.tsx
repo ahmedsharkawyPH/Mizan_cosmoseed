@@ -10,8 +10,8 @@ import html2canvas from 'html2canvas';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
 
-// Adjusted for A5 height (Half A4 Landscape) - Lowered slightly to ensure footer fits
-const ITEMS_PER_PAGE = 12; 
+// تم تعديل عدد الأصناف لكل صفحة إلى 16 صنفاً لزيادة سعة الفاتورة
+const ITEMS_PER_PAGE = 16; 
 
 // --- STYLES ---
 const INVOICE_STYLES = `
@@ -31,7 +31,7 @@ const INVOICE_STYLES = `
         display: flex;
         flex-direction: column;
         height: 100%;
-        padding: 10mm;
+        padding: 8mm; /* Reduced padding slightly to fit 16 items */
         box-sizing: border-box;
         position: relative;
         direction: rtl; /* Always RTL for Arabic Layout */
@@ -41,7 +41,7 @@ const INVOICE_STYLES = `
     .header-section {
         border-bottom: 2px solid #333;
         padding-bottom: 5px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
@@ -66,19 +66,19 @@ const INVOICE_STYLES = `
 
     .meta-grid {
         display: grid;
-        grid-template-columns: 1.5fr 1fr;
-        gap: 8px;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
         font-size: 11px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
         background: #f8fafc;
-        padding: 8px;
+        padding: 6px;
         border-radius: 6px;
         border: 1px solid #e2e8f0;
     }
 
     .table-container {
         flex-grow: 1;
-        min-height: 300px; /* Ensure space is reserved */
+        min-height: 380px; /* Adjusted for 16 items */
     }
 
     .invoice-table {
@@ -91,7 +91,7 @@ const INVOICE_STYLES = `
         background-color: #1e293b !important; /* Force Dark Blue */
         color: white !important;
         border: 1px solid #334155;
-        padding: 5px;
+        padding: 4px;
         font-weight: bold;
         text-align: center;
         -webkit-print-color-adjust: exact; 
@@ -139,7 +139,7 @@ const INVOICE_STYLES = `
     }
 
     .footer-section {
-        margin-top: 10px;
+        margin-top: 8px;
         font-size: 9px;
         text-align: center;
         color: #64748b;
@@ -282,19 +282,21 @@ const InvoiceHalf = ({
                 </div>
             </div>
 
-            {/* Info */}
+            {/* Info Section - Consolidated into 2 rows to increase space for items */}
             <div className="meta-grid">
                 <div>
                     <span style={{color:'#64748b'}}>العميل:</span> <span style={{fontWeight:'bold'}}>{customer?.name}</span>
-                    {customer?.phone && <div style={{fontSize: '9px', color: '#64748b'}}>ت: {customer.phone}</div>}
                 </div>
-                <div>
+                <div style={{textAlign: 'left'}}>
                     <span style={{color:'#64748b'}}>التاريخ:</span> <span>{new Date(invoice.date).toLocaleDateString('en-GB')}</span>
-                    <div style={{fontSize: '9px', color: '#64748b'}}>{new Date(invoice.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
                 </div>
                 
-                <div style={{gridColumn: 'span 2'}}>
-                    <span style={{color:'#64748b'}}>العنوان:</span> <span>{customer?.address || '-'}</span>
+                <div>
+                    <span style={{color:'#64748b'}}>العنوان:</span> <span style={{fontSize: '10px'}}>{customer?.address || '-'}</span>
+                    {customer?.phone && <span style={{color:'#64748b', marginRight: '8px'}}> | ت: {customer.phone}</span>}
+                </div>
+                <div style={{textAlign: 'left', fontSize: '9px', color: '#64748b'}}>
+                    {new Date(invoice.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                 </div>
             </div>
 
@@ -328,7 +330,7 @@ const InvoiceHalf = ({
                                 </tr>
                             );
                         })}
-                        {/* Fill empty rows to keep height consistent (optional visual polish) */}
+                        {/* Fill empty rows to keep height consistent */}
                         {items.length < ITEMS_PER_PAGE && Array.from({ length: ITEMS_PER_PAGE - items.length }).map((_, i) => (
                             <tr key={`empty-${i}`}>
                                 <td style={{color:'transparent'}}>.</td>
@@ -418,8 +420,6 @@ const Invoices: React.FC = () => {
             const inv = db.getInvoices().find(i => i.id === id);
             if (inv) {
                 setSelectedInvoice(inv);
-                // Optional: Automatically trigger print if needed
-                // setTimeout(() => window.print(), 500);
             }
         }
     }
