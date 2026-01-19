@@ -130,6 +130,14 @@ export default function Customers() {
       });
   }, [customerAnalytics, search, sortConfig]);
 
+  // إصلاح دالة تصدير الإكسيل لتجنب خطأ TypeScript
+  const handleExportAnalysisExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(sortedAnalytics);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Analysis");
+    XLSX.writeFile(wb, "Customer_Analysis.xlsx");
+  };
+
   const handleAddLine = async () => {
       const name = newLineName.trim();
       if (!name) return;
@@ -250,7 +258,7 @@ export default function Customers() {
             </div>
             {activeTab === 'ANALYSIS' && (
                 <div className="flex gap-2">
-                    <button onClick={() => XLSX.writeFile(XLSX.utils.book_append_sheet(XLSX.utils.book_new(), XLSX.utils.json_to_sheet(sortedAnalytics), "Analysis"), "Customer_Analysis.xlsx")} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors text-sm font-bold"><FileDown className="w-4 h-4" />{t('cust.export_excel')}</button>
+                    <button onClick={handleExportAnalysisExcel} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors text-sm font-bold"><FileDown className="w-4 h-4" />{t('cust.export_excel')}</button>
                 </div>
             )}
           </div>
@@ -291,8 +299,6 @@ export default function Customers() {
             </div>
           </div>
       )}
-
-      {/* ANALYSIS AND DISTRIBUTION LINE VIEWS (REMOVED FOR BREVITY IN RE-CONTENT) */}
 
       {/* STATEMENT MODAL */}
       {statementCustomer && (
