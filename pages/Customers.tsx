@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { Customer } from '../types';
 import { t } from '../utils/t';
-import { Plus, Search, Upload, FileText, X, Printer, User, ShieldAlert, BarChart3, Users, ArrowUpDown, FileDown, Download, Percent, Edit, Trash2, MapPin, Truck, Map } from 'lucide-react';
+import { Plus, Search, Upload, FileText, X, Printer, User, ShieldAlert, BarChart3, Users, ArrowUpDown, FileDown, Download, Percent, Edit, Trash2, MapPin, Truck, Map, MessageCircle } from 'lucide-react';
 import { readExcelFile } from '../utils/excel';
 import { useLocation } from 'react-router-dom';
 // @ts-ignore
@@ -304,6 +304,35 @@ export default function Customers() {
     });
     return finalStatement;
   }, [statementCustomer]);
+
+  const handleWhatsAppStatement = () => {
+    if (!statementCustomer || !statementCustomer.phone) {
+        alert("لا يوجد رقم هاتف مسجل لهذا العميل");
+        return;
+    }
+
+    const currentBalance = statementCustomer.current_balance;
+    const totalSales = statementData.reduce((sum, it) => sum + it.debit, 0);
+    const totalPayments = statementData.reduce((sum, it) => sum + it.credit, 0);
+
+    const message = `*كشف حساب مالي - ${settings.companyName}*\n` +
+                    `--------------------------\n` +
+                    `*العميل:* ${statementCustomer.name}\n` +
+                    `*التاريخ:* ${new Date().toLocaleDateString('ar-EG')}\n` +
+                    `--------------------------\n` +
+                    `*الرصيد الافتتاحي:* ${statementCustomer.opening_balance.toFixed(2)} ${currency}\n` +
+                    `*إجمالي الفواتير:* ${totalSales.toFixed(2)} ${currency}\n` +
+                    `*إجمالي المدفوعات:* ${totalPayments.toFixed(2)} ${currency}\n` +
+                    `--------------------------\n` +
+                    `*الرصيد النهائي المستحق:* ${currentBalance.toFixed(2)} ${currency}\n\n` +
+                    `يرجى مراجعة الحساب وسداد المستحقات. شكراً لكم!`;
+
+    const encodedMsg = encodeURIComponent(message);
+    const cleanPhone = statementCustomer.phone.replace(/\D/g, '');
+    const finalPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
+    
+    window.open(`https://wa.me/${finalPhone}?text=${encodedMsg}`, '_blank');
+  };
 
   const handleStatementExportExcel = () => {
         const data = statementData.map(row => ({
@@ -656,6 +685,7 @@ export default function Customers() {
                             <p className="text-sm text-gray-500">{statementCustomer.name} - {new Date().toLocaleDateString()}</p>
                         </div>
                         <div className="flex gap-2 print-hidden">
+                            <button onClick={handleWhatsAppStatement} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-full" title="إرسال عبر واتساب"> <MessageCircle className="w-5 h-5" /> </button>
                             <button onClick={handleStatementExportExcel} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-full" title="Export Excel"> <FileDown className="w-5 h-5" /> </button>
                             <button onClick={handleStatementExportPDF} className="p-2 text-red-600 hover:bg-red-50 rounded-full" title="Export PDF"> <Download className="w-5 h-5" /> </button>
                             <button onClick={() => window.print()} className="p-2 text-gray-600 hover:bg-gray-200 rounded-full" title="Print"> <Printer className="w-5 h-5" /> </button>

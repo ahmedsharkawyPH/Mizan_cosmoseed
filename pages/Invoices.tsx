@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { Invoice, PaymentStatus } from '../types';
-import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle } from 'lucide-react';
+import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle, MessageCircle } from 'lucide-react';
 import { t } from '../utils/t';
 import { useNavigate, useLocation } from 'react-router-dom';
 // @ts-ignore
@@ -429,6 +429,32 @@ const Invoices: React.FC = () => {
       window.print();
   };
 
+  const handleWhatsApp = (inv: Invoice) => {
+    const customer = db.getCustomers().find(c => c.id === inv.customer_id);
+    if (!customer?.phone) {
+        alert("لا يوجد رقم هاتف مسجل لهذا العميل");
+        return;
+    }
+
+    const itemsList = inv.items.map(it => `- ${it.product.name} (x${it.quantity})`).join('\n');
+    const message = `*فاتورة مبيعات جديدة من ${settings.companyName}*\n` +
+                    `--------------------------\n` +
+                    `*رقم الفاتورة:* ${inv.invoice_number}\n` +
+                    `*التاريخ:* ${new Date(inv.date).toLocaleDateString('ar-EG')}\n` +
+                    `*العميل:* ${customer.name}\n` +
+                    `--------------------------\n` +
+                    `*الأصناف:*\n${itemsList}\n` +
+                    `--------------------------\n` +
+                    `*صافي الفاتورة:* ${inv.net_total.toFixed(2)} ${currency}\n\n` +
+                    `شكراً لتعاملكم معنا!`;
+
+    const encodedMsg = encodeURIComponent(message);
+    const cleanPhone = customer.phone.replace(/\D/g, '');
+    const finalPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
+    
+    window.open(`https://wa.me/${finalPhone}?text=${encodedMsg}`, '_blank');
+  };
+
   const handleDownloadPDF = async () => {
       const container = document.getElementById('print-container');
       if (!container || !selectedInvoice) return;
@@ -560,6 +586,13 @@ const Invoices: React.FC = () => {
                             >
                                 <Eye className="w-4 h-4" />
                             </button>
+                            <button 
+                                onClick={() => handleWhatsApp(inv)}
+                                className="p-2 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 text-emerald-600 rounded-lg transition-colors shadow-sm"
+                                title="إرسال عبر واتساب"
+                            >
+                                <MessageCircle className="w-4 h-4" />
+                            </button>
                             {!isReturn && (
                                 <button 
                                     onClick={() => navigate(`/invoice/edit/${inv.id}`)}
@@ -589,6 +622,14 @@ const Invoices: React.FC = () => {
             <div className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm print-hidden sticky top-0 z-50">
                 <h3 className="font-bold text-gray-800">Invoice #{selectedInvoice.invoice_number} ({invoicePages.length} Pages)</h3>
                 <div className="flex gap-3">
+                    <button 
+                        onClick={() => handleWhatsApp(selectedInvoice)}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors font-bold text-sm shadow-sm"
+                    >
+                        <MessageCircle className="w-4 h-4" />
+                        <span>WhatsApp</span>
+                    </button>
+
                     <button 
                         onClick={handleDownloadPDF} 
                         disabled={isExporting}
