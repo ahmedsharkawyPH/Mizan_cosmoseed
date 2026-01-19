@@ -1,11 +1,11 @@
 
 export const SEARCH_CONFIG = {
   DEBOUNCE_TIME: 300,
-  MIN_CHARS: 2,
-  MAX_RESULTS: 500,
+  MIN_CHARS: 1, // تم تقليل الحد الأدنى للبحث لزيادة الاستجابة
+  MAX_RESULTS: 1000, // زيادة عدد النتائج المسموح بها في البحث
   WEIGHTS: {
     name: 10,
-    code: 8,
+    code: 15, // رفع وزن الكود ليكون البحث به أدق
     batchNumber: 5,
     category: 3,
     notes: 2
@@ -14,24 +14,25 @@ export const SEARCH_CONFIG = {
 
 export class ArabicSmartSearch {
   /**
-   * Normalizes Arabic text for better search matching
+   * يقوم بتطبيع النصوص مع الحفاظ على الحروف الإنجليزية والأرقام
    */
   static normalizeArabic(text: string): string {
     if (!text) return '';
     
     return text
       .toLowerCase()
-      .replace(/[أإآ]/g, 'ا')        // Unify Alifs
-      .replace(/ة/g, 'ه')           // Ta Marbouta to Ha
-      .replace(/ى/g, 'ي')           // Alef Maksura to Ya
-      .replace(/ؤ/g, 'و')           // Hamza on Waw
-      .replace(/ئ/g, 'ي')           // Hamza on Ya
-      .replace(/[^\u0621-\u064A0-9\s]/g, '') // Remove non-Arabic/numbers except spaces
+      .replace(/[أإآ]/g, 'ا')        // توحيد الألف
+      .replace(/ة/g, 'ه')           // التاء المربوطة
+      .replace(/ى/g, 'ي')           // الألف المقصورة
+      .replace(/ؤ/g, 'و')           
+      .replace(/ئ/g, 'ي')
+      // تم تعديل الريجكس للسماح بالحروف الإنجليزية (a-z) والأرقام والمسافات والرموز الأساسية
+      .replace(/[^\u0621-\u064A0-9a-zA-Z\s\-\.\/]/g, '') 
       .trim();
   }
   
   /**
-   * Splits query into individual searchable tokens
+   * تقسيم استعلام البحث إلى كلمات (Tokens)
    */
   static tokenizeQuery(query: string): string[] {
     const normalized = this.normalizeArabic(query);
@@ -42,7 +43,7 @@ export class ArabicSmartSearch {
   }
   
   /**
-   * Calculates a match score for an object based on search tokens
+   * حساب درجة المطابقة
    */
   static calculateMatchScore(item: any, searchTokens: string[]): number {
     let totalScore = 0;
@@ -52,19 +53,19 @@ export class ArabicSmartSearch {
     const normalizedCode = this.normalizeArabic(item.code || '');
     
     searchTokens.forEach(token => {
-      // Name matches
+      // مطابقة الاسم
       if (normalizedName.includes(token)) {
         totalScore += SEARCH_CONFIG.WEIGHTS.name;
-        // Bonus for starting with token
-        if (normalizedName.startsWith(token)) totalScore += 5;
+        if (normalizedName.startsWith(token)) totalScore += 10;
       }
       
-      // Code matches
+      // مطابقة الكود (دقة عالية)
       if (normalizedCode.includes(token)) {
         totalScore += SEARCH_CONFIG.WEIGHTS.code;
+        if (normalizedCode === token) totalScore += 20; // مطابقة كاملة للكود
       }
 
-      // Batch matches
+      // مطابقة التشغيلات
       if (item.batches && Array.isArray(item.batches)) {
         item.batches.forEach((b: any) => {
           if (this.normalizeArabic(b.batch_number || '').includes(token)) {
@@ -78,15 +79,16 @@ export class ArabicSmartSearch {
   }
 
   /**
-   * Filters and ranks items based on smart search
+   * الفلترة والترتيب الذكي
    */
   static smartSearch<T>(items: T[], query: string): T[] {
     if (!query || query.trim().length < 1) {
-      return items.slice(0, 100);
+      // إرجاع أول 200 صنف بدلاً من 100 في حال عدم وجود بحث لضمان رؤية أكبر
+      return items.slice(0, 200);
     }
     
     const tokens = this.tokenizeQuery(query);
-    if (tokens.length === 0) return items.slice(0, 100);
+    if (tokens.length === 0) return items.slice(0, 200);
     
     return items
       .map(item => ({

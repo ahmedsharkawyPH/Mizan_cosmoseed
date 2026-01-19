@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag } from 'lucide-react';
+import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
@@ -19,6 +20,7 @@ export default function NewInvoice() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<ProductWithBatches[]>([]);
   const [warehouses] = useState(db.getWarehouses());
+  const [isDbFullyLoaded, setIsDbFullyLoaded] = useState(db.isFullyLoaded);
   
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -58,6 +60,7 @@ export default function NewInvoice() {
 
   const currency = db.getSettings().currency;
 
+  // تحميل البيانات الأولية
   useEffect(() => {
     setCustomers(db.getCustomers());
     setProducts(db.getProductsWithBatches());
@@ -78,6 +81,18 @@ export default function NewInvoice() {
     }
   }, [id]);
 
+  // آلية مراقبة اكتمال مزامنة الأصناف
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      if (db.isFullyLoaded !== isDbFullyLoaded) {
+        setIsDbFullyLoaded(db.isFullyLoaded);
+        setProducts(db.getProductsWithBatches()); // تحديث القائمة فور اكتمال المزامنة
+      }
+    }, 2000);
+
+    return () => clearInterval(checkInterval);
+  }, [isDbFullyLoaded]);
+
   const customerOptions = useMemo(() => 
     customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })), 
   [customers]);
@@ -94,7 +109,6 @@ export default function NewInvoice() {
           } else {
               setAdditionalDiscountPercent(0);
           }
-          // توجيه التركيز لخانة الأصناف بمجرد اختيار العميل
           setTimeout(() => {
             productRef.current?.focus();
           }, 100);
@@ -223,7 +237,15 @@ export default function NewInvoice() {
                  {isReturnMode && <span className="ml-2 bg-red-100 text-red-600 px-2 py-1 rounded text-sm font-bold">{t('inv.return_mode')}</span>}
              </h1>
           </div>
-          <button onClick={() => setShowSettings(true)} className="p-2 text-slate-500 hover:text-blue-600"><SettingsIcon className="w-5 h-5" /></button>
+          <div className="flex items-center gap-2">
+            {!isDbFullyLoaded && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-full border border-amber-100 text-[10px] font-bold animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                جاري جلب كامل الأصناف...
+              </div>
+            )}
+            <button onClick={() => setShowSettings(true)} className="p-2 text-slate-500 hover:text-blue-600"><SettingsIcon className="w-5 h-5" /></button>
+          </div>
       </div>
 
       <div className="flex flex-col xl:flex-row gap-6 items-start">
@@ -265,7 +287,7 @@ export default function NewInvoice() {
                     options={productOptions} 
                     value={selectedProduct} 
                     onChange={setSelectedProduct} 
-                    minSearchChars={2} 
+                    minSearchChars={1} 
                     disabled={!selectedCustomer} 
                 />
               </div>
