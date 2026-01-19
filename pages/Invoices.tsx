@@ -12,8 +12,8 @@ import { jsPDF } from 'jspdf';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
-// تم الحفاظ على 16 صنفاً بناءً على التعديل السابق
-const ITEMS_PER_PAGE = 16; 
+// تم الحفاظ على 20 صنفاً بناءً على التعديل السابق
+const ITEMS_PER_PAGE = 20; 
 
 // --- STYLES ---
 const INVOICE_STYLES = `
@@ -216,7 +216,7 @@ const InvoiceHalf = ({
     startIndex,
     copyType 
 }: any) => {
-    const title = copyType === 'ORIGINAL' ? 'نسخة الأصل' : 'صورة';
+    const title = copyType === 'ORIGINAL' ? ' الأصل' : 'صورة';
     
     return (
         <div className="invoice-half-container">
