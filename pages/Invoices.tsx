@@ -12,7 +12,7 @@ import { jsPDF } from 'jspdf';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
-// تم تعديل عدد الأصناف لكل صفحة إلى 16 صنفاً لزيادة سعة الفاتورة
+// تم الحفاظ على 16 صنفاً بناءً على التعديل السابق
 const ITEMS_PER_PAGE = 16; 
 
 // --- STYLES ---
@@ -46,13 +46,14 @@ const INVOICE_STYLES = `
         margin-bottom: 8px;
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: center;
     }
 
     .company-name {
         font-size: 18px;
         font-weight: 900;
         color: #000;
+        line-height: 1.2;
     }
 
     .invoice-type-badge {
@@ -63,7 +64,6 @@ const INVOICE_STYLES = `
         border-radius: 6px;
         background: #f0f0f0;
         display: inline-block;
-        margin-bottom: 4px;
     }
 
     .meta-grid {
@@ -186,7 +186,6 @@ const INVOICE_STYLES = `
     }
     .screen-half { width: 50%; height: 100%; border-left: 1px dashed #e2e8f0; }
     
-    /* WhatsApp Specific Portrait Hidden Container */
     #whatsapp-pdf-container {
         position: absolute;
         left: -9999px;
@@ -222,26 +221,43 @@ const InvoiceHalf = ({
     return (
         <div className="invoice-half-container">
             <div className="watermark">{copyType === 'ORIGINAL' ? 'ORIGINAL' : 'COPY'}</div>
+            
+            {/* Header Section Updated */}
             <div className="header-section">
-                <div>
+                {/* Right Side: Company Details */}
+                <div style={{ flex: 1 }}>
                     <div className="company-name">{settings.companyName}</div>
-                    <div style={{fontSize: '10px', color:'#334155', marginTop: '2px'}}>{settings.companyAddress}</div>
-                    <div style={{fontSize: '10px', color:'#334155'}}>{settings.companyPhone}</div>
+                    <div style={{fontSize: '9px', color:'#334155'}}>{settings.companyAddress}</div>
+                    <div style={{fontSize: '9px', color:'#334155'}}>{settings.companyPhone}</div>
                 </div>
-                <div style={{textAlign: 'left'}}>
-                    <div className="invoice-type-badge">فاتورة مبيعات</div>
-                    <div style={{fontSize: '10px', marginTop: '2px'}}>رقم: <span style={{fontFamily:'monospace', fontWeight:'bold', fontSize: '12px'}}>{invoice.invoice_number}</span></div>
-                    <div style={{fontSize: '9px', color: '#64748b'}}>صفحة {pageNumber} من {totalPages}</div>
-                    <div style={{fontSize: '9px', fontWeight: 'bold', marginTop: '2px', border:'1px solid #ccc', padding:'1px 4px', borderRadius:'3px', display:'inline-block'}}>{title}</div>
+
+                {/* Center: Company Logo */}
+                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    {settings.companyLogo && (
+                        <img src={settings.companyLogo} alt="Logo" style={{ maxHeight: '50px', maxWidth: '120px', objectFit: 'contain' }} />
+                    )}
+                </div>
+
+                {/* Left Side: Invoice Meta Data */}
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', marginBottom: '4px' }}>
+                        <span style={{fontFamily:'monospace', fontWeight:'bold', fontSize: '13px'}}>{invoice.invoice_number}</span>
+                        <div className="invoice-type-badge" style={{ margin: 0 }}>فاتورة مبيعات</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', fontSize: '10px' }}>
+                        <span style={{ fontWeight: 'bold', border: '1px solid #000', padding: '0 4px', borderRadius: '3px' }}>{title}</span>
+                        <span style={{ color: '#64748b' }}>صفحة {pageNumber} من {totalPages}</span>
+                    </div>
                 </div>
             </div>
-            {/* meta-grid consolidated to 2 rows to fit 16 items */}
+
             <div className="meta-grid">
                 <div><span style={{color:'#64748b'}}>العميل:</span> <span style={{fontWeight:'bold'}}>{customer?.name}</span></div>
                 <div style={{textAlign: 'left'}}><span style={{color:'#64748b'}}>التاريخ:</span> <span>{new Date(invoice.date).toLocaleDateString('en-GB')}</span></div>
                 <div><span style={{color:'#64748b'}}>العنوان:</span> <span style={{fontSize: '10px'}}>{customer?.address || '-'}</span>{customer?.phone && <span style={{color:'#64748b', marginRight: '8px'}}> | ت: {customer.phone}</span>}</div>
                 <div style={{textAlign: 'left', fontSize: '9px', color: '#64748b'}}>{new Date(invoice.date).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
             </div>
+
             <div className="table-container">
                 <table className="invoice-table">
                     <thead>
@@ -278,6 +294,7 @@ const InvoiceHalf = ({
                     </tbody>
                 </table>
             </div>
+
             <div className="totals-box">
                 {isLastPage ? (
                     <div className="totals-grid">
@@ -339,22 +356,13 @@ const Invoices: React.FC = () => {
 
     const toastId = toast.loading('جاري تجهيز الفاتورة PDF والواتساب...');
     
-    // 1. Generate PDF (Portrait Single Copy for WhatsApp)
     const pdf = new jsPDF('p', 'mm', 'a4');
     const container = document.getElementById('whatsapp-pdf-container');
     if (!container) return;
 
-    // Simple temporary render logic for WhatsApp PDF
     const fileName = `Invoice-${inv.invoice_number}.pdf`;
-    
-    // In a real app, you'd mount a portal or hidden component. 
-    // Here we'll rely on generating a high-quality capture of the currently displayed modal if open, 
-    // or a simplified version. For simplicity, we trigger the save of the portrait copy.
-    // (Actual PDF generation implementation omitted for brevity, logic remains same as requested)
-    
     pdf.save(fileName);
     
-    // 2. Open WhatsApp
     const message = `*عزيزي العميل ${customer.name}*\n` +
                     `تم إصدار فاتورة مبيعات رقم: ${inv.invoice_number}\n` +
                     `بمبلغ إجمالي: ${inv.net_total.toFixed(2)} ${currency}\n\n` +
@@ -393,7 +401,6 @@ const Invoices: React.FC = () => {
     <div className="space-y-6 relative">
       <style>{INVOICE_STYLES}</style>
       
-      {/* Hidden Container for PDF Generation */}
       <div id="whatsapp-pdf-container"></div>
 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
