@@ -1,6 +1,4 @@
 
-
-
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
@@ -8,7 +6,7 @@ import { ArabicSmartSearch, SEARCH_CONFIG } from '../utils/search';
 import { 
   Search, Package, Filter, X, Zap, Brain, Sparkles,
   Command, Hash, Tag, DollarSign, Percent, Star, PlusCircle,
-  FileSpreadsheet, Loader2, Download, Upload, FileOutput, TrendingUp, AlertCircle, RefreshCw, Wifi, WifiOff, Award
+  FileSpreadsheet, Loader2, Download, Upload, FileOutput, TrendingUp, AlertCircle, RefreshCw, Wifi, WifiOff, Award, Save, PackagePlus
 } from 'lucide-react';
 import { exportFilteredProductsToExcel, readExcelFile, downloadInventoryTemplate } from '../utils/excel';
 // @ts-ignore
@@ -27,11 +25,22 @@ const Inventory: React.FC = () => {
   const [showLowStock, setShowLowStock] = useState(false);
   const [showOutOfStock, setShowOutOfStock] = useState(false);
 
+  // Quick Add State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [quickAddForm, setQuickAddForm] = useState({
+    name: '',
+    code: '',
+    purchase_price: 0,
+    selling_price: 0,
+    initial_qty: 0,
+    warehouse_id: ''
+  });
+
   const searchInputRef = useRef<HTMLInputElement>(null);
-  // Initializing searchTimeoutRef with null to satisfy TypeScript requirement for useRef arguments.
   const searchTimeoutRef = useRef<any>(null);
   
   const settings = db.getSettings();
+  const warehouses = db.getWarehouses();
   const currency = settings.currency;
 
   const loadProducts = useCallback(async () => {
@@ -51,7 +60,6 @@ const Inventory: React.FC = () => {
     return () => clearInterval(checkLoad);
   }, [loadProducts, dbFullLoaded, isOffline]);
 
-  // حساب أفضل مورد لكل صنف بناءً على تاريخ المشتريات
   const bestSuppliersMap = useMemo(() => {
     const purchaseInvoices = db.getPurchaseInvoices();
     const suppliers = db.getSuppliers();
@@ -105,7 +113,72 @@ const Inventory: React.FC = () => {
     setSearchResults(results);
   }, [searchQuery, products, showLowStock, showOutOfStock, settings.lowStockThreshold]);
 
-  const handleExport = () => { exportFilteredProductsToExcel(searchResults.length > 0 ? searchResults : products); };
+  const handleExport = () => { 
+    exportFilteredProductsToExcel(searchResults.length > 0 ? searchResults : products); 
+    toast.success("تم تصدير البيانات بنجاح");
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setIsImporting(true);
+      try {
+        const data = await readExcelFile<any>(e.target.files[0]);
+        let count = 0;
+        for (const item of data) {
+          // Mapping excel columns to addProduct
+          await db.addProduct(
+            { code: item.code || item['كود الصنف'], name: item.name || item['اسم الصنف'] },
+            { 
+              quantity: item.quantity || item['الكمية'] || 0,
+              purchase_price: item.purchase_price || item['سعر الشراء'] || 0,
+              selling_price: item.selling_price || item['سعر البيع'] || 0,
+              batch_number: item.batch_number || item['رقم التشغيلة'] || 'IMPORT',
+              expiry_date: item.expiry_date || item['تاريخ الصلاحية'] || '2099-12-31',
+              warehouse_id: warehouses.find(w => w.is_default)?.id || warehouses[0]?.id
+            }
+          );
+          count++;
+        }
+        toast.success(`تم استيراد ${count} صنف بنجاح`);
+        loadProducts();
+        setIsIEOpen(false);
+      } catch (err) {
+        toast.error("فشل استيراد الملف. يرجى التأكد من الصيغة.");
+      } finally {
+        setIsImporting(false);
+      }
+    }
+  };
+
+  const handleQuickAdd = async () => {
+    if (!quickAddForm.name) return toast.error("اسم الصنف مطلوب");
+    
+    let finalCode = quickAddForm.code;
+    if (!finalCode) {
+      const numericCodes = products.map(p => parseInt(p.code)).filter(c => !isNaN(c));
+      finalCode = (numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 1001).toString();
+    }
+
+    try {
+      await db.addProduct(
+        { code: finalCode, name: quickAddForm.name },
+        {
+          quantity: quickAddForm.initial_qty,
+          purchase_price: quickAddForm.purchase_price,
+          selling_price: quickAddForm.selling_price,
+          batch_number: 'OPENING',
+          expiry_date: '2099-12-31',
+          warehouse_id: quickAddForm.warehouse_id || warehouses.find(w => w.is_default)?.id || warehouses[0]?.id
+        }
+      );
+      toast.success("تمت إضافة الصنف بنجاح");
+      loadProducts();
+      setIsAddModalOpen(false);
+      setQuickAddForm({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
+    } catch (err) {
+      toast.error("حدث خطأ أثناء الحفظ");
+    }
+  };
 
   const displayedProducts = useMemo(() => {
     if (searchResults.length > 0) return searchResults;
@@ -143,7 +216,7 @@ const Inventory: React.FC = () => {
              <button onClick={() => setIsIEOpen(true)} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all">
                <FileSpreadsheet className="w-5 h-5" /> استيراد وتصدير
              </button>
-             <button className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
+             <button onClick={() => setIsAddModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
                <PlusCircle className="w-5 h-5" /> {t('stock.new')}
              </button>
            </div>
@@ -205,6 +278,103 @@ const Inventory: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* QUICK ADD MODAL */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="bg-slate-50 p-6 border-b flex justify-between items-center">
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <PackagePlus className="w-6 h-6 text-blue-600" /> إضافة صنف سريع
+              </h3>
+              <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
+                <X className="w-6 h-6 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">اسم الصنف *</label>
+                  <input className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.name} onChange={e => setQuickAddForm({...quickAddForm, name: e.target.value})} placeholder="أدخل اسم المنتج" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">كود الصنف (اختياري)</label>
+                  <input className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-mono" value={quickAddForm.code} onChange={e => setQuickAddForm({...quickAddForm, code: e.target.value})} placeholder="توليد تلقائي" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">المخزن</label>
+                  <select className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.warehouse_id} onChange={e => setQuickAddForm({...quickAddForm, warehouse_id: e.target.value})}>
+                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر الشراء ({currency})</label>
+                  <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-red-600" value={quickAddForm.purchase_price || ''} onChange={e => setQuickAddForm({...quickAddForm, purchase_price: parseFloat(e.target.value) || 0})} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر البيع ({currency})</label>
+                  <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-blue-600" value={quickAddForm.selling_price || ''} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">الكمية الافتتاحية (الرصيد الحالي)</label>
+                  <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-black text-center text-2xl" value={quickAddForm.initial_qty || ''} onChange={e => setQuickAddForm({...quickAddForm, initial_qty: parseFloat(e.target.value) || 0})} />
+                </div>
+              </div>
+              <button onClick={handleQuickAdd} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                <Save className="w-5 h-5" /> حفظ الصنف الجديد
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* IMPORT/EXPORT MODAL */}
+      {isIEOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="bg-slate-50 p-6 border-b flex justify-between items-center">
+              <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                <FileSpreadsheet className="w-6 h-6 text-emerald-600" /> استيراد وتصدير الأصناف
+              </h3>
+              <button onClick={() => setIsIEOpen(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
+                <X className="w-6 h-6 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <button onClick={downloadInventoryTemplate} className="w-full p-4 border-2 border-slate-100 rounded-2xl flex items-center justify-between hover:border-blue-500 hover:bg-blue-50 transition-all group">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors"><Download className="w-5 h-5" /></div>
+                  <div className="text-right">
+                    <p className="font-bold text-slate-700">تحميل نموذج الإكسيل</p>
+                    <p className="text-xs text-slate-400">ملف فارغ بالأعمدة المطلوبة</p>
+                  </div>
+                </div>
+              </button>
+
+              <button onClick={handleExport} className="w-full p-4 border-2 border-slate-100 rounded-2xl flex items-center justify-between hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-100 text-emerald-600 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors"><FileOutput className="w-5 h-5" /></div>
+                  <div className="text-right">
+                    <p className="font-bold text-slate-700">تصدير الأصناف الحالية</p>
+                    <p className="text-xs text-slate-400">تصدير {searchResults.length || products.length} صنف</p>
+                  </div>
+                </div>
+              </button>
+
+              <div className="relative pt-4 border-t border-slate-100">
+                <label className={`w-full p-4 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${isImporting ? 'bg-slate-50 border-slate-200 opacity-50' : 'border-slate-200 hover:border-blue-500 hover:bg-blue-50'}`}>
+                  {isImporting ? <Loader2 className="w-8 h-8 text-blue-600 animate-spin" /> : <Upload className="w-8 h-8 text-slate-400" />}
+                  <div className="text-center">
+                    <p className="font-bold text-slate-700">رفع ملف الأصناف</p>
+                    <p className="text-xs text-slate-400">اختر ملف Excel من جهازك</p>
+                  </div>
+                  <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImport} disabled={isImporting} />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -212,7 +382,6 @@ const Inventory: React.FC = () => {
 const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier }: { product: any; searchQuery: string; currency: string; bestSupplier: string }) => {
   const totalQty = product.batches?.reduce((sum: number, b: any) => sum + (b.quantity || 0), 0) || 0;
   
-  // جلب الأسعار من آخر تشغيلة أو من بيانات المنتج الأساسية
   const costPrice = product.batches && product.batches.length > 0 
     ? product.batches[product.batches.length - 1].purchase_price 
     : (product.purchase_price || 0);
