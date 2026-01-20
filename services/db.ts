@@ -410,8 +410,33 @@ class DatabaseService {
 
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `INV${Date.now()}`;
+    
+    // حساب رقم الفاتورة التسلسلي الجديد (يبدأ من 10001)
+    const numericInvoices = this.invoices
+        .map(inv => parseInt(inv.invoice_number))
+        .filter(num => !isNaN(num) && num >= 10000);
+    
+    const nextInvoiceNumber = numericInvoices.length > 0 
+        ? Math.max(...numericInvoices) + 1 
+        : 10001;
+
     const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
-    const invoice: Invoice = { id: invoiceId, invoice_number: `${Date.now()}`, customer_id: customerId, date: new Date().toISOString(), total_before_discount: netTotal + addDisc, total_discount: 0, additional_discount: addDisc, net_total: netTotal, previous_balance: 0, final_balance: 0, payment_status: PaymentStatus.PAID, items, type: isReturn ? 'RETURN' : 'SALE' };
+    const invoice: Invoice = { 
+        id: invoiceId, 
+        invoice_number: nextInvoiceNumber.toString(), 
+        customer_id: customerId, 
+        date: new Date().toISOString(), 
+        total_before_discount: netTotal + addDisc, 
+        total_discount: 0, 
+        additional_discount: addDisc, 
+        net_total: netTotal, 
+        previous_balance: 0, 
+        final_balance: 0, 
+        payment_status: PaymentStatus.PAID, 
+        items, 
+        type: isReturn ? 'RETURN' : 'SALE' 
+    };
+    
     this.invoices.push(invoice);
     if (cashPaid > 0) { await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` }); }
     if (isSupabaseConfigured) await supabase.from('invoices').insert(invoice);
