@@ -108,55 +108,52 @@ const INVOICE_STYLES = `
 
     .col-item { text-align: right !important; }
 
-    /* --- التعديل المطلوب: منطقة الإجماليات في 3 أسطر فقط --- */
+    /* --- التعديل: منطقة الإجماليات 3 أسطر فقط --- */
     .totals-box-compact {
-        margin-top: 10px;
-        border-top: 2.5px solid #000;
-        padding-top: 8px;
+        margin-top: 5px;
+        border-top: 2px solid #000;
+        padding-top: 5px;
     }
 
     .compact-row {
         display: grid;
-        grid-template-columns: 1fr 1fr 1fr; /* تقسيم السطر لـ 3 أعمدة */
-        gap: 15px;
-        margin-bottom: 4px;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 2px;
         font-size: 11px;
-        align-items: center;
     }
 
     .compact-cell {
         display: flex;
         justify-content: space-between;
-        padding: 2px 8px;
-        border-bottom: 1px dashed #e2e8f0;
+        padding: 1px 5px;
+        border-bottom: 1px dashed #eee;
     }
 
     .compact-cell.highlight {
-        background: #f8fafc;
-        border-bottom: 1px solid #cbd5e1;
+        background: #f1f5f9;
+        border-bottom: 1px solid #ccc;
     }
 
-    .compact-row.final-line {
-        background: #1e293b;
-        color: white;
-        padding: 6px;
-        border-radius: 4px;
+    .final-text-line {
+        margin-top: 4px;
+        padding: 4px 10px;
+        border-top: 1.5px solid #000;
         font-size: 13px;
-        font-weight: 900;
-        margin-top: 5px;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        background: #f8fafc;
         -webkit-print-color-adjust: exact;
     }
 
-    .final-line .label { color: #cbd5e1; }
-    .final-line .value { color: #fff; font-size: 15px; }
-
     .footer-section {
-        margin-top: 10px;
+        margin-top: 5px;
         font-size: 9px;
         text-align: center;
         color: #64748b;
         border-top: 1px dotted #cbd5e1;
-        padding-top: 5px;
+        padding-top: 3px;
     }
 
     .watermark {
@@ -179,7 +176,6 @@ const INVOICE_STYLES = `
         #print-container, #print-container * { visibility: visible; }
         #print-container { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: white; }
         .landscape-page-wrapper { display: flex; width: 297mm; height: 210mm; page-break-after: always; direction: rtl; overflow: hidden; }
-        .landscape-page-wrapper:last-child { page-break-after: auto; }
         .print-half { width: 50%; height: 100%; border-left: 1px dashed #94a3b8; }
         .print-half:last-child { border-left: none; }
         .print-hidden { display: none !important; }
@@ -191,7 +187,7 @@ const INVOICE_STYLES = `
         background: white;
         margin-bottom: 20px;
         display: flex;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
         direction: rtl;
     }
     .screen-half { width: 50%; height: 100%; border-left: 1px dashed #e2e8f0; }
@@ -221,39 +217,30 @@ const InvoiceHalf = ({
     const title = copyType === 'ORIGINAL' ? 'الأصل' : 'صورة';
     const totalDiscount = (invoice.total_discount || 0) + (invoice.additional_discount || 0);
     const paidCash = db.getInvoicePaidAmount(invoice.id);
-    // الإجمالي العام هو الصافي + السابق
     const grandTotal = invoice.net_total + (invoice.previous_balance || 0);
 
     return (
         <div className="invoice-half-container">
             <div className="watermark">{copyType === 'ORIGINAL' ? 'ORIGINAL' : 'COPY'}</div>
             
-            {/* Header */}
             <div className="header-section">
                 <div style={{ flex: 1 }}>
                     <div className="company-name">{settings.companyName}</div>
-                    <div style={{fontSize: '9px', color:'#334155'}}>{settings.companyAddress}</div>
-                    <div style={{fontSize: '9px', color:'#334155'}}>{settings.companyPhone}</div>
+                    <div style={{fontSize: '9px'}}>{settings.companyAddress}</div>
+                    <div style={{fontSize: '9px'}}>{settings.companyPhone}</div>
                 </div>
-
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                    {settings.companyLogo && (
-                        <img src={settings.companyLogo} alt="Logo" style={{ maxHeight: '50px', maxWidth: '100px', objectFit: 'contain' }} />
-                    )}
+                    {settings.companyLogo && <img src={settings.companyLogo} alt="Logo" style={{ maxHeight: '45px', maxWidth: '90px', objectFit: 'contain' }} />}
                 </div>
-
                 <div style={{ flex: 1, textAlign: 'left' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>
                         <span style={{fontFamily:'monospace', fontWeight:'bold', fontSize: '14px'}}>{invoice.invoice_number}</span>
                         <div className="invoice-type-badge">فاتورة مبيعات</div>
                     </div>
-                    <div style={{ fontSize: '10px', marginTop: '3px' }}>
-                        <b>{title}</b> | صفحة {pageNumber}/{totalPages}
-                    </div>
+                    <div style={{ fontSize: '10px' }}><b>{title}</b> | {pageNumber}/{totalPages}</div>
                 </div>
             </div>
 
-            {/* Meta */}
             <div className="meta-grid">
                 <div><span style={{color:'#64748b'}}>العميل:</span> <span style={{fontWeight:'bold'}}>{customer?.name}</span></div>
                 <div style={{textAlign: 'left'}}><span style={{color:'#64748b'}}>التاريخ:</span> <span>{new Date(invoice.date).toLocaleDateString('en-GB')}</span></div>
@@ -261,7 +248,6 @@ const InvoiceHalf = ({
                 <div style={{textAlign: 'left', fontSize: '10px'}}>{customer?.phone}</div>
             </div>
 
-            {/* Table */}
             <div className="table-container">
                 <table className="invoice-table">
                     <thead>
@@ -300,56 +286,32 @@ const InvoiceHalf = ({
             <div className="totals-box-compact">
                 {isLastPage ? (
                     <>
-                        {/* السطر الأول: تفاصيل الفاتورة الحالية */}
+                        {/* السطر 1 */}
                         <div className="compact-row">
-                            <div className="compact-cell">
-                                <span className="label">إجمالي الأصناف:</span>
-                                <span className="value">{invoice.total_before_discount.toFixed(2)}</span>
-                            </div>
-                            <div className="compact-cell">
-                                <span className="label">إجمالي الخصم:</span>
-                                <span className="value text-red-600">-{totalDiscount.toFixed(2)}</span>
-                            </div>
-                            <div className="compact-cell highlight">
-                                <span className="label font-bold">صافي الفاتورة:</span>
-                                <span className="value font-bold">{invoice.net_total.toFixed(2)}</span>
-                            </div>
+                            <div className="compact-cell"><span>إجمالي الأصناف:</span><span>{invoice.total_before_discount.toFixed(2)}</span></div>
+                            <div className="compact-cell"><span>إجمالي الخصم:</span><span className="text-red-600">-{totalDiscount.toFixed(2)}</span></div>
+                            <div className="compact-cell highlight"><b>صافي الفاتورة:</b><b>{invoice.net_total.toFixed(2)}</b></div>
                         </div>
-
-                        {/* السطر الثاني: الحسابات السابقة والتحصيل */}
+                        {/* السطر 2 */}
                         <div className="compact-row">
-                            <div className="compact-cell">
-                                <span className="label">رصيد سابق:</span>
-                                <span className="value">{(invoice.previous_balance || 0).toFixed(2)}</span>
-                            </div>
-                            <div className="compact-cell">
-                                <span className="label">المدفوع نقداً:</span>
-                                <span className="value text-emerald-600">{paidCash.toFixed(2)}</span>
-                            </div>
-                            <div className="compact-cell highlight">
-                                <span className="label">المتبقي من الفاتورة:</span>
-                                <span className="value">{(invoice.net_total - paidCash).toFixed(2)}</span>
-                            </div>
+                            <div className="compact-cell"><span>رصيد سابق:</span><span>{(invoice.previous_balance || 0).toFixed(2)}</span></div>
+                            <div className="compact-cell"><span>المدفوع نقداً:</span><span className="text-emerald-600">{paidCash.toFixed(2)}</span></div>
+                            <div className="compact-cell highlight"><span>باقي الفاتورة:</span><span>{(invoice.net_total - paidCash).toFixed(2)}</span></div>
                         </div>
-
-                        {/* السطر الثالث: الموقف النهائي الإجمالي */}
-                        <div className="compact-row final-line">
-                            <div style={{gridColumn: 'span 3', display: 'flex', justifyContent: 'space-between', padding: '0 10px'}}>
-                                <span className="label">الرصيد الإجمالي المستحق بذمة العميل (نهائي):</span>
-                                <span className="value">{currency} {(grandTotal - paidCash).toFixed(2)}</span>
-                            </div>
+                        {/* السطر 3: نص عادي توفيراً للمساحة */}
+                        <div className="final-text-line">
+                            <span>الرصيد الإجمالي المستحق بذمة العميل (نهائي):</span>
+                            <span>{currency} {(grandTotal - paidCash).toFixed(2)}</span>
                         </div>
                     </>
                 ) : (
-                    <div style={{textAlign:'center', fontSize:'11px', padding:'15px', color: '#64748b', fontStyle:'italic'}}>
-                        تكملة الأصناف في الصفحة التالية...
-                    </div>
+                    <div style={{textAlign:'center', fontSize:'10px', color:'#64748b'}}>تكملة الأصناف في الصفحة التالية...</div>
                 )}
                 
                 <div className="footer-section">
-                    <div style={{display:'flex', justifyContent:'space-between', padding: '0 30px'}}>
-                        <span>توقيع المستلم: ..........................</span>
-                        <span>توقيع الحسابات: ..........................</span>
+                    <div style={{display:'flex', justifyContent:'space-between', padding: '0 40px'}}>
+                        <span>توقيع المستلم: .....................</span>
+                        <span>توقيع الحسابات: .....................</span>
                     </div>
                 </div>
             </div>
@@ -369,13 +331,9 @@ const Invoices: React.FC = () => {
 
   useEffect(() => {
     setInvoices(db.getInvoices());
-    if (location.state) {
-        const state = location.state as any;
-        if (state.autoPrintId) {
-            const id = state.autoPrintId;
-            const inv = db.getInvoices().find(i => i.id === id);
-            if (inv) setSelectedInvoice(inv);
-        }
+    if (location.state && (location.state as any).autoPrintId) {
+        const inv = db.getInvoices().find(i => i.id === (location.state as any).autoPrintId);
+        if (inv) setSelectedInvoice(inv);
     }
   }, [location]);
 
@@ -383,8 +341,8 @@ const Invoices: React.FC = () => {
 
   const handleWhatsApp = async (inv: Invoice) => {
     const customer = db.getCustomers().find(c => c.id === inv.customer_id);
-    if (!customer?.phone) return alert("لا يوجد رقم هاتف مسجل لهذا العميل");
-    const toastId = toast.loading('جاري تجهيز الفاتورة...');
+    if (!customer?.phone) return alert("لا يوجد رقم هاتف");
+    const toastId = toast.loading('جاري التجهيز...');
     setSelectedInvoice(inv);
     setTimeout(async () => {
         const container = document.getElementById('print-container');
@@ -392,14 +350,12 @@ const Invoices: React.FC = () => {
         try {
             const firstPageHalf = container.querySelector('.print-half');
             const canvas = await html2canvas(firstPageHalf as HTMLElement, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-            const imgData = canvas.toDataURL('image/jpeg', 0.9);
             const pdf = new jsPDF('p', 'mm', 'a4');
-            pdf.addImage(imgData, 'JPEG', 0, 0, 210, (canvas.height * 210) / canvas.width);
+            pdf.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, 210, (canvas.height * 210) / canvas.width);
             pdf.save(`Inv-${inv.invoice_number}.pdf`);
-            const message = `فاتورة مبيعات رقم: ${inv.invoice_number}\nبمبلغ: ${inv.net_total.toFixed(2)} ${currency}`;
-            window.open(`https://wa.me/2${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
-            toast.success('تم التجهيز', { id: toastId });
-        } catch (err) { toast.error('خطأ في المعالجة', { id: toastId }); }
+            window.open(`https://wa.me/2${customer.phone.replace(/\D/g, '')}?text=فاتورة رقم ${inv.invoice_number}`, '_blank');
+            toast.success('تم', { id: toastId });
+        } catch (err) { toast.error('خطأ', { id: toastId }); }
     }, 600);
   };
 
@@ -410,11 +366,9 @@ const Invoices: React.FC = () => {
       const pdf = new jsPDF('l', 'mm', 'a4');
       const pages = container.querySelectorAll('.landscape-page-wrapper');
       for (let i = 0; i < pages.length; i++) {
-          try {
-              const canvas = await html2canvas(pages[i] as HTMLElement, { scale: 2, useCORS: true });
-              if (i > 0) pdf.addPage();
-              pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
-          } catch (err) { console.error(err); }
+          const canvas = await html2canvas(pages[i] as HTMLElement, { scale: 2, useCORS: true });
+          if (i > 0) pdf.addPage();
+          pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 297, 210);
       }
       pdf.save(`Invoice-${selectedInvoice.invoice_number}.pdf`);
       setIsExporting(false);
@@ -426,47 +380,33 @@ const Invoices: React.FC = () => {
   return (
     <div className="space-y-6 relative">
       <style>{INVOICE_STYLES}</style>
-      
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <div><h1 className="text-2xl font-bold text-slate-800">{t('list.title')}</h1></div>
+        <h1 className="text-2xl font-bold text-slate-800">{t('list.title')}</h1>
         <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative group flex-1 md:flex-none">
+            <div className="relative flex-1">
                 <Search className="absolute rtl:right-3 ltr:left-3 top-3 h-5 w-5 text-slate-400" />
-                <input type="text" placeholder={t('list.search')} className="rtl:pr-10 ltr:pl-10 pr-4 py-2 border rounded-xl w-full md:w-80 outline-none" value={search} onChange={e => setSearch(e.target.value)} />
+                <input type="text" placeholder={t('list.search')} className="rtl:pr-10 ltr:pl-10 pr-4 py-2 border rounded-xl w-full" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <button onClick={() => navigate('/invoice/new')} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-medium flex items-center gap-2 shrink-0"><PlusCircle className="w-5 h-5" />{t('nav.new_invoice')}</button>
+            <button onClick={() => navigate('/invoice/new')} className="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2"><PlusCircle className="w-5 h-5" />{t('nav.new_invoice')}</button>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
         <table className="w-full text-sm text-right">
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
-                <tr>
-                <th className="px-6 py-4 font-bold">#</th>
-                <th className="px-6 py-4 font-bold">التاريخ</th>
-                <th className="px-6 py-4 font-bold">العميل</th>
-                <th className="px-6 py-4 font-bold">الإجمالي</th>
-                <th className="px-6 py-4 font-bold">الحالة</th>
-                <th className="px-6 py-4 font-bold text-center">إجراء</th>
-                </tr>
+                <tr><th className="px-6 py-4">#</th><th className="px-6 py-4">التاريخ</th><th className="px-6 py-4">العميل</th><th className="px-6 py-4">الإجمالي</th><th className="px-6 py-4 text-center">إجراء</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
                 {filtered.map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <tr key={inv.id} className="hover:bg-slate-50 group">
                     <td className="px-6 py-4 font-mono font-medium">{inv.invoice_number}</td>
-                    <td className="px-6 py-4 text-slate-500">{new Date(inv.date).toLocaleDateString('en-GB')}</td>
+                    <td className="px-6 py-4">{new Date(inv.date).toLocaleDateString('en-GB')}</td>
                     <td className="px-6 py-4 font-medium">{db.getCustomers().find(c => c.id === inv.customer_id)?.name || 'Unknown'}</td>
                     <td className="px-6 py-4 font-bold">{currency}{inv.net_total.toFixed(2)}</td>
-                    <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${inv.payment_status === 'PAID' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                            {inv.payment_status}
-                        </span>
-                    </td>
                     <td className="px-6 py-4 text-center">
                         <div className="flex justify-center gap-2">
-                            <button onClick={() => setSelectedInvoice(inv)} className="p-2 border rounded-lg hover:bg-white"><Eye className="w-4 h-4" /></button>
+                            <button onClick={() => setSelectedInvoice(inv)} className="p-2 border rounded-lg"><Eye className="w-4 h-4" /></button>
                             <button onClick={() => handleWhatsApp(inv)} className="p-2 border rounded-lg text-emerald-600"><MessageCircle className="w-4 h-4" /></button>
-                            <button onClick={() => navigate(`/invoice/edit/${inv.id}`)} className="p-2 border rounded-lg text-blue-600"><Edit className="w-4 h-4" /></button>
                         </div>
                     </td>
                     </tr>
@@ -478,11 +418,11 @@ const Invoices: React.FC = () => {
       {selectedInvoice && (
         <div className="fixed inset-0 z-50 flex flex-col bg-slate-100">
             <div className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm print-hidden sticky top-0 z-50">
-                <h3 className="font-bold text-gray-800">Invoice #{selectedInvoice.invoice_number}</h3>
+                <h3 className="font-bold">Invoice #{selectedInvoice.invoice_number}</h3>
                 <div className="flex gap-3">
-                    <button onClick={handleDownloadPDF} disabled={isExporting} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm shadow-sm">{isExporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-4 h-4" />}PDF</button>
-                    <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm shadow-sm"><Printer className="w-4 h-4" />طباعة (Landscape)</button>
-                    <button onClick={() => setSelectedInvoice(null)} className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg text-sm"><X className="w-4 h-4" />إغلاق</button>
+                    <button onClick={handleDownloadPDF} disabled={isExporting} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm">{isExporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-4 h-4 mr-1" />}PDF</button>
+                    <button onClick={handlePrint} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm"><Printer className="w-4 h-4 mr-1" />طباعة</button>
+                    <button onClick={() => setSelectedInvoice(null)} className="bg-gray-200 px-4 py-2 rounded-lg text-sm">إغلاق</button>
                 </div>
             </div>
             <div className="invoice-modal-content">
