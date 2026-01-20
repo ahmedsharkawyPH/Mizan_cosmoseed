@@ -1,17 +1,16 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { t } from '../utils/t';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area
+  PieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
 import { 
   Calendar, DollarSign, TrendingUp, TrendingDown, Users, Package, 
   ArrowUpRight, ArrowDownLeft, Filter, Truck, Search, Briefcase, 
   Phone, ChevronRight, ChevronDown, Table2, BookOpen, Wallet, 
-  BarChart3, Activity, UserCheck, ShieldCheck, ShoppingBag
+  BarChart3, Activity, UserCheck, ShieldCheck, ShoppingBag, Star, Clock, AlertTriangle
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
@@ -26,7 +25,7 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(today);
   
-  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'REPRESENTATIVES' | 'TELESALES'>('FINANCIAL');
+  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'REPRESENTATIVES' | 'TELESALES' | 'DAILY_SHORTAGES' | 'BEST_SELLING_LIST' | 'STAGNANT_ITEMS'>('FINANCIAL');
 
   const handleQuickDate = (type: 'TODAY' | 'MONTH' | 'LAST_MONTH' | 'YEAR') => {
     const now = new Date();
@@ -78,7 +77,6 @@ export default function Reports() {
         return d >= startDate && d <= endDate && i.type === 'SALE';
     });
 
-    // Trend Data
     const trendMap: Record<string, number> = {};
     invoices.forEach(inv => {
         const day = inv.date.split('T')[0];
@@ -86,18 +84,17 @@ export default function Reports() {
     });
     const salesTrend = Object.entries(trendMap).map(([date, value]) => ({ date, value })).sort((a,b) => a.date.localeCompare(b.date));
 
-    // Top Products
-    const productSales: Record<string, { qty: number, total: number }> = {};
+    const productSales: Record<string, { qty: number, total: number, code: string }> = {};
     invoices.forEach(inv => {
         inv.items.forEach(item => {
-            if (!productSales[item.product.name]) productSales[item.product.name] = { qty: 0, total: 0 };
+            if (!productSales[item.product.name]) productSales[item.product.name] = { qty: 0, total: 0, code: item.product.code || '' };
             productSales[item.product.name].qty += item.quantity;
-            productSales[item.product.name].total += (item.quantity * (item.unit_price || 0));
+            productSales[item.product.name].total += (item.quantity * (item.unit_price || 0)) * (1 - (item.discount_percentage / 100));
         });
     });
-    const topProducts = Object.entries(productSales).map(([name, stats]) => ({ name, qty: stats.qty, total: stats.total })).sort((a, b) => b.total - a.total).slice(0, 10);
+    const topProducts = Object.entries(productSales).map(([name, stats]) => ({ name, qty: stats.qty, total: stats.total, code: stats.code })).sort((a, b) => b.total - a.total).slice(0, 10);
 
-    return { topProducts, salesTrend, count: invoices.length, avgInvoice: invoices.length > 0 ? (invoices.reduce((s,i)=>s+i.net_total,0) / invoices.length) : 0 };
+    return { topProducts, salesTrend, count: invoices.length, avgInvoice: invoices.length > 0 ? (invoices.reduce((s,i)=>s+i.net_total,0) / invoices.length) : 0, productSales };
   }, [startDate, endDate]);
 
   // --- 3. Purchases Analysis Logic ---
@@ -157,10 +154,53 @@ export default function Reports() {
           const qty = p.batches.reduce((sum, b) => sum + b.quantity, 0);
           const val = qty * (p.purchase_price || 0);
           totalValue += val;
-          return { name: p.name, qty, val };
+          return { name: p.name, qty, val, code: p.code };
       }).sort((a,b) => b.val - a.val);
       return { items, totalValue };
   }, []);
+
+  // --- New Tabs Logic ---
+
+  // A. Daily Shortages (Sold Today + Low Stock)
+  const dailyShortages = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const invoicesToday = db.getInvoices().filter(inv => inv.date.startsWith(todayStr) && inv.type === 'SALE');
+    const products = db.getProductsWithBatches();
+    const threshold = db.getSettings().lowStockThreshold || 10;
+    
+    const soldTodayMap: Record<string, number> = {};
+    invoicesToday.forEach(inv => {
+        inv.items.forEach(item => {
+            soldTodayMap[item.product.id] = (soldTodayMap[item.product.id] || 0) + item.quantity;
+        });
+    });
+
+    return products.map(p => {
+        const stock = p.batches.reduce((s, b) => s + b.quantity, 0);
+        const soldToday = soldTodayMap[p.id] || 0;
+        return { ...p, stock, soldToday };
+    }).filter(p => p.soldToday > 0 && (p.stock < p.soldToday || p.stock < threshold))
+    .sort((a,b) => a.stock - b.stock);
+  }, []);
+
+  // B. Stagnant Items (Stock > 0 but Sales = 0 in period)
+  const stagnantItems = useMemo(() => {
+    const products = db.getProductsWithBatches();
+    const soldInPeriod = new Set();
+    
+    db.getInvoices().forEach(inv => {
+        const d = inv.date.split('T')[0];
+        if (d >= startDate && d <= endDate && inv.type === 'SALE') {
+            inv.items.forEach(item => soldInPeriod.add(item.product.id));
+        }
+    });
+
+    return products.map(p => {
+        const stock = p.batches.reduce((s, b) => s + b.quantity, 0);
+        return { ...p, stock };
+    }).filter(p => p.stock > 0 && !soldInPeriod.has(p.id))
+    .sort((a,b) => b.stock - a.stock);
+  }, [startDate, endDate]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
@@ -193,6 +233,9 @@ export default function Reports() {
           {[
               { id: 'FINANCIAL', label: 'المالية (P&L)', icon: DollarSign },
               { id: 'SALES', label: 'المبيعات', icon: TrendingUp },
+              { id: 'DAILY_SHORTAGES', label: 'نواقص اليوم', icon: AlertTriangle },
+              { id: 'BEST_SELLING_LIST', label: 'الأكثر مبيعاً', icon: Star },
+              { id: 'STAGNANT_ITEMS', label: 'الرواكد', icon: Clock },
               { id: 'PURCHASES', label: 'المشتريات', icon: ShoppingBag },
               { id: 'INVENTORY', label: 'المخزون', icon: Package },
               { id: 'REPRESENTATIVES', label: 'المندوبين', icon: Briefcase },
@@ -203,8 +246,6 @@ export default function Reports() {
               </button>
           ))}
       </div>
-
-      {/* TABS CONTENT */}
 
       {/* 1. SALES TAB */}
       {activeTab === 'SALES' && (
@@ -244,25 +285,109 @@ export default function Reports() {
                       </ResponsiveContainer>
                   </div>
               </div>
+          </div>
+      )}
 
-              <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                  <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><ArrowUpRight className="w-5 h-5 text-emerald-500" /> الأصناف الأكثر مبيعاً (بالقيمة)</h3>
-                  <div className="h-[400px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={salesData.topProducts} layout="vertical" margin={{ left: 40 }}>
-                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                              <XAxis type="number" hide />
-                              <YAxis dataKey="name" type="category" tick={{fontSize: 10, fontWeight: 'bold'}} width={150} axisLine={false} tickLine={false} />
-                              <Tooltip cursor={{fill: '#f8fafc'}} />
-                              <Bar dataKey="total" fill="#3b82f6" radius={[0, 8, 8, 0]} barSize={25} />
-                          </BarChart>
-                      </ResponsiveContainer>
+      {/* 2. DAILY SHORTAGES TAB */}
+      {activeTab === 'DAILY_SHORTAGES' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="p-6 bg-red-50 border-b flex items-center gap-2 font-black text-red-700">
+                      <AlertTriangle className="w-5 h-5" /> الأصناف المباعة اليوم (نواقص محتملة)
                   </div>
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px]">
+                          <tr>
+                              <th className="p-4">اسم الصنف</th>
+                              <th className="p-4 text-center">الكمية المباعة اليوم</th>
+                              <th className="p-4 text-center">الرصيد المتبقي</th>
+                              <th className="p-4 text-center">الحالة</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {dailyShortages.map((p, i) => (
+                              <tr key={i} className="hover:bg-red-50/30 transition-colors">
+                                  <td className="p-4 font-bold text-slate-800">{p.name} <div className="text-[10px] text-gray-400 font-mono">#{p.code}</div></td>
+                                  <td className="p-4 text-center font-black text-blue-600">{p.soldToday}</td>
+                                  <td className="p-4 text-center font-black text-slate-700">{p.stock}</td>
+                                  <td className="p-4 text-center">
+                                      {p.stock <= 0 ? <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-black">نفذت تماماً</span> : <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-black">رصيد حرج</span>}
+                                  </td>
+                              </tr>
+                          ))}
+                          {dailyShortages.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-gray-400 font-bold">لا يوجد نواقص ناتجة عن مبيعات اليوم</td></tr>}
+                      </tbody>
+                  </table>
               </div>
           </div>
       )}
 
-      {/* 2. PURCHASES TAB */}
+      {/* 3. BEST SELLING TAB */}
+      {activeTab === 'BEST_SELLING_LIST' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="p-6 bg-emerald-50 border-b flex items-center gap-2 font-black text-emerald-700">
+                      <Star className="w-5 h-5" /> قائمة الأصناف الأكثر مبيعاً (خلال الفترة)
+                  </div>
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px]">
+                          <tr>
+                              <th className="p-4">الترتيب</th>
+                              <th className="p-4">الصنف</th>
+                              <th className="p-4 text-center">الكمية المباعة</th>
+                              <th className="p-4 text-center">إجمالي القيمة الإيرادات</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {Object.entries(salesData.productSales)
+                            // Fix: Use explicit property assignment to avoid "Spread types may only be created from object types" error
+                            .map(([name, stats]) => ({ name, qty: stats.qty, total: stats.total, code: stats.code }))
+                            .sort((a,b) => b.total - a.total)
+                            .map((p, i) => (
+                              <tr key={i} className="hover:bg-emerald-50/30 transition-colors">
+                                  <td className="p-4 text-center font-black text-gray-400">{i+1}</td>
+                                  <td className="p-4 font-bold text-slate-800">{p.name}</td>
+                                  <td className="p-4 text-center font-black text-slate-600">{p.qty}</td>
+                                  <td className="p-4 text-center font-black text-emerald-600">{currency}{p.total.toLocaleString()}</td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      )}
+
+      {/* 4. STAGNANT ITEMS TAB */}
+      {activeTab === 'STAGNANT_ITEMS' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="p-6 bg-amber-50 border-b flex items-center gap-2 font-black text-amber-700">
+                      <Clock className="w-5 h-5" /> الرواكد (أصناف بالمخزن ولم تبع خلال الفترة)
+                  </div>
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px]">
+                          <tr>
+                              <th className="p-4">اسم الصنف</th>
+                              <th className="p-4 text-center">الرصيد الراكد</th>
+                              <th className="p-4 text-center">قيمة المخزون الراكد</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {stagnantItems.map((p, i) => (
+                              <tr key={i} className="hover:bg-amber-50/30 transition-colors">
+                                  <td className="p-4 font-bold text-slate-800">{p.name} <div className="text-[10px] text-gray-400 font-mono">#{p.code}</div></td>
+                                  <td className="p-4 text-center font-black text-slate-600">{p.stock}</td>
+                                  <td className="p-4 text-center font-black text-amber-600">{currency}{(p.stock * (p.purchase_price || 0)).toLocaleString()}</td>
+                              </tr>
+                          ))}
+                          {stagnantItems.length === 0 && <tr><td colSpan={3} className="p-10 text-center text-gray-400 font-bold">لا يوجد أصناف راكدة حالياً</td></tr>}
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      )}
+
+      {/* 5. PURCHASES TAB */}
       {activeTab === 'PURCHASES' && (
           <div className="animate-in fade-in duration-500 space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -273,123 +398,13 @@ export default function Reports() {
                                <p className="text-blue-500 text-xs font-black uppercase mb-1">إجمالي المشتريات (الفترة)</p>
                                <h2 className="text-4xl font-black text-blue-700">{currency}{purchaseData.totalPurchases.toLocaleString()}</h2>
                           </div>
-                          <div className="grid grid-cols-2 gap-4">
-                              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                                  <p className="text-gray-400 text-[10px] font-black uppercase">عدد الفواتير</p>
-                                  <p className="text-xl font-black text-slate-700">{purchaseData.pCount}</p>
-                              </div>
-                              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                                  <p className="text-gray-400 text-[10px] font-black uppercase">عدد الموردين</p>
-                                  <p className="text-xl font-black text-slate-700">{purchaseData.topSuppliers.length}</p>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Truck className="w-5 h-5 text-blue-500" /> تحليل المشتريات حسب المورد</h3>
-                      <div className="h-[300px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                  <Pie data={purchaseData.topSuppliers} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" paddingAngle={5} stroke="none">
-                                      {purchaseData.topSuppliers.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                  </Pie>
-                                  <Tooltip formatter={(v:any) => currency + v.toLocaleString()} />
-                                  <Legend />
-                              </PieChart>
-                          </ResponsiveContainer>
                       </div>
                   </div>
               </div>
           </div>
       )}
 
-      {/* 3. REPRESENTATIVES TAB */}
-      {activeTab === 'REPRESENTATIVES' && (
-          <div className="animate-in fade-in duration-500 space-y-6">
-              <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                  <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Briefcase className="w-5 h-5 text-blue-500" /> مقارنة مبيعات المندوبين</h3>
-                  <div className="h-[350px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={repsData}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                              <XAxis dataKey="name" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
-                              <YAxis hide />
-                              <Tooltip cursor={{fill: '#f8fafc'}} />
-                              <Bar dataKey="sales" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={40} />
-                          </BarChart>
-                      </ResponsiveContainer>
-                  </div>
-              </div>
-
-              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="p-6 bg-slate-50 border-b font-black text-slate-800">تفاصيل أداء المندوبين والمحصلين</div>
-                  <table className="w-full text-sm text-right">
-                      <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] font-black">
-                          <tr>
-                              <th className="p-4">المندوب</th>
-                              <th className="p-4 text-center">الفواتير</th>
-                              <th className="p-4 text-center">المبيعات</th>
-                              <th className="p-4 text-center">العمولة</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                          {repsData.map((r, i) => (
-                              <tr key={i} className="hover:bg-blue-50/50 transition-colors">
-                                  <td className="p-4 font-black text-slate-800">{r.name} <span className="text-[10px] text-gray-400 font-mono">@{r.code}</span></td>
-                                  <td className="p-4 text-center font-bold text-slate-600">{r.count}</td>
-                                  <td className="p-4 text-center font-black text-blue-600">{currency}{r.sales.toLocaleString()}</td>
-                                  <td className="p-4 text-center">
-                                      <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-black text-xs">
-                                          {currency}{r.commission.toLocaleString()}
-                                      </span>
-                                  </td>
-                              </tr>
-                          ))}
-                      </tbody>
-                  </table>
-              </div>
-          </div>
-      )}
-
-      {/* 4. TELESALES TAB */}
-      {activeTab === 'TELESALES' && (
-          <div className="animate-in fade-in duration-500 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Phone className="w-5 h-5 text-blue-500" /> تحليل حجم المبيعات الهاتفية</h3>
-                      <div className="h-[300px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                              <PieChart>
-                                  <Pie data={teleData} cx="50%" cy="50%" innerRadius={70} outerRadius={100} dataKey="sales" nameKey="name" paddingAngle={5} stroke="none">
-                                      {teleData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                                  </Pie>
-                                  <Tooltip formatter={(v:any) => currency + v.toLocaleString()} />
-                                  <Legend />
-                              </PieChart>
-                          </ResponsiveContainer>
-                      </div>
-                  </div>
-                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-center">
-                      <h3 className="font-black text-slate-800 mb-6">ترتيب الإنتاجية (حسب الأوردرات)</h3>
-                      <div className="space-y-4">
-                          {teleData.map((t, i) => (
-                              <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm">{i+1}</div>
-                                  <div className="flex-1">
-                                      <h4 className="font-bold text-slate-800 text-sm">{t.name}</h4>
-                                      <p className="text-[10px] text-gray-400 font-bold uppercase">{t.count} فاتورة منفذة</p>
-                                  </div>
-                                  <div className="font-black text-blue-600">{currency}{t.sales.toLocaleString()}</div>
-                              </div>
-                          ))}
-                          {teleData.length === 0 && <p className="text-center text-gray-400 py-10 font-bold">لا يوجد مستخدمي تيليسيلز متاحين حالياً</p>}
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* Other Tabs (Financial, Inventory - Kept from previous version or minimal update) */}
+      {/* Tab Contents: Reps, Telesales, Financial, Inventory (Simplified) */}
       {activeTab === 'FINANCIAL' && (
           <div className="animate-in fade-in space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -408,6 +423,38 @@ export default function Reports() {
                   <Package className="w-16 h-16 text-white/10" />
               </div>
           </div>
+      )}
+      
+      {activeTab === 'REPRESENTATIVES' && (
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 bg-slate-50 border-b font-black text-slate-800">أداء المندوبين</div>
+            <table className="w-full text-sm text-right">
+                <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] font-black">
+                    <tr><th className="p-4">المندوب</th><th className="p-4 text-center">المبيعات</th><th className="p-4 text-center">العمولة</th></tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {repsData.map((r, i) => (
+                        <tr key={i}><td className="p-4 font-black">{r.name}</td><td className="p-4 text-center">{currency}{r.sales.toLocaleString()}</td><td className="p-4 text-center">{currency}{r.commission.toLocaleString()}</td></tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+      )}
+
+      {activeTab === 'TELESALES' && (
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="p-6 bg-slate-50 border-b font-black text-slate-800">أداء التيليسيلز</div>
+            <table className="w-full text-sm text-right">
+                <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] font-black">
+                    <tr><th className="p-4">الموظف</th><th className="p-4 text-center">المبيعات</th><th className="p-4 text-center">الفواتير</th></tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {teleData.map((t, i) => (
+                        <tr key={i}><td className="p-4 font-black">{t.name}</td><td className="p-4 text-center">{currency}{t.sales.toLocaleString()}</td><td className="p-4 text-center">{t.count}</td></tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
       )}
     </div>
   );
