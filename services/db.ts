@@ -411,6 +411,10 @@ class DatabaseService {
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `INV${Date.now()}`;
     
+    // جلب بيانات العميل لمعرفة رصيده السابق
+    const customer = this.customers.find(c => c.id === customerId);
+    const prevBalance = customer ? customer.current_balance : 0;
+
     // حساب رقم الفاتورة التسلسلي الجديد (يبدأ من 10001)
     const numericInvoices = this.invoices
         .map(inv => parseInt(inv.invoice_number))
@@ -421,18 +425,21 @@ class DatabaseService {
         : 10001;
 
     const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
+    
     const invoice: Invoice = { 
         id: invoiceId, 
         invoice_number: nextInvoiceNumber.toString(), 
         customer_id: customerId, 
+        created_by: user?.id,
+        created_by_name: user?.name,
         date: new Date().toISOString(), 
         total_before_discount: netTotal + addDisc, 
         total_discount: 0, 
         additional_discount: addDisc, 
         net_total: netTotal, 
-        previous_balance: 0, 
-        final_balance: 0, 
-        payment_status: PaymentStatus.PAID, 
+        previous_balance: prevBalance, 
+        final_balance: prevBalance + (isReturn ? -netTotal : netTotal) - cashPaid, 
+        payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
         items, 
         type: isReturn ? 'RETURN' : 'SALE' 
     };
@@ -440,6 +447,12 @@ class DatabaseService {
     this.invoices.push(invoice);
     if (cashPaid > 0) { await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` }); }
     if (isSupabaseConfigured) await supabase.from('invoices').insert(invoice);
+    
+    // تحديث رصيد العميل محلياً
+    if (customer) {
+        customer.current_balance = invoice.final_balance;
+    }
+
     return { success: true, message: 'Done', id: invoiceId };
   }
 

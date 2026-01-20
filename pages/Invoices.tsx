@@ -112,7 +112,7 @@ const INVOICE_STYLES = `
     .totals-box {
         margin-top: auto; 
         border-top: 2px solid #000;
-        padding-top: 5px;
+        padding-top: 8px;
         font-size: 11px;
     }
 
@@ -126,16 +126,16 @@ const INVOICE_STYLES = `
     .total-row {
         display: flex;
         justify-content: space-between;
-        width: 160px;
+        width: 170px;
         margin-bottom: 2px;
     }
 
     .total-row.final {
         font-weight: 900;
         font-size: 14px;
-        border-top: 1px dashed #999;
-        margin-top: 4px;
-        padding-top: 4px;
+        border-top: 1.5px solid #000;
+        margin-top: 5px;
+        padding-top: 5px;
         background: #f1f5f9;
         -webkit-print-color-adjust: exact;
     }
@@ -217,35 +217,32 @@ const InvoiceHalf = ({
     copyType 
 }: any) => {
     const title = copyType === 'ORIGINAL' ? 'الأصل' : 'صورة';
-    
+    const totalDiscount = (invoice.total_discount || 0) + (invoice.additional_discount || 0);
+    const grandTotal = invoice.net_total + (invoice.previous_balance || 0);
+
     return (
         <div className="invoice-half-container">
             <div className="watermark">{copyType === 'ORIGINAL' ? 'ORIGINAL' : 'COPY'}</div>
             
-            {/* Header Section: 3 Columns Layout (RTL) */}
+            {/* Header Section */}
             <div className="header-section">
-                {/* Column 1 (Right): Company Details */}
                 <div style={{ flex: 1, minWidth: '33%' }}>
                     <div className="company-name">{settings.companyName}</div>
                     <div style={{fontSize: '9px', color:'#334155'}}>{settings.companyAddress}</div>
                     <div style={{fontSize: '9px', color:'#334155'}}>{settings.companyPhone}</div>
                 </div>
 
-                {/* Column 2 (Center): Company Logo (Req 1) */}
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: '33%' }}>
                     {settings.companyLogo && (
                         <img src={settings.companyLogo} alt="Logo" style={{ maxHeight: '55px', maxWidth: '120px', objectFit: 'contain' }} />
                     )}
                 </div>
 
-                {/* Column 3 (Left): Invoice Metadata (Req 2 & 3) */}
                 <div style={{ flex: 1, textAlign: 'left', minWidth: '33%' }}>
-                    {/* Row: Inv Number then Badge (Req 2) */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', marginBottom: '4px' }}>
                         <span style={{fontFamily:'monospace', fontWeight:'bold', fontSize: '14px', border: '1px solid #ddd', padding: '0 4px', borderRadius: '4px'}}>{invoice.invoice_number}</span>
                         <div className="invoice-type-badge" style={{ margin: 0 }}>فاتورة مبيعات</div>
                     </div>
-                    {/* Row: Copy Label next to Page (Req 3) */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', fontSize: '10px' }}>
                         <span style={{ fontWeight: 'bold', border: '1px solid #000', padding: '0 5px', borderRadius: '3px', background: '#f8fafc' }}>{title}</span>
                         <span style={{ color: '#64748b', fontWeight: 'bold' }}>صفحة {pageNumber} من {totalPages}</span>
@@ -305,15 +302,17 @@ const InvoiceHalf = ({
                             <div>ملاحظات: {invoice.notes || '-'}</div>
                         </div>
                         <div>
-                            <div className="total-row"><span>الإجمالي:</span><span>{currency} {invoice.total_before_discount.toFixed(2)}</span></div>
-                            {(invoice.total_discount > 0 || (invoice.additional_discount || 0) > 0) && (
-                                <div className="total-row" style={{color: '#dc2626'}}><span>إجمالي الخصم:</span><span>- {currency} {(invoice.total_discount + (invoice.additional_discount || 0)).toFixed(2)}</span></div>
+                            <div className="total-row"><span>إجمالي الأصناف:</span><span>{currency} {invoice.total_before_discount.toFixed(2)}</span></div>
+                            {totalDiscount > 0 && (
+                                <div className="total-row" style={{color: '#dc2626'}}><span>إجمالي الخصم:</span><span>- {currency} {totalDiscount.toFixed(2)}</span></div>
                             )}
-                            <div className="total-row final"><span>الصافي:</span><span>{currency} {invoice.net_total.toFixed(2)}</span></div>
+                            <div className="total-row"><span>صافي الفاتورة:</span><span style={{fontWeight:'bold'}}>{currency} {invoice.net_total.toFixed(2)}</span></div>
+                            <div className="total-row"><span>حساب سابق:</span><span>{currency} {(invoice.previous_balance || 0).toFixed(2)}</span></div>
+                            <div className="total-row final"><span>المطلوب سداده:</span><span>{currency} {grandTotal.toFixed(2)}</span></div>
                         </div>
-                        <div style={{borderRight: '1px solid #ccc', paddingRight: '15px'}}>
-                            <div className="total-row"><span>المدفوع:</span><span>{currency} {db.getInvoicePaidAmount(invoice.id).toFixed(2)}</span></div>
-                            <div className="total-row"><span>المتبقي:</span><span>{currency} {(invoice.net_total - db.getInvoicePaidAmount(invoice.id)).toFixed(2)}</span></div>
+                        <div style={{borderRight: '1.5px solid #000', paddingRight: '15px', marginLeft: '10px'}}>
+                            <div className="total-row"><span>المدفوع نقداً:</span><span style={{fontWeight:'bold', color: '#16a34a'}}>{currency} {db.getInvoicePaidAmount(invoice.id).toFixed(2)}</span></div>
+                            <div className="total-row"><span>الرصيد الحالي:</span><span style={{fontWeight:'bold', color: '#dc2626'}}>{currency} {(grandTotal - db.getInvoicePaidAmount(invoice.id)).toFixed(2)}</span></div>
                         </div>
                     </div>
                 ) : (
@@ -352,17 +351,13 @@ const Invoices: React.FC = () => {
 
   const handlePrint = () => window.print();
 
-  // مراجعة وإصلاح دالة إرسال واتساب لضمان عدم وجود ملفات فارغة
   const handleWhatsApp = async (inv: Invoice) => {
     const customer = db.getCustomers().find(c => c.id === inv.customer_id);
     if (!customer?.phone) return alert("لا يوجد رقم هاتف مسجل لهذا العميل");
 
     const toastId = toast.loading('جاري تجهيز الفاتورة PDF والواتساب...');
-    
-    // تأمين اختيار الفاتورة أولاً لضمان وجودها في الـ DOM
     setSelectedInvoice(inv);
 
-    // انتظار بسيط لضمان اكتمال الـ Render في المتصفح قبل الالتقاط
     setTimeout(async () => {
         const container = document.getElementById('print-container');
         if (!container) {
@@ -371,7 +366,6 @@ const Invoices: React.FC = () => {
         }
 
         try {
-            // التقاط أول نسخة (Original) للفاتورة بجودة عالية
             const firstPageHalf = container.querySelector('.print-half');
             if (!firstPageHalf) throw new Error("Content not rendered yet");
 
@@ -388,8 +382,6 @@ const Invoices: React.FC = () => {
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-            
-            // حفظ الملف ليكون متاحاً للمستخدم لإرفاقه
             const fileName = `Invoice-${inv.invoice_number}.pdf`;
             pdf.save(fileName);
 
@@ -408,7 +400,7 @@ const Invoices: React.FC = () => {
             console.error(err);
             toast.error('حدث خطأ أثناء معالجة الصورة', { id: toastId });
         }
-    }, 600); // تأخير 600ms كافٍ للـ Rendering
+    }, 600);
   };
 
   const handleDownloadPDF = async () => {

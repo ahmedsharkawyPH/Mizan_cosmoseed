@@ -339,8 +339,8 @@ export default function Reports() {
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                          {Object.entries(salesData.productSales)
-                            // Fix: Use explicit property assignment to avoid "Spread types may only be created from object types" error
+                          {/* Fix: Explicitly cast Object.entries to handle unknown property access errors */}
+                          {(Object.entries(salesData.productSales) as [string, { qty: number; total: number; code: string }][])
                             .map(([name, stats]) => ({ name, qty: stats.qty, total: stats.total, code: stats.code }))
                             .sort((a,b) => b.total - a.total)
                             .map((p, i) => (
