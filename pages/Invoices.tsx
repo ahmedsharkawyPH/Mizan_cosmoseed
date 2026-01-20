@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { Invoice, PaymentStatus } from '../types';
-import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle, MessageCircle, Loader2 } from 'lucide-react';
+import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle, MessageCircle, Loader2, Trash2 } from 'lucide-react';
 import { t } from '../utils/t';
 import { useNavigate, useLocation } from 'react-router-dom';
 // @ts-ignore
@@ -192,13 +192,25 @@ const Invoices: React.FC = () => {
   const settings = db.getSettings();
   const currency = settings.currency;
 
-  useEffect(() => {
+  const loadData = () => {
     setInvoices(db.getInvoices());
+  };
+
+  useEffect(() => {
+    loadData();
     if (location.state && (location.state as any).autoPrintId) {
         const inv = db.getInvoices().find(i => i.id === (location.state as any).autoPrintId);
         if (inv) setSelectedInvoice(inv);
     }
   }, [location]);
+
+  const handleDeleteInvoice = async (id: string) => {
+    if (window.confirm("هل أنت متأكد من حذف هذه الفاتورة؟")) {
+        await db.deleteInvoice(id);
+        toast.success("تم حذف الفاتورة بنجاح");
+        loadData();
+    }
+  };
 
   const filtered = invoices.filter(inv => inv.invoice_number.includes(search) || db.getCustomers().find(c => c.id === inv.customer_id)?.name.toLowerCase().includes(search.toLowerCase()));
   const invoicePages = selectedInvoice ? chunkArray(selectedInvoice.items, ITEMS_PER_PAGE) : [];
@@ -217,23 +229,36 @@ const Invoices: React.FC = () => {
       <div className="bg-white rounded-2xl shadow-card border overflow-hidden">
         <table className="w-full text-sm text-right">
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
-                <tr><th className="px-6 py-4">رقم الفاتورة</th><th className="px-6 py-4">التاريخ</th><th className="px-6 py-4">العميل</th><th className="px-6 py-4">الإجمالي</th><th className="px-6 py-4 text-center">إجراء</th></tr>
+                <tr>
+                    <th className="px-6 py-4">#</th>
+                    <th className="px-6 py-4">التاريخ</th>
+                    <th className="px-6 py-4">العميل</th>
+                    <th className="px-6 py-4">صافي الفاتورة</th>
+                    <th className="px-6 py-4">المدفوع</th>
+                    <th className="px-6 py-4 text-center">إجراء</th>
+                </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-                {filtered.map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-50 group transition-colors">
-                        <td className="px-6 py-4 font-mono font-medium">{inv.invoice_number}</td>
-                        <td className="px-6 py-4">{new Date(inv.date).toLocaleDateString('en-GB')}</td>
-                        <td className="px-6 py-4 font-medium">{db.getCustomers().find(c => c.id === inv.customer_id)?.name || 'غير معروف'}</td>
-                        <td className="px-6 py-4 font-bold">{currency}{inv.net_total.toFixed(2)}</td>
-                        <td className="px-6 py-4 text-center">
-                            <div className="flex justify-center gap-2">
-                                <button onClick={() => setSelectedInvoice(inv)} className="p-2 border rounded-lg hover:bg-white"><Eye className="w-4 h-4" /></button>
-                                <button onClick={() => window.open(`https://wa.me/?text=فاتورة ${inv.invoice_number}`)} className="p-2 border rounded-lg text-emerald-600"><MessageCircle className="w-4 h-4" /></button>
-                            </div>
-                        </td>
-                    </tr>
-                ))}
+                {filtered.map(inv => {
+                    const paid = db.getInvoicePaidAmount(inv.id);
+                    return (
+                        <tr key={inv.id} className="hover:bg-slate-50 group transition-colors">
+                            <td className="px-6 py-4 font-mono font-medium">{inv.invoice_number}</td>
+                            <td className="px-6 py-4">{new Date(inv.date).toLocaleDateString('en-GB')}</td>
+                            <td className="px-6 py-4 font-medium">{db.getCustomers().find(c => c.id === inv.customer_id)?.name || 'غير معروف'}</td>
+                            <td className="px-6 py-4 font-bold">{currency}{inv.net_total.toFixed(2)}</td>
+                            <td className="px-6 py-4 font-bold text-emerald-600">{currency}{paid.toFixed(2)}</td>
+                            <td className="px-6 py-4 text-center">
+                                <div className="flex justify-center gap-2">
+                                    <button onClick={() => setSelectedInvoice(inv)} className="p-2 border rounded-lg hover:bg-white" title="معاينة"><Eye className="w-4 h-4" /></button>
+                                    <button onClick={() => window.open(`https://wa.me/?text=فاتورة ${inv.invoice_number}`)} className="p-2 border rounded-lg text-emerald-600" title="واتساب"><MessageCircle className="w-4 h-4" /></button>
+                                    <button onClick={() => navigate(`/invoice/edit/${inv.id}`)} className="p-2 border rounded-lg text-blue-600 hover:bg-blue-50" title="تعديل"><Edit className="w-4 h-4" /></button>
+                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-2 border rounded-lg text-red-600 hover:bg-red-50" title="حذف"><Trash2 className="w-4 h-4" /></button>
+                                </div>
+                            </td>
+                        </tr>
+                    )
+                })}
             </tbody>
         </table>
       </div>

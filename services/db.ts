@@ -398,6 +398,7 @@ class DatabaseService {
       language: dbData.language || this.settings.language,
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
       printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
+      // Fix typos in property names to match SystemSettings interface
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
       distributionLines: dbData.distributionlines || dbData.distribution_lines || this.settings.distributionLines,
       lowStockThreshold: dbData.lowstockthreshold || dbData.low_stock_threshold || this.settings.lowStockThreshold
@@ -462,6 +463,14 @@ class DatabaseService {
     this.invoices[idx] = { ...this.invoices[idx], customer_id: customerId, items };
     if (isSupabaseConfigured) await supabase.from('invoices').update(this.invoices[idx]).eq('id', id);
     return { success: true, message: 'Updated', id };
+  }
+
+  async deleteInvoice(id: string) {
+    const inv = this.invoices.find(i => i.id === id);
+    if (!inv) return;
+    this.invoices = this.invoices.filter(i => i.id !== id);
+    if (isSupabaseConfigured) await supabase.from('invoices').delete().eq('id', id);
+    this.saveToLocalCache();
   }
 
   async addProduct(p: any, b?: any): Promise<string> {
