@@ -22,7 +22,8 @@ interface StatementItem {
   balance: number;
 }
 
-type SortKey = 'name' | 'totalSales' | 'totalPaid' | 'repaymentRatio' | 'invCount' | 'monthlyRate';
+// تم تحديث مفاتيح الفرز لتطابق المتطلبات الجديدة
+type SortKey = 'name' | 'monthlySalesValue' | 'monthlyInvCount' | 'repaymentRatio';
 interface SortConfig {
     key: SortKey;
     direction: 'asc' | 'desc';
@@ -42,7 +43,7 @@ export default function Customers() {
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
   const [form, setForm] = useState({ code: '', name: '', phone: '', area: '', address: '', distribution_line: '', opening_balance: 0, credit_limit: 0, representative_code: '', default_discount_percent: 0 });
   const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'totalSales', direction: 'desc' });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'monthlySalesValue', direction: 'desc' });
 
   useEffect(() => {
     if (location.state && (location.state as any).openAdd) {
@@ -101,41 +102,58 @@ export default function Customers() {
   const customerAnalytics = useMemo(() => {
       const allInvoices = db.getInvoices();
       const allTransactions = db.getCashTransactions();
+      const now = new Date().getTime();
+
       return customers.map(c => {
-          const cInvoices = allInvoices.filter(i => i.customer_id === c.id);
+          const cInvoices = allInvoices.filter(i => i.customer_id === c.id && i.type === 'SALE');
           const cPayments = allTransactions.filter(t => t.reference_id === c.id && t.category === 'CUSTOMER_PAYMENT' && t.type === 'RECEIPT');
+          
           const totalSales = cInvoices.reduce((sum, i) => sum + i.net_total, 0);
           const totalPaid = cPayments.reduce((sum, t) => sum + t.amount, 0);
           const repaymentRatio = totalSales > 0 ? (totalPaid / totalSales) * 100 : 0;
           const invCount = cInvoices.length;
-          let monthlyRate = 0;
+
+          // حساب الفترة الزمنية بالشهور منذ أول فاتورة
+          let diffMonths = 1;
           if (invCount > 0) {
               const dates = cInvoices.map(i => new Date(i.date).getTime());
               const firstDate = Math.min(...dates);
-              const lastDate = new Date().getTime(); 
-              const diffTime = Math.abs(lastDate - firstDate);
-              const diffMonths = Math.max(1, diffTime / (1000 * 60 * 60 * 24 * 30)); 
-              monthlyRate = invCount / diffMonths;
+              const diffTime = Math.abs(now - firstDate);
+              // الحد الأدنى شهر واحد لتجنب القسمة على صفر أو أرقام ضخمة للفواتير الجديدة
+              diffMonths = Math.max(1, diffTime / (1000 * 60 * 60 * 24 * 30)); 
           }
-          return { ...c, totalSales, totalPaid, repaymentRatio, invCount, monthlyRate };
+
+          return { 
+              ...c, 
+              monthlySalesValue: totalSales / diffMonths, 
+              monthlyInvCount: invCount / diffMonths,
+              repaymentRatio
+          };
       });
   }, [customers]);
 
   const sortedAnalytics = useMemo(() => {
       const filtered = customerAnalytics.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
       return [...filtered].sort((a, b) => {
-          if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
-          if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+          const valA = a[sortConfig.key] || 0;
+          const valB = b[sortConfig.key] || 0;
+          if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
           return 0;
       });
   }, [customerAnalytics, search, sortConfig]);
 
-  // إصلاح دالة تصدير الإكسيل لتجنب خطأ TypeScript
   const handleExportAnalysisExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(sortedAnalytics);
+    const dataToExport = sortedAnalytics.map(c => ({
+        "الاسم": c.name,
+        "حجم المسحوبات الشهرية": c.monthlySalesValue.toFixed(2),
+        "معدل الفواتير الشهري": c.monthlyInvCount.toFixed(1),
+        "نسبة السداد %": c.repaymentRatio.toFixed(1)
+    }));
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Analysis");
-    XLSX.writeFile(wb, "Customer_Analysis.xlsx");
+    XLSX.writeFile(wb, `Customer_Analysis_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleAddLine = async () => {
@@ -173,19 +191,14 @@ export default function Customers() {
 
   const handleWhatsAppStatement = async () => {
     if (!statementCustomer || !statementCustomer.phone) return alert("لا يوجد رقم هاتف مسجل لهذا العميل");
-
     const toastId = toast.loading('جاري تجهيز كشف الحساب PDF والواتساب...');
-    
-    // 1. Generate PDF
     const element = document.getElementById('statement-export-area');
     if (!element) return;
-    
     const clone = element.cloneNode(true) as HTMLElement;
     clone.style.width = '800px'; 
     clone.style.background = 'white';
     clone.querySelectorAll('.print-hidden').forEach((el) => (el as HTMLElement).style.display = 'none'); 
     document.body.appendChild(clone);
-    
     try {
         const canvas = await html2canvas(clone, { scale: 2 });
         const imgData = canvas.toDataURL('image/png');
@@ -194,20 +207,15 @@ export default function Customers() {
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
         pdf.save(`Statement-${statementCustomer.name}.pdf`);
-
-        // 2. Open WhatsApp
         const message = `*عزيزي العميل ${statementCustomer.name}*\n` +
                         `مرفق كشف حساب مالي يوضح الحركات والمستحقات حتى تاريخه.\n` +
                         `إجمالي الرصيد المستحق: ${statementCustomer.current_balance.toFixed(2)} ${currency}\n\n` +
                         `📥 *يرجى إرفاق ملف الـ PDF الذي تم تحميله الآن في هذه المحادثة.*`;
-
         const encodedMsg = encodeURIComponent(message);
         const cleanPhone = statementCustomer.phone.replace(/\D/g, '');
         const finalPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
-        
         toast.success('تم تحميل كشف الحساب، يرجى إرفاقه في الواتساب', { id: toastId });
         window.open(`https://wa.me/${finalPhone}?text=${encodedMsg}`, '_blank');
-
     } finally { document.body.removeChild(clone); }
   };
 
@@ -300,7 +308,119 @@ export default function Customers() {
           </div>
       )}
 
-      {/* STATEMENT MODAL */}
+      {activeTab === 'ANALYSIS' && (
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left rtl:text-right">
+                    <thead className="bg-gray-50 text-gray-600 uppercase text-xs font-bold">
+                        <tr>
+                            <th className="p-4 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('name')}>
+                                <div className="flex items-center gap-1">الاسم <ArrowUpDown className="w-3 h-3" /></div>
+                            </th>
+                            <th className="p-4 text-center cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('monthlySalesValue')}>
+                                <div className="flex items-center justify-center gap-1">حجم المسحوبات الشهرية <ArrowUpDown className="w-3 h-3" /></div>
+                            </th>
+                            <th className="p-4 text-center cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('monthlyInvCount')}>
+                                <div className="flex items-center justify-center gap-1">معدل الفواتير الشهري <ArrowUpDown className="w-3 h-3" /></div>
+                            </th>
+                            <th className="p-4 text-center cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('repaymentRatio')}>
+                                <div className="flex items-center justify-center gap-1">نسبة السداد <ArrowUpDown className="w-3 h-3" /></div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                        {sortedAnalytics.map(c => (
+                            <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-4 font-bold text-slate-800">{c.name}</td>
+                                <td className="p-4 text-center font-black text-blue-600">
+                                    {currency}{c.monthlySalesValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td className="p-4 text-center font-bold text-slate-600">
+                                    {c.monthlyInvCount.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">فاتورة/شهر</span>
+                                </td>
+                                <td className="p-4 text-center">
+                                    <div className="flex flex-col items-center gap-1">
+                                        <span className={`font-black ${c.repaymentRatio >= 80 ? 'text-emerald-600' : c.repaymentRatio >= 50 ? 'text-orange-600' : 'text-red-600'}`}>
+                                            {c.repaymentRatio.toFixed(1)}%
+                                        </span>
+                                        <div className="w-20 bg-gray-100 rounded-full h-1 overflow-hidden">
+                                            <div 
+                                                className={`h-full ${c.repaymentRatio >= 80 ? 'bg-emerald-500' : c.repaymentRatio >= 50 ? 'bg-orange-500' : 'bg-red-500'}`} 
+                                                style={{ width: `${Math.min(100, c.repaymentRatio)}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {sortedAnalytics.length === 0 && (
+                    <div className="p-20 text-center text-slate-400">
+                        <Users className="w-12 h-12 mx-auto mb-2 opacity-10" />
+                        <p className="font-bold">لا توجد بيانات متاحة حالياً</p>
+                    </div>
+                )}
+            </div>
+          </div>
+      )}
+
+      {activeTab === 'DIST_LINES' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in duration-300">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Plus className="w-5 h-5 text-emerald-600" />إضافة خط توزيع جديد</h3>
+                  <div className="flex gap-2">
+                      <input className="flex-1 border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500" placeholder="مثلاً: خط الدقي، خط الهرم..." value={newLineName} onChange={e => setNewLineName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddLine()} />
+                      <button onClick={handleAddLine} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-100">إضافة</button>
+                  </div>
+              </div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Map className="w-5 h-5 text-blue-600" />الخطوط الحالية</h3>
+                  <div className="space-y-2">
+                      {(settings.distributionLines || []).map((line: string) => (
+                          <div key={line} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl group hover:bg-white hover:shadow-md transition-all border border-transparent hover:border-slate-100">
+                              <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">{line.charAt(0)}</div>
+                                  <span className="font-bold text-slate-700">{line}</span>
+                                  <span className="text-[10px] bg-white px-2 py-0.5 rounded-full border text-slate-400 font-bold">{customers.filter(c => c.distribution_line === line).length} عميل</span>
+                              </div>
+                              <button onClick={() => handleDeleteLine(line)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><X className="w-4 h-4" /></button>
+                          </div>
+                      ))}
+                      {(!settings.distributionLines || settings.distributionLines.length === 0) && (
+                          <div className="py-10 text-center text-slate-400 text-sm font-medium italic">لم يتم تعريف خطوط توزيع بعد</div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* مودال الإضافة والتعديل */}
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+             <div className="bg-white p-6 rounded-xl border shadow-lg space-y-4 animate-in fade-in zoom-in duration-200 w-full max-w-2xl relative max-h-[90vh] overflow-y-auto">
+             <button onClick={() => setIsOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          <h3 className="font-bold text-lg">{isEditMode ? 'Edit Customer' : t('cust.add')}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.code')}</label><input className="w-full border p-2 rounded bg-gray-50 font-mono" value={form.code} readOnly={isEditMode} onChange={e => setForm({...form, code: e.target.value})} /></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.name')}</label><input className="w-full border p-2 rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.phone')}</label><input className="w-full border p-2 rounded" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.address')}</label><input className="w-full border p-2 rounded" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.dist_line')}</label><select className="w-full border p-2 rounded" value={form.distribution_line} onChange={e => setForm({...form, distribution_line: e.target.value})}><option value="">-- بلا خط --</option>{(settings.distributionLines || []).map((l: string) => <option key={l} value={l}>{l}</option>)}</select></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.rep')}</label><select className="w-full border p-2 rounded" value={form.representative_code} onChange={e => setForm({...form, representative_code: e.target.value})}><option value="">-- بلا مندوب --</option>{representatives.map(r => <option key={r.id} value={r.code}>{r.name} ({r.code})</option>)}</select></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">الرصيد الافتتاحي</label><input type="number" className="w-full border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} disabled={isEditMode} /></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">الحد الائتماني</label><input type="number" className="w-full border p-2 rounded" value={form.credit_limit} onChange={e => setForm({...form, credit_limit: +e.target.value})} /></div>
+            <div><label className="block text-xs font-bold text-gray-400 mb-1">نسبة خصم ثابتة %</label><input type="number" className="w-full border p-2 rounded font-bold text-blue-600" value={form.default_discount_percent} onChange={e => setForm({...form, default_discount_percent: +e.target.value})} /></div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.cancel')}</button>
+            <button onClick={handleSave} className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 shadow-lg shadow-blue-100">{t('set.save')}</button>
+          </div>
+        </div>
+        </div>
+      )}
+
+      {/* مودال كشف الحساب */}
       {statementCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:bg-white print:static print:p-0">
             <style> {` @media print { @page { size: portrait; margin: 1cm; } body * { visibility: hidden; } #statement-modal, #statement-modal * { visibility: visible; } #statement-modal { position: absolute; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 0; background: white; z-index: 9999; } .print-hidden { display: none !important; } } `} </style>
