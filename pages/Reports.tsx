@@ -11,7 +11,7 @@ import {
   Calendar, DollarSign, TrendingUp, TrendingDown, Users, Package, 
   ArrowUpRight, ArrowDownLeft, Filter, Truck, Search, Briefcase, 
   Phone, ChevronRight, ChevronDown, Table2, BookOpen, Wallet, 
-  BarChart3, Activity, UserCheck, ShieldCheck
+  BarChart3, Activity, UserCheck, ShieldCheck, ShoppingBag
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
@@ -26,11 +26,7 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(today);
   
-  const [selectedCustomer, setSelectedCustomer] = useState('');
-  const [selectedArea, setSelectedArea] = useState('');
-  const [selectedSupervisor, setSelectedSupervisor] = useState('');
-  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'LEDGER' | 'MONTHLY_SUMMARY' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'REPRESENTATIVES' | 'TELESALES'>('FINANCIAL');
-  const [selectedMonth, setSelectedMonth] = useState(today.substring(0, 7)); 
+  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'REPRESENTATIVES' | 'TELESALES'>('FINANCIAL');
 
   const handleQuickDate = (type: 'TODAY' | 'MONTH' | 'LAST_MONTH' | 'YEAR') => {
     const now = new Date();
@@ -46,7 +42,7 @@ export default function Reports() {
     setEndDate(end);
   };
 
-  // --- 1. Financial Logic ---
+  // --- 1. Financial Data ---
   const financialData = useMemo(() => {
     const invoices = db.getInvoices().filter(i => {
         const d = i.date.split('T')[0];
@@ -75,12 +71,22 @@ export default function Reports() {
     return { revenue, cogs, expenses, grossProfit, netProfit, expenseChartData };
   }, [startDate, endDate]);
 
-  // --- 2. Sales Logic ---
+  // --- 2. Sales Analysis Logic ---
   const salesData = useMemo(() => {
     const invoices = db.getInvoices().filter(i => {
         const d = i.date.split('T')[0];
         return d >= startDate && d <= endDate && i.type === 'SALE';
     });
+
+    // Trend Data
+    const trendMap: Record<string, number> = {};
+    invoices.forEach(inv => {
+        const day = inv.date.split('T')[0];
+        trendMap[day] = (trendMap[day] || 0) + inv.net_total;
+    });
+    const salesTrend = Object.entries(trendMap).map(([date, value]) => ({ date, value })).sort((a,b) => a.date.localeCompare(b.date));
+
+    // Top Products
     const productSales: Record<string, { qty: number, total: number }> = {};
     invoices.forEach(inv => {
         inv.items.forEach(item => {
@@ -90,10 +96,11 @@ export default function Reports() {
         });
     });
     const topProducts = Object.entries(productSales).map(([name, stats]) => ({ name, qty: stats.qty, total: stats.total })).sort((a, b) => b.total - a.total).slice(0, 10);
-    return { topProducts, count: invoices.length };
+
+    return { topProducts, salesTrend, count: invoices.length, avgInvoice: invoices.length > 0 ? (invoices.reduce((s,i)=>s+i.net_total,0) / invoices.length) : 0 };
   }, [startDate, endDate]);
 
-  // --- 3. Purchases Logic ---
+  // --- 3. Purchases Analysis Logic ---
   const purchaseData = useMemo(() => {
       const pInvoices = db.getPurchaseInvoices().filter(p => {
           const d = p.date.split('T')[0];
@@ -109,31 +116,7 @@ export default function Reports() {
       return { totalPurchases, pCount: pInvoices.length, topSuppliers };
   }, [startDate, endDate]);
 
-  // --- 4. Inventory Logic ---
-  const inventoryData = useMemo(() => {
-      const products = db.getProductsWithBatches();
-      let totalValue = 0;
-      const items = products.map(p => {
-          const qty = p.batches.reduce((sum, b) => sum + b.quantity, 0);
-          const val = qty * (p.purchase_price || 0);
-          totalValue += val;
-          return { name: p.name, qty, val };
-      }).sort((a,b) => b.val - a.val);
-      return { items, totalValue };
-  }, []);
-
-  // --- 5. Partners & Debt Logic ---
-  const partnersData = useMemo(() => {
-      const customers = db.getCustomers();
-      const suppliers = db.getSuppliers();
-      const receivables = customers.reduce((sum, c) => sum + (c.current_balance > 0 ? c.current_balance : 0), 0);
-      const payables = suppliers.reduce((sum, s) => sum + Math.abs(s.current_balance), 0);
-      const topDebtors = [...customers].sort((a,b) => b.current_balance - a.current_balance).slice(0, 10);
-      const topCreditors = [...suppliers].sort((a,b) => b.current_balance - a.current_balance).slice(0, 10);
-      return { receivables, payables, topDebtors, topCreditors };
-  }, []);
-
-  // --- 6. Representatives Logic ---
+  // --- 4. Representatives Analysis Logic ---
   const repsData = useMemo(() => {
       const reps = db.getRepresentatives();
       const invoices = db.getInvoices().filter(i => {
@@ -152,7 +135,7 @@ export default function Reports() {
       return report;
   }, [startDate, endDate]);
 
-  // --- 7. Telesales Logic ---
+  // --- 5. Telesales Analysis Logic ---
   const teleData = useMemo(() => {
       const teles = authService.getUsers().filter(u => u.role === 'TELESALES');
       const invoices = db.getInvoices().filter(i => {
@@ -166,16 +149,28 @@ export default function Reports() {
       }).sort((a,b) => b.sales - a.sales);
   }, [startDate, endDate]);
 
+  // --- 6. Inventory Logic ---
+  const inventoryData = useMemo(() => {
+      const products = db.getProductsWithBatches();
+      let totalValue = 0;
+      const items = products.map(p => {
+          const qty = p.batches.reduce((sum, b) => sum + b.quantity, 0);
+          const val = qty * (p.purchase_price || 0);
+          totalValue += val;
+          return { name: p.name, qty, val };
+      }).sort((a,b) => b.val - a.val);
+      return { items, totalValue };
+  }, []);
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-6">
+      {/* Date Filter Section */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col gap-6">
          <div className="flex justify-between items-center">
             <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                <BarChart3 className="w-8 h-8 text-blue-600" /> تقارير ميزان الذكية
+                <BarChart3 className="w-8 h-8 text-blue-600" /> تقارير ميزان التحليلية
             </h1>
-            <div className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-xs font-bold border border-blue-100">
-                مركز البيانات الموحد
-            </div>
+            <div className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-xs font-bold border border-blue-100">تحليل حي للبيانات</div>
          </div>
 
          <div className="flex flex-col md:flex-row items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
@@ -186,20 +181,20 @@ export default function Reports() {
                 <input type="date" className="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none focus:border-blue-500 transition-all" value={endDate} onChange={e => setEndDate(e.target.value)} />
              </div>
              <div className="flex gap-2 overflow-x-auto scrollbar-hide w-full md:w-auto">
-                 <button onClick={() => handleQuickDate('TODAY')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all whitespace-nowrap">اليوم</button>
-                 <button onClick={() => handleQuickDate('MONTH')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all whitespace-nowrap">هذا الشهر</button>
-                 <button onClick={() => handleQuickDate('YEAR')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all whitespace-nowrap">السنة</button>
+                 <button onClick={() => handleQuickDate('TODAY')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all">اليوم</button>
+                 <button onClick={() => handleQuickDate('MONTH')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all">هذا الشهر</button>
+                 <button onClick={() => handleQuickDate('YEAR')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all">السنة</button>
              </div>
          </div>
       </div>
 
+      {/* Tabs Navigation */}
       <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide">
           {[
               { id: 'FINANCIAL', label: 'المالية (P&L)', icon: DollarSign },
               { id: 'SALES', label: 'المبيعات', icon: TrendingUp },
-              { id: 'PURCHASES', label: 'المشتريات', icon: Truck },
+              { id: 'PURCHASES', label: 'المشتريات', icon: ShoppingBag },
               { id: 'INVENTORY', label: 'المخزون', icon: Package },
-              { id: 'PARTNERS', label: 'المديونيات', icon: Wallet },
               { id: 'REPRESENTATIVES', label: 'المندوبين', icon: Briefcase },
               { id: 'TELESALES', label: 'التيليسيلز', icon: Phone },
           ].map(tab => (
@@ -209,61 +204,49 @@ export default function Reports() {
           ))}
       </div>
 
-      {activeTab === 'FINANCIAL' && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                      <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-1">إجمالي المبيعات</p>
-                      <h3 className="text-2xl font-black text-slate-800">{currency}{financialData.revenue.toLocaleString()}</h3>
-                  </div>
-                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                      <p className="text-emerald-500 text-[10px] font-black uppercase tracking-widest mb-1">مجمل الربح</p>
-                      <h3 className="text-2xl font-black text-emerald-600">{currency}{financialData.grossProfit.toLocaleString()}</h3>
-                  </div>
-                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                      <p className="text-rose-500 text-[10px] font-black uppercase tracking-widest mb-1">المصروفات</p>
-                      <h3 className="text-2xl font-black text-rose-600">-{currency}{financialData.expenses.toLocaleString()}</h3>
-                  </div>
-                  <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl border border-slate-800 ring-4 ring-slate-100">
-                      <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-1">صافي الأرباح</p>
-                      <h3 className="text-3xl font-black text-white">{currency}{financialData.netProfit.toLocaleString()}</h3>
-                  </div>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm h-[400px]">
-                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Activity className="w-5 h-5 text-blue-500" /> تحليل الأداء المالي</h3>
-                      <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={[{name: 'المبيعات', value: financialData.revenue}, {name: 'التكلفة', value: financialData.cogs}, {name: 'الربح', value: financialData.netProfit}]}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                              <XAxis dataKey="name" tick={{fontSize: 12, fontWeight: 'bold', fill: '#64748b'}} axisLine={false} tickLine={false} />
-                              <YAxis hide />
-                              <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
-                              <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={60}>
-                                 <Cell fill="#3b82f6" /><Cell fill="#94a3b8" /><Cell fill="#10b981" />
-                              </Bar>
-                          </BarChart>
-                      </ResponsiveContainer>
-                  </div>
-                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm h-[400px]">
-                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><TrendingDown className="w-5 h-5 text-rose-500" /> هيكل المصروفات</h3>
-                      <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                              <Pie data={financialData.expenseChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={100} dataKey="value" paddingAngle={8} stroke="none">
-                                  {financialData.expenseChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                              </Pie>
-                              <Tooltip />
-                              <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                          </PieChart>
-                      </ResponsiveContainer>
-                  </div>
-              </div>
-          </div>
-      )}
+      {/* TABS CONTENT */}
 
+      {/* 1. SALES TAB */}
       {activeTab === 'SALES' && (
           <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm text-center">
+                      <p className="text-gray-400 text-[10px] font-black uppercase mb-1">إجمالي الفواتير</p>
+                      <h3 className="text-3xl font-black text-slate-800">{salesData.count}</h3>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm text-center">
+                      <p className="text-gray-400 text-[10px] font-black uppercase mb-1">متوسط قيمة الفاتورة</p>
+                      <h3 className="text-3xl font-black text-blue-600">{currency}{salesData.avgInvoice.toLocaleString()}</h3>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm text-center">
+                      <p className="text-gray-400 text-[10px] font-black uppercase mb-1">صافي المبيعات</p>
+                      <h3 className="text-3xl font-black text-emerald-600">{currency}{financialData.revenue.toLocaleString()}</h3>
+                  </div>
+              </div>
+
               <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                  <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><ArrowUpRight className="w-5 h-5 text-blue-500" /> الأصناف الأكثر مبيعاً (بالقيمة)</h3>
+                  <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Activity className="w-5 h-5 text-blue-500" /> مؤشر المبيعات اليومي</h3>
+                  <div className="h-[350px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={salesData.salesTrend}>
+                              <defs>
+                                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="date" tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+                              <YAxis hide />
+                              <Tooltip />
+                              <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
+                          </AreaChart>
+                      </ResponsiveContainer>
+                  </div>
+              </div>
+
+              <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+                  <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><ArrowUpRight className="w-5 h-5 text-emerald-500" /> الأصناف الأكثر مبيعاً (بالقيمة)</h3>
                   <div className="h-[400px]">
                       <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={salesData.topProducts} layout="vertical" margin={{ left: 40 }}>
@@ -279,120 +262,80 @@ export default function Reports() {
           </div>
       )}
 
+      {/* 2. PURCHASES TAB */}
       {activeTab === 'PURCHASES' && (
           <div className="animate-in fade-in duration-500 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                    <p className="text-gray-400 text-[10px] font-black uppercase mb-1">إجمالي المشتريات</p>
-                    <h3 className="text-2xl font-black text-slate-800">{currency}{purchaseData.totalPurchases.toLocaleString()}</h3>
-                    <p className="text-xs text-slate-500 mt-1">عدد الفواتير: {purchaseData.pCount}</p>
-                </div>
-                <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                    <h3 className="font-black text-slate-800 mb-4">كبار الموردين</h3>
-                    <div className="space-y-3">
-                        {purchaseData.topSuppliers.map((s, i) => (
-                            <div key={i} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
-                                <span className="font-bold text-slate-700">{s.name}</span>
-                                <span className="font-black text-blue-600">{currency}{s.value.toLocaleString()}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-              </div>
-          </div>
-      )}
-
-      {activeTab === 'INVENTORY' && (
-          <div className="animate-in fade-in duration-500 space-y-6">
-              <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-xl flex justify-between items-center">
-                  <div>
-                      <p className="text-blue-400 text-xs font-black uppercase mb-1">قيمة الأصول المخزنية الحالية</p>
-                      <h2 className="text-4xl font-black">{currency}{inventoryData.totalValue.toLocaleString()}</h2>
-                  </div>
-                  <Package className="w-16 h-16 text-white/10" />
-              </div>
-              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                  <table className="w-full text-sm text-right">
-                      <thead className="bg-slate-50 text-slate-400 uppercase text-[10px] font-black">
-                          <tr>
-                              <th className="p-4">الصنف</th>
-                              <th className="p-4 text-center">الكمية</th>
-                              <th className="p-4">إجمالي القيمة التقديرية</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                          {inventoryData.items.slice(0, 20).map((item, i) => (
-                              <tr key={i} className="hover:bg-slate-50">
-                                  <td className="p-4 font-bold text-slate-700">{item.name}</td>
-                                  <td className="p-4 text-center font-black text-blue-600">{item.qty}</td>
-                                  <td className="p-4 font-mono font-bold">{currency}{item.val.toLocaleString()}</td>
-                              </tr>
-                          ))}
-                      </tbody>
-                  </table>
-              </div>
-          </div>
-      )}
-
-      {activeTab === 'PARTNERS' && (
-          <div className="animate-in fade-in duration-500 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
-                      <p className="text-emerald-600 text-xs font-black uppercase mb-1">إجمالي المستحقات (عند العملاء)</p>
-                      <h3 className="text-3xl font-black text-emerald-700">{currency}{partnersData.receivables.toLocaleString()}</h3>
-                  </div>
-                  <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100">
-                      <p className="text-rose-600 text-xs font-black uppercase mb-1">إجمالي المديونيات (للموردين)</p>
-                      <h3 className="text-3xl font-black text-rose-700">{currency}{partnersData.payables.toLocaleString()}</h3>
-                  </div>
-              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                      <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2"><Users className="w-5 h-5 text-emerald-500" /> أكثر العملاء مديونية</h3>
-                      <div className="space-y-3">
-                          {partnersData.topDebtors.map((c, i) => (
-                              <div key={i} className="flex justify-between items-center p-3 border-b border-slate-50">
-                                  <span className="font-bold text-slate-700">{c.name}</span>
-                                  <span className="font-black text-rose-600">{currency}{c.current_balance.toLocaleString()}</span>
+                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm h-full">
+                      <h3 className="font-black text-slate-800 mb-6">ملخص المشتريات</h3>
+                      <div className="space-y-6">
+                          <div className="p-5 bg-blue-50 rounded-2xl border border-blue-100">
+                               <p className="text-blue-500 text-xs font-black uppercase mb-1">إجمالي المشتريات (الفترة)</p>
+                               <h2 className="text-4xl font-black text-blue-700">{currency}{purchaseData.totalPurchases.toLocaleString()}</h2>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                  <p className="text-gray-400 text-[10px] font-black uppercase">عدد الفواتير</p>
+                                  <p className="text-xl font-black text-slate-700">{purchaseData.pCount}</p>
                               </div>
-                          ))}
+                              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                  <p className="text-gray-400 text-[10px] font-black uppercase">عدد الموردين</p>
+                                  <p className="text-xl font-black text-slate-700">{purchaseData.topSuppliers.length}</p>
+                              </div>
+                          </div>
                       </div>
                   </div>
-                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                      <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2"><Truck className="w-5 h-5 text-rose-500" /> كبار الموردين الدائنين</h3>
-                      <div className="space-y-3">
-                          {partnersData.topCreditors.map((s, i) => (
-                              <div key={i} className="flex justify-between items-center p-3 border-b border-slate-50">
-                                  <span className="font-bold text-slate-700">{s.name}</span>
-                                  <span className="font-black text-emerald-600">{currency}{Math.abs(s.current_balance).toLocaleString()}</span>
-                              </div>
-                          ))}
+                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Truck className="w-5 h-5 text-blue-500" /> تحليل المشتريات حسب المورد</h3>
+                      <div className="h-[300px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                  <Pie data={purchaseData.topSuppliers} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" paddingAngle={5} stroke="none">
+                                      {purchaseData.topSuppliers.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                  </Pie>
+                                  <Tooltip formatter={(v:any) => currency + v.toLocaleString()} />
+                                  <Legend />
+                              </PieChart>
+                          </ResponsiveContainer>
                       </div>
                   </div>
               </div>
           </div>
       )}
 
+      {/* 3. REPRESENTATIVES TAB */}
       {activeTab === 'REPRESENTATIVES' && (
           <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+                  <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Briefcase className="w-5 h-5 text-blue-500" /> مقارنة مبيعات المندوبين</h3>
+                  <div className="h-[350px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={repsData}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="name" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                              <YAxis hide />
+                              <Tooltip cursor={{fill: '#f8fafc'}} />
+                              <Bar dataKey="sales" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={40} />
+                          </BarChart>
+                      </ResponsiveContainer>
+                  </div>
+              </div>
+
               <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="p-6 bg-slate-50 border-b font-black text-slate-800">تقرير أداء المندوبين والمحصلين</div>
+                  <div className="p-6 bg-slate-50 border-b font-black text-slate-800">تفاصيل أداء المندوبين والمحصلين</div>
                   <table className="w-full text-sm text-right">
                       <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] font-black">
                           <tr>
                               <th className="p-4">المندوب</th>
-                              <th className="p-4 text-center">عدد الفواتير</th>
-                              <th className="p-4 text-center">إجمالي المبيعات</th>
-                              <th className="p-4 text-center">العمولة المستحقة</th>
+                              <th className="p-4 text-center">الفواتير</th>
+                              <th className="p-4 text-center">المبيعات</th>
+                              <th className="p-4 text-center">العمولة</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                           {repsData.map((r, i) => (
                               <tr key={i} className="hover:bg-blue-50/50 transition-colors">
-                                  <td className="p-4">
-                                      <div className="font-black text-slate-800">{r.name}</div>
-                                      <div className="text-[10px] text-slate-400 font-mono">@{r.code}</div>
-                                  </td>
+                                  <td className="p-4 font-black text-slate-800">{r.name} <span className="text-[10px] text-gray-400 font-mono">@{r.code}</span></td>
                                   <td className="p-4 text-center font-bold text-slate-600">{r.count}</td>
                                   <td className="p-4 text-center font-black text-blue-600">{currency}{r.sales.toLocaleString()}</td>
                                   <td className="p-4 text-center">
@@ -408,40 +351,61 @@ export default function Reports() {
           </div>
       )}
 
+      {/* 4. TELESALES TAB */}
       {activeTab === 'TELESALES' && (
           <div className="animate-in fade-in duration-500 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {teleData.map((t, i) => (
-                      <div key={i} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                          <div className="flex items-center gap-4 mb-4">
-                              <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center font-black text-blue-600">{t.name.charAt(0)}</div>
-                              <div>
-                                  <h4 className="font-black text-slate-800">{t.name}</h4>
-                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">مسئول مبيعات هاتفية</p>
-                              </div>
-                          </div>
-                          <div className="space-y-2">
-                              <div className="flex justify-between text-xs font-bold text-slate-500"><span>المبيعات:</span><span className="text-slate-900 font-black">{currency}{t.sales.toLocaleString()}</span></div>
-                              <div className="flex justify-between text-xs font-bold text-slate-500"><span>الأوردرات:</span><span className="text-slate-900 font-black">{t.count}</span></div>
-                          </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Phone className="w-5 h-5 text-blue-500" /> تحليل حجم المبيعات الهاتفية</h3>
+                      <div className="h-[300px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                  <Pie data={teleData} cx="50%" cy="50%" innerRadius={70} outerRadius={100} dataKey="sales" nameKey="name" paddingAngle={5} stroke="none">
+                                      {teleData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                  </Pie>
+                                  <Tooltip formatter={(v:any) => currency + v.toLocaleString()} />
+                                  <Legend />
+                              </PieChart>
+                          </ResponsiveContainer>
                       </div>
-                  ))}
+                  </div>
+                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm flex flex-col justify-center">
+                      <h3 className="font-black text-slate-800 mb-6">ترتيب الإنتاجية (حسب الأوردرات)</h3>
+                      <div className="space-y-4">
+                          {teleData.map((t, i) => (
+                              <div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm">{i+1}</div>
+                                  <div className="flex-1">
+                                      <h4 className="font-bold text-slate-800 text-sm">{t.name}</h4>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase">{t.count} فاتورة منفذة</p>
+                                  </div>
+                                  <div className="font-black text-blue-600">{currency}{t.sales.toLocaleString()}</div>
+                              </div>
+                          ))}
+                          {teleData.length === 0 && <p className="text-center text-gray-400 py-10 font-bold">لا يوجد مستخدمي تيليسيلز متاحين حالياً</p>}
+                      </div>
+                  </div>
               </div>
           </div>
       )}
 
-      {activeTab === 'LEDGER' && (
-          <div className="animate-in fade-in duration-500 space-y-6">
-              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="p-6 bg-slate-800 text-white font-black flex justify-between items-center">
-                      <span>دفتر الأستاذ المساعد</span>
-                      <ShieldCheck className="w-6 h-6 text-blue-400" />
-                  </div>
-                  <div className="p-20 text-center text-slate-400">
-                      <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-10" />
-                      <p className="font-bold">يتم توليد قيود اليومية آلياً من حركات البيع والشراء والخزينة.</p>
-                      <p className="text-xs mt-2">يرجى مراجعة "كشف حساب العميل" أو "المورد" للحصول على تفاصيل الأرصدة المتغيرة.</p>
-                  </div>
+      {/* Other Tabs (Financial, Inventory - Kept from previous version or minimal update) */}
+      {activeTab === 'FINANCIAL' && (
+          <div className="animate-in fade-in space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm"><p className="text-gray-400 text-[10px] font-black uppercase mb-1">إجمالي المبيعات</p><h3 className="text-2xl font-black text-slate-800">{currency}{financialData.revenue.toLocaleString()}</h3></div>
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm"><p className="text-emerald-500 text-[10px] font-black uppercase mb-1">مجمل الربح</p><h3 className="text-2xl font-black text-emerald-600">{currency}{financialData.grossProfit.toLocaleString()}</h3></div>
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm"><p className="text-rose-500 text-[10px] font-black uppercase mb-1">المصروفات</p><h3 className="text-2xl font-black text-rose-600">-{currency}{financialData.expenses.toLocaleString()}</h3></div>
+                  <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl border border-slate-800 ring-4 ring-slate-100"><p className="text-blue-400 text-[10px] font-black uppercase mb-1">صافي الأرباح</p><h3 className="text-3xl font-black text-white">{currency}{financialData.netProfit.toLocaleString()}</h3></div>
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'INVENTORY' && (
+          <div className="animate-in fade-in space-y-6">
+              <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-xl flex justify-between items-center">
+                  <div><p className="text-blue-400 text-xs font-black uppercase mb-1">قيمة الأصول المخزنية الحالية</p><h2 className="text-4xl font-black">{currency}{inventoryData.totalValue.toLocaleString()}</h2></div>
+                  <Package className="w-16 h-16 text-white/10" />
               </div>
           </div>
       )}
