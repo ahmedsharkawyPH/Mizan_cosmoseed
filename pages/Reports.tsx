@@ -5,10 +5,17 @@ import { authService } from '../services/auth';
 import { t } from '../utils/t';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, LineChart, Line, Legend 
+  PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area
 } from 'recharts';
-import { Calendar, DollarSign, TrendingUp, TrendingDown, Users, Package, ArrowUpRight, ArrowDownLeft, Filter, Truck, Search, Briefcase, Phone, ChevronRight, ChevronDown, Table2, BookOpen } from 'lucide-react';
+import { 
+  Calendar, DollarSign, TrendingUp, TrendingDown, Users, Package, 
+  ArrowUpRight, ArrowDownLeft, Filter, Truck, Search, Briefcase, 
+  Phone, ChevronRight, ChevronDown, Table2, BookOpen, Wallet, 
+  BarChart3, Activity, UserCheck, ShieldCheck
+} from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
 export default function Reports() {
   const currency = db.getSettings().currency;
@@ -22,15 +29,8 @@ export default function Reports() {
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [selectedArea, setSelectedArea] = useState('');
   const [selectedSupervisor, setSelectedSupervisor] = useState('');
-  const [selectedRepFilter, setSelectedRepFilter] = useState('');
   const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'LEDGER' | 'MONTHLY_SUMMARY' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'REPRESENTATIVES' | 'TELESALES'>('FINANCIAL');
   const [selectedMonth, setSelectedMonth] = useState(today.substring(0, 7)); 
-  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
-  const [supervisors, setSupervisors] = useState<any[]>([]);
-
-  useEffect(() => {
-      setSupervisors(authService.getUsers());
-  }, []);
 
   const handleQuickDate = (type: 'TODAY' | 'MONTH' | 'LAST_MONTH' | 'YEAR') => {
     const now = new Date();
@@ -46,18 +46,17 @@ export default function Reports() {
     setEndDate(end);
   };
 
-  const ledgerData = useMemo(() => db.getGeneralLedger(), []);
-
+  // --- 1. Financial Logic ---
   const financialData = useMemo(() => {
     const invoices = db.getInvoices().filter(i => {
         const d = i.date.split('T')[0];
-        return d >= startDate && d <= endDate;
+        return d >= startDate && d <= endDate && i.type === 'SALE';
     });
     const revenue = invoices.reduce((acc, inv) => acc + inv.net_total, 0);
     let cogs = 0;
     invoices.forEach(inv => {
         inv.items.forEach(item => {
-            const cost = (item.batch?.purchase_price || 0) * item.quantity; 
+            const cost = (item.batch?.purchase_price || item.product.purchase_price || 0) * item.quantity; 
             cogs += cost;
         });
     });
@@ -76,150 +75,184 @@ export default function Reports() {
     return { revenue, cogs, expenses, grossProfit, netProfit, expenseChartData };
   }, [startDate, endDate]);
 
-  const monthlySummaryData = useMemo(() => {
-    const [yearStr, monthStr] = selectedMonth.split('-');
-    const year = parseInt(yearStr);
-    const month = parseInt(monthStr) - 1;
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const dailyData = [];
-    const allInvoices = db.getInvoices();
-    const allPurchases = db.getPurchaseInvoices();
-    const allTransactions = db.getCashTransactions();
-    for (let day = 1; day <= daysInMonth; day++) {
-        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const daySales = allInvoices.filter(i => i.date.startsWith(dateStr) && i.type === 'SALE').reduce((acc, i) => acc + i.net_total, 0);
-        const dayPurchases = allPurchases.filter(p => p.date.startsWith(dateStr) && p.type === 'PURCHASE').reduce((acc, p) => acc + p.total_amount, 0);
-        const dayExpenses = allTransactions.filter(t => t.date.startsWith(dateStr) && t.type === 'EXPENSE' && t.category !== 'SUPPLIER_PAYMENT').reduce((acc, t) => acc + t.amount, 0);
-        const dayCashIn = allTransactions.filter(t => t.date.startsWith(dateStr) && t.type === 'RECEIPT').reduce((acc, t) => acc + t.amount, 0);
-        let dayCredit = 0;
-        allInvoices.filter(i => i.date.startsWith(dateStr) && i.type === 'SALE').forEach(inv => {
-            const initialPayment = allTransactions.filter(t => t.reference_id === inv.id && t.date.startsWith(dateStr) && t.type === 'RECEIPT').reduce((sum, t) => sum + t.amount, 0);
-            dayCredit += (inv.net_total - initialPayment);
-        });
-        dailyData.push({ date: dateStr, sales: daySales, purchases: dayPurchases, expenses: dayExpenses, cashIn: dayCashIn, credit: dayCredit > 0 ? dayCredit : 0 });
-    }
-    const totals = dailyData.reduce((acc, day) => ({
-        sales: acc.sales + day.sales, purchases: acc.purchases + day.purchases, expenses: acc.expenses + day.expenses, cashIn: acc.cashIn + day.cashIn, credit: acc.credit + day.credit
-    }), { sales: 0, purchases: 0, expenses: 0, cashIn: 0, credit: 0 });
-    return { dailyData, totals };
-  }, [selectedMonth]);
-
+  // --- 2. Sales Logic ---
   const salesData = useMemo(() => {
-    const allCustomers = db.getCustomers();
-    const allReps = db.getRepresentatives();
-    const validReps = selectedSupervisor ? allReps.filter(r => r.supervisor_id === selectedSupervisor) : allReps;
-    const validRepCodes = validReps.map(r => r.code);
-    const scopedCustomers = allCustomers.filter(c => c.representative_code && validRepCodes.includes(c.representative_code));
-    const availableAreas = Array.from(new Set(scopedCustomers.map(c => c.area).filter(Boolean))).sort();
     const invoices = db.getInvoices().filter(i => {
         const d = i.date.split('T')[0];
-        const dateMatch = d >= startDate && d <= endDate;
-        const invCustomer = allCustomers.find(c => c.id === i.customer_id);
-        if (!invCustomer) return false;
-        let customerMatch = !selectedCustomer || i.customer_id === selectedCustomer;
-        let areaMatch = !selectedArea || invCustomer.area === selectedArea;
-        return dateMatch && customerMatch && areaMatch;
+        return d >= startDate && d <= endDate && i.type === 'SALE';
     });
-    const totalFilteredRevenue = invoices.reduce((sum, inv) => sum + inv.net_total, 0);
     const productSales: Record<string, { qty: number, total: number }> = {};
     invoices.forEach(inv => {
         inv.items.forEach(item => {
-             const net = (item.quantity * (item.unit_price || item.batch.selling_price)) * (1 - (item.discount_percentage || 0) / 100);
             if (!productSales[item.product.name]) productSales[item.product.name] = { qty: 0, total: 0 };
             productSales[item.product.name].qty += item.quantity;
-            productSales[item.product.name].total += net;
+            productSales[item.product.name].total += (item.quantity * (item.unit_price || 0));
         });
     });
-    const topProducts = Object.entries(productSales).map(([name, stats]) => ({ name, qty: stats.qty, total: stats.total })).sort((a, b) => b.qty - a.qty);
-    const trendData = Object.entries(invoices.reduce((acc: any, inv) => {
-        const d = inv.date.split('T')[0]; acc[d] = (acc[d] || 0) + inv.net_total; return acc;
-    }, {})).map(([date, amount]) => ({ date, amount })).sort((a:any, b:any) => a.date.localeCompare(b.date));
-    return { topProducts, trendData, count: invoices.length, availableAreas, totalFilteredRevenue };
-  }, [startDate, endDate, selectedCustomer, selectedArea, selectedSupervisor]);
+    const topProducts = Object.entries(productSales).map(([name, stats]) => ({ name, qty: stats.qty, total: stats.total })).sort((a, b) => b.total - a.total).slice(0, 10);
+    return { topProducts, count: invoices.length };
+  }, [startDate, endDate]);
 
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+  // --- 3. Purchases Logic ---
+  const purchaseData = useMemo(() => {
+      const pInvoices = db.getPurchaseInvoices().filter(p => {
+          const d = p.date.split('T')[0];
+          return d >= startDate && d <= endDate && p.type === 'PURCHASE';
+      });
+      const totalPurchases = pInvoices.reduce((sum, p) => sum + p.total_amount, 0);
+      const supplierVolume: Record<string, number> = {};
+      pInvoices.forEach(p => {
+          const name = db.getSuppliers().find(s => s.id === p.supplier_id)?.name || 'Unknown';
+          supplierVolume[name] = (supplierVolume[name] || 0) + p.total_amount;
+      });
+      const topSuppliers = Object.entries(supplierVolume).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
+      return { totalPurchases, pCount: pInvoices.length, topSuppliers };
+  }, [startDate, endDate]);
+
+  // --- 4. Inventory Logic ---
+  const inventoryData = useMemo(() => {
+      const products = db.getProductsWithBatches();
+      let totalValue = 0;
+      const items = products.map(p => {
+          const qty = p.batches.reduce((sum, b) => sum + b.quantity, 0);
+          const val = qty * (p.purchase_price || 0);
+          totalValue += val;
+          return { name: p.name, qty, val };
+      }).sort((a,b) => b.val - a.val);
+      return { items, totalValue };
+  }, []);
+
+  // --- 5. Partners & Debt Logic ---
+  const partnersData = useMemo(() => {
+      const customers = db.getCustomers();
+      const suppliers = db.getSuppliers();
+      const receivables = customers.reduce((sum, c) => sum + (c.current_balance > 0 ? c.current_balance : 0), 0);
+      const payables = suppliers.reduce((sum, s) => sum + Math.abs(s.current_balance), 0);
+      const topDebtors = [...customers].sort((a,b) => b.current_balance - a.current_balance).slice(0, 10);
+      const topCreditors = [...suppliers].sort((a,b) => b.current_balance - a.current_balance).slice(0, 10);
+      return { receivables, payables, topDebtors, topCreditors };
+  }, []);
+
+  // --- 6. Representatives Logic ---
+  const repsData = useMemo(() => {
+      const reps = db.getRepresentatives();
+      const invoices = db.getInvoices().filter(i => {
+          const d = i.date.split('T')[0];
+          return d >= startDate && d <= endDate && i.type === 'SALE';
+      });
+      const report = reps.map(r => {
+          const repInvoices = invoices.filter(inv => {
+              const cust = db.getCustomers().find(c => c.id === inv.customer_id);
+              return cust?.representative_code === r.code;
+          });
+          const sales = repInvoices.reduce((sum, inv) => sum + inv.net_total, 0);
+          const commission = (sales * (r.commission_rate || 0)) / 100;
+          return { name: r.name, code: r.code, sales, commission, count: repInvoices.length };
+      }).sort((a,b) => b.sales - a.sales);
+      return report;
+  }, [startDate, endDate]);
+
+  // --- 7. Telesales Logic ---
+  const teleData = useMemo(() => {
+      const teles = authService.getUsers().filter(u => u.role === 'TELESALES');
+      const invoices = db.getInvoices().filter(i => {
+          const d = i.date.split('T')[0];
+          return d >= startDate && d <= endDate && i.type === 'SALE';
+      });
+      return teles.map(t => {
+          const tInvoices = invoices.filter(inv => inv.created_by === t.id);
+          const sales = tInvoices.reduce((sum, inv) => sum + inv.net_total, 0);
+          return { name: t.name, sales, count: tInvoices.length };
+      }).sort((a,b) => b.sales - a.sales);
+  }, [startDate, endDate]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-6">
-         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-             <TrendingUp className="w-7 h-7 text-blue-600" />{t('nav.reports')}
-         </h1>
-         {activeTab !== 'INVENTORY' && activeTab !== 'MONTHLY_SUMMARY' && (
-             <div className="flex flex-col md:flex-row items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                 <Filter className="w-4 h-4 text-slate-700" />
-                 <div className="flex items-center gap-2 w-full md:w-auto">
-                    <input type="date" className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                    <span className="text-gray-400">-</span>
-                    <input type="date" className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                 </div>
-                 <div className="flex gap-2 overflow-x-auto">
-                     <button onClick={() => handleQuickDate('TODAY')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">اليوم</button>
-                     <button onClick={() => handleQuickDate('MONTH')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">هذا الشهر</button>
-                     <button onClick={() => handleQuickDate('YEAR')} className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium whitespace-nowrap">هذه السنة</button>
-                 </div>
+    <div className="space-y-6 max-w-7xl mx-auto pb-10">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-6">
+         <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                <BarChart3 className="w-8 h-8 text-blue-600" /> تقارير ميزان الذكية
+            </h1>
+            <div className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-xs font-bold border border-blue-100">
+                مركز البيانات الموحد
+            </div>
+         </div>
+
+         <div className="flex flex-col md:flex-row items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+             <Filter className="w-5 h-5 text-slate-400" />
+             <div className="flex items-center gap-3 w-full md:w-auto">
+                <input type="date" className="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none focus:border-blue-500 transition-all" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                <span className="text-slate-400 font-bold">إلى</span>
+                <input type="date" className="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 text-sm font-bold outline-none focus:border-blue-500 transition-all" value={endDate} onChange={e => setEndDate(e.target.value)} />
              </div>
-         )}
+             <div className="flex gap-2 overflow-x-auto scrollbar-hide w-full md:w-auto">
+                 <button onClick={() => handleQuickDate('TODAY')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all whitespace-nowrap">اليوم</button>
+                 <button onClick={() => handleQuickDate('MONTH')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all whitespace-nowrap">هذا الشهر</button>
+                 <button onClick={() => handleQuickDate('YEAR')} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold hover:bg-blue-50 hover:text-blue-600 transition-all whitespace-nowrap">السنة</button>
+             </div>
+         </div>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+      <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide">
           {[
-              { id: 'FINANCIAL', label: 'التقارير المالية', icon: DollarSign },
-              { id: 'LEDGER', label: 'دفتر الأستاذ', icon: BookOpen },
-              { id: 'MONTHLY_SUMMARY', label: 'الملخص الشهري', icon: Table2 },
+              { id: 'FINANCIAL', label: 'المالية (P&L)', icon: DollarSign },
               { id: 'SALES', label: 'المبيعات', icon: TrendingUp },
               { id: 'PURCHASES', label: 'المشتريات', icon: Truck },
-              { id: 'TELESALES', label: 'التيليسيلز', icon: Phone },
+              { id: 'INVENTORY', label: 'المخزون', icon: Package },
+              { id: 'PARTNERS', label: 'المديونيات', icon: Wallet },
               { id: 'REPRESENTATIVES', label: 'المندوبين', icon: Briefcase },
+              { id: 'TELESALES', label: 'التيليسيلز', icon: Phone },
           ].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-5 py-3 rounded-lg font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-100'}`}>
+              <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
                   <tab.icon className="w-4 h-4" />{tab.label}
               </button>
           ))}
       </div>
 
       {activeTab === 'FINANCIAL' && (
-          <div className="animate-in fade-in duration-300 space-y-6">
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                      <p className="text-gray-500 text-sm font-medium">إجمالي الإيرادات</p>
-                      <h3 className="text-2xl font-bold text-gray-800 mt-2">{currency}{financialData.revenue.toLocaleString()}</h3>
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest mb-1">إجمالي المبيعات</p>
+                      <h3 className="text-2xl font-black text-slate-800">{currency}{financialData.revenue.toLocaleString()}</h3>
                   </div>
-                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                      <p className="text-gray-500 text-sm font-medium">مجمل الربح</p>
-                      <h3 className="text-2xl font-bold text-emerald-600 mt-2">{currency}{financialData.grossProfit.toLocaleString()}</h3>
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <p className="text-emerald-500 text-[10px] font-black uppercase tracking-widest mb-1">مجمل الربح</p>
+                      <h3 className="text-2xl font-black text-emerald-600">{currency}{financialData.grossProfit.toLocaleString()}</h3>
                   </div>
-                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                      <p className="text-gray-500 text-sm font-medium">المصروفات</p>
-                      <h3 className="text-2xl font-bold text-red-600 mt-2">-{currency}{financialData.expenses.toLocaleString()}</h3>
+                  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <p className="text-rose-500 text-[10px] font-black uppercase tracking-widest mb-1">المصروفات</p>
+                      <h3 className="text-2xl font-black text-rose-600">-{currency}{financialData.expenses.toLocaleString()}</h3>
                   </div>
-                  <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg">
-                      <p className="text-slate-400 text-sm font-medium">صافي الأرباح</p>
-                      <h3 className="text-3xl font-bold mt-2">{currency}{financialData.netProfit.toLocaleString()}</h3>
+                  <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl border border-slate-800 ring-4 ring-slate-100">
+                      <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-1">صافي الأرباح</p>
+                      <h3 className="text-3xl font-black text-white">{currency}{financialData.netProfit.toLocaleString()}</h3>
                   </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-[400px]">
-                      <h3 className="font-bold text-gray-800 mb-6">مقارنة المؤشرات المالية</h3>
+                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm h-[400px]">
+                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><Activity className="w-5 h-5 text-blue-500" /> تحليل الأداء المالي</h3>
                       <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={[{name: 'الإيرادات', value: financialData.revenue}, {name: 'التكلفة', value: financialData.cogs}, {name: 'صافي الربح', value: financialData.netProfit}]}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                              <XAxis dataKey="name" tick={{fontSize: 12, fontWeight: 'bold'}} />
-                              <YAxis />
-                              <Tooltip formatter={(value: any) => [`${currency}${value.toLocaleString()}`, '']} />
-                              <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                          <BarChart data={[{name: 'المبيعات', value: financialData.revenue}, {name: 'التكلفة', value: financialData.cogs}, {name: 'الربح', value: financialData.netProfit}]}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                              <XAxis dataKey="name" tick={{fontSize: 12, fontWeight: 'bold', fill: '#64748b'}} axisLine={false} tickLine={false} />
+                              <YAxis hide />
+                              <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                              <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={60}>
+                                 <Cell fill="#3b82f6" /><Cell fill="#94a3b8" /><Cell fill="#10b981" />
+                              </Bar>
                           </BarChart>
                       </ResponsiveContainer>
                   </div>
-                  <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm h-[400px]">
-                      <h3 className="font-bold text-gray-800 mb-6">توزيع المصروفات</h3>
+                  <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm h-[400px]">
+                      <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><TrendingDown className="w-5 h-5 text-rose-500" /> هيكل المصروفات</h3>
                       <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
-                              <Pie data={financialData.expenseChartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" paddingAngle={5}>
+                              <Pie data={financialData.expenseChartData} cx="50%" cy="50%" innerRadius={70} outerRadius={100} dataKey="value" paddingAngle={8} stroke="none">
                                   {financialData.expenseChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                               </Pie>
-                              <Tooltip formatter={(value: any) => [`${currency}${value.toLocaleString()}`, '']} />
-                              <Legend />
+                              <Tooltip />
+                              <Legend verticalAlign="bottom" height={36} iconType="circle" />
                           </PieChart>
                       </ResponsiveContainer>
                   </div>
@@ -227,84 +260,188 @@ export default function Reports() {
           </div>
       )}
 
-      {activeTab === 'LEDGER' && (
-          <div className="animate-in fade-in duration-300 space-y-6">
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
-                      <h3 className="font-bold text-slate-800">قيود اليومية / دفتر الأستاذ</h3>
-                      <div className="text-xs text-slate-500 font-mono">نظام المحاسبة المزدوج</div>
-                  </div>
-                  <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-right">
-                          <thead className="bg-slate-800 text-white uppercase text-xs">
-                              <tr>
-                                  <th className="p-4">التاريخ</th>
-                                  <th className="p-4">الحساب</th>
-                                  <th className="p-4">البيان</th>
-                                  <th className="p-4 text-left">مدين (+)</th>
-                                  <th className="p-4 text-left">دائن (-)</th>
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                              {ledgerData.map((entry, idx) => (
-                                  <tr key={idx} className="hover:bg-gray-50">
-                                      <td className="p-4 text-gray-500 whitespace-nowrap">{new Date(entry.date).toLocaleDateString()}</td>
-                                      <td className="p-4 font-bold text-blue-600">{entry.account}</td>
-                                      <td className="p-4 text-gray-600">{entry.description}</td>
-                                      <td className="p-4 text-left font-mono">{entry.debit > 0 ? `${currency}${entry.debit.toLocaleString()}` : '-'}</td>
-                                      <td className="p-4 text-left font-mono">{entry.credit > 0 ? `${currency}${entry.credit.toLocaleString()}` : '-'}</td>
-                                  </tr>
-                              ))}
-                              {ledgerData.length === 0 && (
-                                  <tr>
-                                      <td colSpan={5} className="p-10 text-center text-slate-400 font-bold italic">لا توجد قيود مسجلة في هذه الفترة</td>
-                                  </tr>
-                              )}
-                          </tbody>
-                      </table>
+      {activeTab === 'SALES' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+                  <h3 className="font-black text-slate-800 mb-8 flex items-center gap-2"><ArrowUpRight className="w-5 h-5 text-blue-500" /> الأصناف الأكثر مبيعاً (بالقيمة)</h3>
+                  <div className="h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={salesData.topProducts} layout="vertical" margin={{ left: 40 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                              <XAxis type="number" hide />
+                              <YAxis dataKey="name" type="category" tick={{fontSize: 10, fontWeight: 'bold'}} width={150} axisLine={false} tickLine={false} />
+                              <Tooltip cursor={{fill: '#f8fafc'}} />
+                              <Bar dataKey="total" fill="#3b82f6" radius={[0, 8, 8, 0]} barSize={25} />
+                          </BarChart>
+                      </ResponsiveContainer>
                   </div>
               </div>
           </div>
       )}
 
-      {activeTab === 'MONTHLY_SUMMARY' && (
-          <div className="animate-in fade-in duration-300 space-y-6">
-              <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center gap-4">
-                  <span className="font-bold text-slate-700">اختر الشهر:</span>
-                  <input type="month" className="border rounded-lg px-3 py-2 font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} />
+      {activeTab === 'PURCHASES' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <p className="text-gray-400 text-[10px] font-black uppercase mb-1">إجمالي المشتريات</p>
+                    <h3 className="text-2xl font-black text-slate-800">{currency}{purchaseData.totalPurchases.toLocaleString()}</h3>
+                    <p className="text-xs text-slate-500 mt-1">عدد الفواتير: {purchaseData.pCount}</p>
+                </div>
+                <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+                    <h3 className="font-black text-slate-800 mb-4">كبار الموردين</h3>
+                    <div className="space-y-3">
+                        {purchaseData.topSuppliers.map((s, i) => (
+                            <div key={i} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                                <span className="font-bold text-slate-700">{s.name}</span>
+                                <span className="font-black text-blue-600">{currency}{s.value.toLocaleString()}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden overflow-x-auto">
-                  <table className="w-full text-sm text-center">
-                      <thead className="bg-slate-800 text-white uppercase text-xs">
+          </div>
+      )}
+
+      {activeTab === 'INVENTORY' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-xl flex justify-between items-center">
+                  <div>
+                      <p className="text-blue-400 text-xs font-black uppercase mb-1">قيمة الأصول المخزنية الحالية</p>
+                      <h2 className="text-4xl font-black">{currency}{inventoryData.totalValue.toLocaleString()}</h2>
+                  </div>
+                  <Package className="w-16 h-16 text-white/10" />
+              </div>
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-slate-50 text-slate-400 uppercase text-[10px] font-black">
                           <tr>
-                              <th className="p-4 text-right">التاريخ</th>
-                              <th className="p-4">المبيعات</th>
-                              <th className="p-4">المقبوضات</th>
-                              <th className="p-4">الآجل (المديونية)</th>
-                              <th className="p-4">المصروفات</th>
+                              <th className="p-4">الصنف</th>
+                              <th className="p-4 text-center">الكمية</th>
+                              <th className="p-4">إجمالي القيمة التقديرية</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                          {monthlySummaryData.dailyData.map((day, i) => (
+                          {inventoryData.items.slice(0, 20).map((item, i) => (
                               <tr key={i} className="hover:bg-slate-50">
-                                  <td className="p-4 text-right font-bold text-gray-600">{new Date(day.date).toLocaleDateString(undefined, {day:'numeric', month:'short'})}</td>
-                                  <td className="p-4 text-emerald-600 font-bold">{day.sales > 0 ? `${currency}${day.sales.toLocaleString()}` : '-'}</td>
-                                  <td className="p-4 text-blue-600">{day.cashIn > 0 ? `${currency}${day.cashIn.toLocaleString()}` : '-'}</td>
-                                  <td className="p-4 text-orange-600">{day.credit > 0 ? `${currency}${day.credit.toLocaleString()}` : '-'}</td>
-                                  <td className="p-4 text-red-600">{day.expenses > 0 ? `${currency}${day.expenses.toLocaleString()}` : '-'}</td>
+                                  <td className="p-4 font-bold text-slate-700">{item.name}</td>
+                                  <td className="p-4 text-center font-black text-blue-600">{item.qty}</td>
+                                  <td className="p-4 font-mono font-bold">{currency}{item.val.toLocaleString()}</td>
                               </tr>
                           ))}
                       </tbody>
-                      <tfoot className="bg-slate-100 font-black">
-                          <tr>
-                              <td className="p-4 text-right">الإجمالي الكلي</td>
-                              <td className="p-4">{currency}{monthlySummaryData.totals.sales.toLocaleString()}</td>
-                              <td className="p-4">{currency}{monthlySummaryData.totals.cashIn.toLocaleString()}</td>
-                              <td className="p-4">{currency}{monthlySummaryData.totals.credit.toLocaleString()}</td>
-                              <td className="p-4 text-red-600">{currency}{monthlySummaryData.totals.expenses.toLocaleString()}</td>
-                          </tr>
-                      </tfoot>
                   </table>
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'PARTNERS' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
+                      <p className="text-emerald-600 text-xs font-black uppercase mb-1">إجمالي المستحقات (عند العملاء)</p>
+                      <h3 className="text-3xl font-black text-emerald-700">{currency}{partnersData.receivables.toLocaleString()}</h3>
+                  </div>
+                  <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100">
+                      <p className="text-rose-600 text-xs font-black uppercase mb-1">إجمالي المديونيات (للموردين)</p>
+                      <h3 className="text-3xl font-black text-rose-700">{currency}{partnersData.payables.toLocaleString()}</h3>
+                  </div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                      <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2"><Users className="w-5 h-5 text-emerald-500" /> أكثر العملاء مديونية</h3>
+                      <div className="space-y-3">
+                          {partnersData.topDebtors.map((c, i) => (
+                              <div key={i} className="flex justify-between items-center p-3 border-b border-slate-50">
+                                  <span className="font-bold text-slate-700">{c.name}</span>
+                                  <span className="font-black text-rose-600">{currency}{c.current_balance.toLocaleString()}</span>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                      <h3 className="font-black text-slate-800 mb-6 flex items-center gap-2"><Truck className="w-5 h-5 text-rose-500" /> كبار الموردين الدائنين</h3>
+                      <div className="space-y-3">
+                          {partnersData.topCreditors.map((s, i) => (
+                              <div key={i} className="flex justify-between items-center p-3 border-b border-slate-50">
+                                  <span className="font-bold text-slate-700">{s.name}</span>
+                                  <span className="font-black text-emerald-600">{currency}{Math.abs(s.current_balance).toLocaleString()}</span>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'REPRESENTATIVES' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="p-6 bg-slate-50 border-b font-black text-slate-800">تقرير أداء المندوبين والمحصلين</div>
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-slate-100 text-slate-500 uppercase text-[10px] font-black">
+                          <tr>
+                              <th className="p-4">المندوب</th>
+                              <th className="p-4 text-center">عدد الفواتير</th>
+                              <th className="p-4 text-center">إجمالي المبيعات</th>
+                              <th className="p-4 text-center">العمولة المستحقة</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {repsData.map((r, i) => (
+                              <tr key={i} className="hover:bg-blue-50/50 transition-colors">
+                                  <td className="p-4">
+                                      <div className="font-black text-slate-800">{r.name}</div>
+                                      <div className="text-[10px] text-slate-400 font-mono">@{r.code}</div>
+                                  </td>
+                                  <td className="p-4 text-center font-bold text-slate-600">{r.count}</td>
+                                  <td className="p-4 text-center font-black text-blue-600">{currency}{r.sales.toLocaleString()}</td>
+                                  <td className="p-4 text-center">
+                                      <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full font-black text-xs">
+                                          {currency}{r.commission.toLocaleString()}
+                                      </span>
+                                  </td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'TELESALES' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {teleData.map((t, i) => (
+                      <div key={i} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex items-center gap-4 mb-4">
+                              <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center font-black text-blue-600">{t.name.charAt(0)}</div>
+                              <div>
+                                  <h4 className="font-black text-slate-800">{t.name}</h4>
+                                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">مسئول مبيعات هاتفية</p>
+                              </div>
+                          </div>
+                          <div className="space-y-2">
+                              <div className="flex justify-between text-xs font-bold text-slate-500"><span>المبيعات:</span><span className="text-slate-900 font-black">{currency}{t.sales.toLocaleString()}</span></div>
+                              <div className="flex justify-between text-xs font-bold text-slate-500"><span>الأوردرات:</span><span className="text-slate-900 font-black">{t.count}</span></div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'LEDGER' && (
+          <div className="animate-in fade-in duration-500 space-y-6">
+              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="p-6 bg-slate-800 text-white font-black flex justify-between items-center">
+                      <span>دفتر الأستاذ المساعد</span>
+                      <ShieldCheck className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <div className="p-20 text-center text-slate-400">
+                      <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-10" />
+                      <p className="font-bold">يتم توليد قيود اليومية آلياً من حركات البيع والشراء والخزينة.</p>
+                      <p className="text-xs mt-2">يرجى مراجعة "كشف حساب العميل" أو "المورد" للحصول على تفاصيل الأرصدة المتغيرة.</p>
+                  </div>
               </div>
           </div>
       )}
