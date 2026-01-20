@@ -17,9 +17,12 @@ const ITEMS_PER_PAGE = 20;
 const INVOICE_STYLES = `
     .invoice-modal-content { background-color: #f3f4f6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; overflow: auto; }
     .invoice-half-container { font-family: 'Cairo', 'Arial', sans-serif; display: flex; flex-direction: column; height: 100%; padding: 8mm; box-sizing: border-box; position: relative; direction: rtl; background: white; }
+    
+    /* الهيدر الأصلي */
     .header-section { border-bottom: 2px solid #333; padding-bottom: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
     .company-name { font-size: 18px; font-weight: 900; color: #000; line-height: 1.2; }
     .invoice-type-badge { font-size: 12px; font-weight: bold; border: 2px solid #000; padding: 2px 10px; border-radius: 6px; background: #f0f0f0; display: inline-block; }
+    
     .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; margin-bottom: 8px; background: #f8fafc; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0; }
     .table-container { flex-grow: 1; min-height: 380px; }
     .invoice-table { width: 100%; border-collapse: collapse; font-size: 10px; }
@@ -27,37 +30,42 @@ const INVOICE_STYLES = `
     .invoice-table td { border: 1px solid #cbd5e1; padding: 3px 5px; text-align: center; color: #0f172a; }
     .col-item { text-align: right !important; }
 
-    /* --- التعديل: منطقة الإجماليات المضغوطة 3 أسطر --- */
+    /* منطقة الإجماليات (3 أسطر فقط) */
     .totals-area-ultra-compact {
         margin-top: 5px;
-        border-top: 2px solid #000;
+        border-top: 2.5px solid #000;
         padding-top: 5px;
     }
-    .invoice-row-line {
+    .compact-line-row {
         display: grid;
-        grid-template-columns: 1.2fr 1fr 1.5fr;
-        gap: 15px;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
         margin-bottom: 3px;
-        font-size: 11.5px;
-        align-items: center;
+        font-size: 11px;
     }
-    .data-cell {
+    .cell-box {
         display: flex;
         justify-content: space-between;
-        padding: 1px 0;
+        padding: 2px 5px;
+        border-bottom: 1px dashed #ddd;
     }
-    .data-cell.bold-total {
-        border-right: 2px solid #000;
-        padding-right: 12px;
+    .final-bold-text-line {
+        margin-top: 4px;
+        padding: 4px 8px;
+        border: 1.5px solid #000;
         font-size: 13px;
-    }
-    .signature-row {
+        font-weight: 900;
         display: flex;
         justify-content: space-between;
-        margin-top: 8px;
-        padding-top: 4px;
-        border-top: 1px dotted #ccc;
-        font-size: 10px;
+        background: #fcfcfc;
+    }
+
+    .footer-signatures {
+        margin-top: 6px;
+        font-size: 9px;
+        display: flex;
+        justify-content: space-between;
+        padding: 0 20px;
         color: #444;
     }
 
@@ -88,20 +96,22 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
 
     return (
         <div className="invoice-half-container">
+            {/* Header (العودة للهيدر الأصلي) */}
             <div className="header-section">
                 <div style={{ flex: 1 }}>
                     <div className="company-name">{settings.companyName}</div>
                     <div style={{fontSize: '9px'}}>{settings.companyAddress}</div>
+                    <div style={{fontSize: '9px'}}>{settings.companyPhone}</div>
                 </div>
                 <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                    {settings.companyLogo && <img src={settings.companyLogo} alt="Logo" style={{ maxHeight: '40px', maxWidth: '80px', objectFit: 'contain' }} />}
+                    {settings.companyLogo && <img src={settings.companyLogo} alt="Logo" style={{ maxHeight: '45px', maxWidth: '90px', objectFit: 'contain' }} />}
                 </div>
                 <div style={{ flex: 1, textAlign: 'left' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>
                         <span style={{fontFamily:'monospace', fontWeight:'bold', fontSize: '14px'}}>{invoice.invoice_number}</span>
-                        <div className="invoice-type-badge">مبيعات</div>
+                        <div className="invoice-type-badge">فاتورة مبيعات</div>
                     </div>
-                    <div style={{ fontSize: '10px' }}><b>{title}</b> | {pageNumber}/{totalPages}</div>
+                    <div style={{ fontSize: '10px', marginTop: '2px' }}><b>{title}</b> | صفحة {pageNumber}/{totalPages}</div>
                 </div>
             </div>
 
@@ -136,39 +146,38 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
                 </table>
             </div>
 
-            {/* --- الإجماليات المضغوطة: 3 أسطر فقط --- */}
+            {/* --- الإجماليات: 3 أسطر فقط --- */}
             <div className="totals-area-ultra-compact">
                 {isLastPage ? (
                     <>
-                        {/* السطر 1: ملخص الفاتورة الحالية */}
-                        <div className="invoice-row-line">
-                            <div className="data-cell"><span>إجمالي الفاتورة:</span><span>{invoice.total_before_discount.toFixed(2)}</span></div>
-                            <div className="data-cell"><span>الخصم:</span><span className="text-red-600">-{totalDiscount.toFixed(2)}</span></div>
-                            <div className="data-cell" style={{fontWeight:'bold'}}><span>صافي الفاتورة:</span><span>{invoice.net_total.toFixed(2)}</span></div>
+                        {/* السطر 1: ملخص الفاتورة */}
+                        <div className="compact-line-row">
+                            <div className="cell-box"><span>إجمالي الأصناف:</span><span>{invoice.total_before_discount.toFixed(2)}</span></div>
+                            <div className="cell-box"><span>إجمالي الخصم:</span><span className="text-red-600">-{totalDiscount.toFixed(2)}</span></div>
+                            <div className="cell-box" style={{background:'#f8fafc'}}><b>صافي الفاتورة:</b><b>{invoice.net_total.toFixed(2)}</b></div>
                         </div>
 
-                        {/* السطر 2: الحساب السابق والمدفوع والإجمالي المطلوب (في صف واحد كما طلبت) */}
-                        <div className="invoice-row-line">
-                            <div className="data-cell"><span>حساب سابق:</span><span>{(invoice.previous_balance || 0).toFixed(2)}</span></div>
-                            <div className="data-cell"><span>المدفوع نقداً:</span><span className="text-emerald-600">{paidCash.toFixed(2)}</span></div>
-                            <div className="data-cell bold-total">
-                                <b>المطلوب سداده نهائياً:</b>
-                                <b>{currency} {finalBalance.toFixed(2)}</b>
-                            </div>
+                        {/* السطر 2: الرصيد السابق والتحصيل والمطلوب (في سطر واحد) */}
+                        <div className="compact-line-row">
+                            <div className="cell-box"><span>حساب سابق:</span><span>{(invoice.previous_balance || 0).toFixed(2)}</span></div>
+                            <div className="cell-box"><span>المدفوع نقداً:</span><span className="text-emerald-600">{paidCash.toFixed(2)}</span></div>
+                            <div className="cell-box" style={{background:'#f8fafc'}}><span>المطلوب سداده:</span><span>{finalBalance.toFixed(2)}</span></div>
                         </div>
 
-                        {/* السطر 3: التوقيعات والملاحظات */}
-                        <div className="signature-row">
-                            <span>ملاحظات: {invoice.notes || 'لا يوجد'}</span>
-                            <div style={{display:'flex', gap: '40px'}}>
-                                <span>توقيع المستلم: .....................</span>
-                                <span>توقيع الحسابات: .....................</span>
-                            </div>
+                        {/* السطر 3: إجمالي نهائي (كتابة عادية بولد) */}
+                        <div className="final-bold-text-line">
+                            <span>الرصيد الإجمالي المستحق بذمة العميل (الجديد):</span>
+                            <span>{currency} {finalBalance.toFixed(2)}</span>
                         </div>
                     </>
                 ) : (
                     <div style={{textAlign:'center', fontSize:'10px', color:'#64748b'}}>تكملة الأصناف في الصفحة التالية...</div>
                 )}
+                
+                <div className="footer-signatures">
+                    <span>توقيع المستلم: ..........................</span>
+                    <span>توقيع الحسابات: ..........................</span>
+                </div>
             </div>
         </div>
     );
@@ -180,7 +189,6 @@ const Invoices: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
   const settings = db.getSettings();
   const currency = settings.currency;
 
@@ -192,14 +200,6 @@ const Invoices: React.FC = () => {
     }
   }, [location]);
 
-  const handlePrint = () => window.print();
-  const handleWhatsApp = async (inv: Invoice) => {
-    const customer = db.getCustomers().find(c => c.id === inv.customer_id);
-    if (!customer?.phone) return alert("لا يوجد هاتف");
-    setSelectedInvoice(inv);
-    setTimeout(() => window.open(`https://wa.me/2${customer.phone.replace(/\D/g, '')}?text=فاتورة رقم ${inv.invoice_number}`, '_blank'), 500);
-  };
-
   const filtered = invoices.filter(inv => inv.invoice_number.includes(search) || db.getCustomers().find(c => c.id === inv.customer_id)?.name.toLowerCase().includes(search.toLowerCase()));
   const invoicePages = selectedInvoice ? chunkArray(selectedInvoice.items, ITEMS_PER_PAGE) : [];
 
@@ -210,26 +210,26 @@ const Invoices: React.FC = () => {
         <h1 className="text-2xl font-bold text-slate-800">{t('list.title')}</h1>
         <div className="flex items-center gap-3">
             <div className="relative"><Search className="absolute right-3 top-3 h-4 w-4 text-slate-400" /><input type="text" placeholder="بحث..." className="pr-10 pl-4 py-2 border rounded-xl" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <button onClick={() => navigate('/invoice/new')} className="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2"><PlusCircle className="w-5 h-5" />فاتورة جديدة</button>
+            <button onClick={() => navigate('/invoice/new')} className="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold shadow-md"><PlusCircle className="w-5 h-5" />فاتورة جديدة</button>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-card border overflow-hidden">
         <table className="w-full text-sm text-right">
             <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
-                <tr><th className="px-6 py-4">#</th><th className="px-6 py-4">التاريخ</th><th className="px-6 py-4">العميل</th><th className="px-6 py-4">الإجمالي</th><th className="px-6 py-4 text-center">إجراء</th></tr>
+                <tr><th className="px-6 py-4">رقم الفاتورة</th><th className="px-6 py-4">التاريخ</th><th className="px-6 py-4">العميل</th><th className="px-6 py-4">الإجمالي</th><th className="px-6 py-4 text-center">إجراء</th></tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
                 {filtered.map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-50 group">
+                    <tr key={inv.id} className="hover:bg-slate-50 group transition-colors">
                         <td className="px-6 py-4 font-mono font-medium">{inv.invoice_number}</td>
                         <td className="px-6 py-4">{new Date(inv.date).toLocaleDateString('en-GB')}</td>
-                        <td className="px-6 py-4 font-medium">{db.getCustomers().find(c => c.id === inv.customer_id)?.name || 'Unknown'}</td>
+                        <td className="px-6 py-4 font-medium">{db.getCustomers().find(c => c.id === inv.customer_id)?.name || 'غير معروف'}</td>
                         <td className="px-6 py-4 font-bold">{currency}{inv.net_total.toFixed(2)}</td>
                         <td className="px-6 py-4 text-center">
                             <div className="flex justify-center gap-2">
-                                <button onClick={() => setSelectedInvoice(inv)} className="p-2 border rounded-lg hover:bg-gray-100"><Eye className="w-4 h-4" /></button>
-                                <button onClick={() => handleWhatsApp(inv)} className="p-2 border rounded-lg text-emerald-600"><MessageCircle className="w-4 h-4" /></button>
+                                <button onClick={() => setSelectedInvoice(inv)} className="p-2 border rounded-lg hover:bg-white"><Eye className="w-4 h-4" /></button>
+                                <button onClick={() => window.open(`https://wa.me/?text=فاتورة ${inv.invoice_number}`)} className="p-2 border rounded-lg text-emerald-600"><MessageCircle className="w-4 h-4" /></button>
                             </div>
                         </td>
                     </tr>
@@ -241,10 +241,10 @@ const Invoices: React.FC = () => {
       {selectedInvoice && (
         <div className="fixed inset-0 z-50 flex flex-col bg-slate-100">
             <div className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm print-hidden sticky top-0 z-50">
-                <h3 className="font-bold">معاينة فاتورة مبيعات #{selectedInvoice.invoice_number}</h3>
+                <h3 className="font-bold text-slate-800">معاينة الفاتورة #{selectedInvoice.invoice_number}</h3>
                 <div className="flex gap-3">
-                    <button onClick={handlePrint} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Printer className="w-4 h-4" />طباعة</button>
-                    <button onClick={() => setSelectedInvoice(null)} className="bg-gray-200 px-4 py-2 rounded-lg text-sm">إغلاق</button>
+                    <button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg"><Printer className="w-4 h-4" />طباعة</button>
+                    <button onClick={() => setSelectedInvoice(null)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold">إغلاق</button>
                 </div>
             </div>
             <div className="invoice-modal-content">
