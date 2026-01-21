@@ -22,8 +22,7 @@ interface StatementItem {
   balance: number;
 }
 
-// تم تحديث مفاتيح الفرز لتطابق المتطلبات الجديدة
-type SortKey = 'name' | 'monthlySalesValue' | 'monthlyInvCount' | 'repaymentRatio';
+type SortKey = 'name' | 'monthlySalesValue' | 'monthlyInvCount' | 'repaymentRatio' | 'actualBalance';
 interface SortConfig {
     key: SortKey;
     direction: 'asc' | 'desc';
@@ -43,7 +42,7 @@ export default function Customers() {
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
   const [form, setForm] = useState({ code: '', name: '', phone: '', area: '', address: '', distribution_line: '', opening_balance: 0, credit_limit: 0, representative_code: '', default_discount_percent: 0 });
   const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'monthlySalesValue', direction: 'desc' });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'actualBalance', direction: 'desc' });
 
   useEffect(() => {
     if (location.state && (location.state as any).openAdd) {
@@ -99,41 +98,45 @@ export default function Customers() {
       setSortConfig({ key, direction });
   };
 
-  const customerAnalytics = useMemo(() => {
+  const customerDataWithCalculatedBalance = useMemo(() => {
       const allInvoices = db.getInvoices();
       const allTransactions = db.getCashTransactions();
       const now = new Date().getTime();
 
       return customers.map(c => {
-          const cInvoices = allInvoices.filter(i => i.customer_id === c.id && i.type === 'SALE');
-          const cPayments = allTransactions.filter(t => t.reference_id === c.id && t.category === 'CUSTOMER_PAYMENT' && t.type === 'RECEIPT');
+          const cInvoices = allInvoices.filter(i => i.customer_id === c.id);
+          const cPayments = allTransactions.filter(t => t.reference_id === c.id && t.category === 'CUSTOMER_PAYMENT');
           
-          const totalSales = cInvoices.reduce((sum, i) => sum + i.net_total, 0);
-          const totalPaid = cPayments.reduce((sum, t) => sum + t.amount, 0);
-          const repaymentRatio = totalSales > 0 ? (totalPaid / totalSales) * 100 : 0;
-          const invCount = cInvoices.length;
+          const totalSales = cInvoices.filter(i => i.type === 'SALE').reduce((sum, i) => sum + i.net_total, 0);
+          const totalReturns = cInvoices.filter(i => i.type === 'RETURN').reduce((sum, i) => sum + i.net_total, 0);
+          const totalPaid = cPayments.filter(t => t.type === 'RECEIPT').reduce((sum, t) => sum + t.amount, 0);
+          const totalRefunded = cPayments.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
 
-          // حساب الفترة الزمنية بالشهور منذ أول فاتورة
+          const actualBalance = c.opening_balance + totalSales - totalReturns - totalPaid + totalRefunded;
+          
+          const invCount = cInvoices.filter(i => i.type === 'SALE').length;
           let diffMonths = 1;
           if (invCount > 0) {
-              const dates = cInvoices.map(i => new Date(i.date).getTime());
+              const dates = cInvoices.filter(i => i.type === 'SALE').map(i => new Date(i.date).getTime());
               const firstDate = Math.min(...dates);
               const diffTime = Math.abs(now - firstDate);
-              // الحد الأدنى شهر واحد لتجنب القسمة على صفر أو أرقام ضخمة للفواتير الجديدة
               diffMonths = Math.max(1, diffTime / (1000 * 60 * 60 * 24 * 30)); 
           }
 
           return { 
               ...c, 
+              actualBalance,
+              totalSales,
+              totalPaid,
               monthlySalesValue: totalSales / diffMonths, 
               monthlyInvCount: invCount / diffMonths,
-              repaymentRatio
+              repaymentRatio: totalSales > 0 ? (totalPaid / totalSales) * 100 : 0
           };
       });
-  }, [customers]);
+  }, [customers, activeTab]);
 
-  const sortedAnalytics = useMemo(() => {
-      const filtered = customerAnalytics.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const sortedAndFiltered = useMemo(() => {
+      const filtered = customerDataWithCalculatedBalance.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
       return [...filtered].sort((a, b) => {
           const valA = a[sortConfig.key] || 0;
           const valB = b[sortConfig.key] || 0;
@@ -141,11 +144,12 @@ export default function Customers() {
           if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
           return 0;
       });
-  }, [customerAnalytics, search, sortConfig]);
+  }, [customerDataWithCalculatedBalance, search, sortConfig]);
 
   const handleExportAnalysisExcel = () => {
-    const dataToExport = sortedAnalytics.map(c => ({
+    const dataToExport = sortedAndFiltered.map(c => ({
         "الاسم": c.name,
+        "الرصيد الحالي": c.actualBalance.toFixed(2),
         "حجم المسحوبات الشهرية": c.monthlySalesValue.toFixed(2),
         "معدل الفواتير الشهري": c.monthlyInvCount.toFixed(1),
         "نسبة السداد %": c.repaymentRatio.toFixed(1)
@@ -179,9 +183,21 @@ export default function Customers() {
     if (!statementCustomer) return [];
     const items: any[] = [];
     const invoices = db.getInvoices().filter(i => i.customer_id === statementCustomer.id);
-    invoices.forEach(inv => { items.push({ date: inv.date, description: `Invoice #${inv.invoice_number}`, debit: inv.net_total, credit: 0, rawDate: new Date(inv.date) }); });
+    invoices.forEach(inv => { 
+        if(inv.type === 'SALE') {
+            items.push({ date: inv.date, description: `فاتورة مبيعات #${inv.invoice_number}`, debit: inv.net_total, credit: 0, rawDate: new Date(inv.date) }); 
+        } else {
+            items.push({ date: inv.date, description: `مرتجع مبيعات #${inv.invoice_number}`, debit: 0, credit: inv.net_total, rawDate: new Date(inv.date) });
+        }
+    });
     const payments = db.getCashTransactions().filter(tx => tx.category === 'CUSTOMER_PAYMENT' && tx.reference_id === statementCustomer.id);
-    payments.forEach(pay => { items.push({ date: pay.date, description: `Payment: ${pay.notes || '-'}`, debit: 0, credit: pay.amount, rawDate: new Date(pay.date) }); });
+    payments.forEach(pay => { 
+        if(pay.type === 'RECEIPT') {
+            items.push({ date: pay.date, description: `سند قبض: ${pay.notes || '-'}`, debit: 0, credit: pay.amount, rawDate: new Date(pay.date) }); 
+        } else {
+            items.push({ date: pay.date, description: `سند صرف (رد نقدية): ${pay.notes || '-'}`, debit: pay.amount, credit: 0, rawDate: new Date(pay.date) });
+        }
+    });
     items.sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime());
     let balance = statementCustomer.opening_balance;
     const finalStatement: StatementItem[] = [{ date: '', description: t('common.opening'), debit: 0, credit: 0, balance: balance }];
@@ -277,12 +293,12 @@ export default function Customers() {
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left rtl:text-right min-w-[900px]">
                 <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
-                    <tr><th className="p-4">{t('cust.code')}</th><th className="p-4">{t('cust.name')}</th><th className="p-4">{t('cust.address')}</th><th className="p-4">{t('cust.dist_line')}</th><th className="p-4">{t('cust.rep')}</th><th className="p-4">{t('cust.phone')}</th><th className="p-4 text-center">{t('cust.default_discount')}</th><th className="p-4 text-right rtl:text-left">{t('cust.balance')}</th><th className="p-4 text-center">{t('common.action')}</th></tr>
+                    <tr><th className="p-4">{t('cust.code')}</th><th className="p-4">{t('cust.name')}</th><th className="p-4">{t('cust.address')}</th><th className="p-4">{t('cust.dist_line')}</th><th className="p-4">{t('cust.rep')}</th><th className="p-4">{t('cust.phone')}</th><th className="p-4 text-center">{t('cust.default_discount')}</th><th className="p-4 text-right rtl:text-left cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('actualBalance')}>{t('cust.balance')} <ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="p-4 text-center">{t('common.action')}</th></tr>
                 </thead>
                 <tbody>
-                    {customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase())).map(c => {
+                    {sortedAndFiltered.map(c => {
                         const repName = representatives.find(r => r.code === c.representative_code)?.name;
-                        const isOverLimit = c.credit_limit && c.credit_limit > 0 && c.current_balance > c.credit_limit;
+                        const isOverLimit = c.credit_limit && c.credit_limit > 0 && c.actualBalance > c.credit_limit;
                         return (
                         <tr key={c.id} className="border-b hover:bg-gray-50 group">
                             <td className="p-4 font-mono text-gray-500">{c.code}</td>
@@ -292,7 +308,7 @@ export default function Customers() {
                             <td className="p-4">{repName ? <span className="flex items-center gap-1 text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-700 w-fit"><User className="w-3 h-3" /> {repName}</span> : <span className="text-gray-400">-</span>}</td>
                             <td className="p-4">{c.phone}</td>
                             <td className="p-4 text-center font-bold text-blue-600">{c.default_discount_percent ? `${c.default_discount_percent}%` : '-'}</td>
-                            <td className={`p-4 text-right rtl:text-left font-bold ${c.current_balance > 0 ? 'text-red-500' : 'text-green-500'}`}>{currency}{c.current_balance.toFixed(2)}{c.credit_limit && c.credit_limit > 0 && ( <div className="text-[10px] text-gray-400 font-normal">Limit: {c.credit_limit}</div> )}</td>
+                            <td className={`p-4 text-right rtl:text-left font-bold ${c.actualBalance > 0 ? 'text-red-500' : 'text-green-500'}`}>{currency}{c.actualBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{c.credit_limit && c.credit_limit > 0 && ( <div className="text-[10px] text-gray-400 font-normal">Limit: {c.credit_limit}</div> )}</td>
                             <td className="p-4 text-center">
                                 <div className="flex justify-center gap-2">
                                     <button onClick={() => setStatementCustomer(c)} className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded text-xs font-medium border border-blue-200"><FileText className="w-4 h-4" /></button>
@@ -329,7 +345,7 @@ export default function Customers() {
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {sortedAnalytics.map(c => (
+                        {sortedAndFiltered.map(c => (
                             <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="p-4 font-bold text-slate-800">{c.name}</td>
                                 <td className="p-4 text-center font-black text-blue-600">
@@ -355,7 +371,7 @@ export default function Customers() {
                         ))}
                     </tbody>
                 </table>
-                {sortedAnalytics.length === 0 && (
+                {sortedAndFiltered.length === 0 && (
                     <div className="p-20 text-center text-slate-400">
                         <Users className="w-12 h-12 mx-auto mb-2 opacity-10" />
                         <p className="font-bold">لا توجد بيانات متاحة حالياً</p>
@@ -395,7 +411,6 @@ export default function Customers() {
           </div>
       )}
 
-      {/* مودال الإضافة والتعديل */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
              <div className="bg-white p-6 rounded-xl border shadow-lg space-y-4 animate-in fade-in zoom-in duration-200 w-full max-w-2xl relative max-h-[90vh] overflow-y-auto">
@@ -420,7 +435,6 @@ export default function Customers() {
         </div>
       )}
 
-      {/* مودال كشف الحساب */}
       {statementCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:bg-white print:static print:p-0">
             <style> {` @media print { @page { size: portrait; margin: 1cm; } body * { visibility: hidden; } #statement-modal, #statement-modal * { visibility: visible; } #statement-modal { position: absolute; left: 0; top: 0; width: 100%; height: 100%; margin: 0; padding: 0; background: white; z-index: 9999; } .print-hidden { display: none !important; } } `} </style>
