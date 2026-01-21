@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/db';
 import { Invoice, PaymentStatus } from '../types';
-import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle, MessageCircle, Loader2, Trash2 } from 'lucide-react';
+import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle, MessageCircle, Loader2, Trash2, Download } from 'lucide-react';
 import { t } from '../utils/t';
 import { useNavigate, useLocation } from 'react-router-dom';
 // @ts-ignore
@@ -189,6 +189,7 @@ const Invoices: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const settings = db.getSettings();
   const currency = settings.currency;
 
@@ -209,6 +210,52 @@ const Invoices: React.FC = () => {
         await db.deleteInvoice(id);
         toast.success("تم حذف الفاتورة بنجاح");
         loadData();
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('print-container');
+    if (!element) return;
+    
+    setIsExporting(true);
+    const toastId = toast.loading('جاري إنشاء ملف PDF...');
+    
+    try {
+        const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('l', 'mm', 'a4'); // Landscape for A4
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        const fileName = `Invoice_${selectedInvoice?.invoice_number}.pdf`;
+        pdf.save(fileName);
+        toast.success('تم تحميل الفاتورة بنجاح', { id: toastId });
+        return true;
+    } catch (err) {
+        console.error("PDF Export failed", err);
+        toast.error('فشل تصدير الفاتورة', { id: toastId });
+        return false;
+    } finally {
+        setIsExporting(false);
+    }
+  };
+
+  const handleWhatsApp = async () => {
+    if (!selectedInvoice) return;
+    
+    const customer = db.getCustomers().find(c => c.id === selectedInvoice.customer_id);
+    if (!customer?.phone) {
+        toast.error('رقم هاتف العميل غير مسجل');
+        return;
+    }
+
+    const success = await handleDownloadPDF();
+    if (success) {
+        const cleanPhone = customer.phone.replace(/\D/g, '');
+        const finalPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
+        const message = `*عزيزي العميل ${customer.name}*\nمرفق فاتورة رقم: *${selectedInvoice.invoice_number}*\nإجمالي المطلوب: *${selectedInvoice.net_total.toFixed(2)} ${currency}*\n\n📥 *يرجى إرفاق ملف الـ PDF الذي تم تحميله الآن في هذه المحادثة.*`;
+        window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(message)}`, '_blank');
     }
   };
 
@@ -264,12 +311,14 @@ const Invoices: React.FC = () => {
       </div>
 
       {selectedInvoice && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-slate-100">
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-100 overflow-hidden">
             <div className="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm print-hidden sticky top-0 z-50">
                 <h3 className="font-bold text-slate-800">معاينة الفاتورة #{selectedInvoice.invoice_number}</h3>
-                <div className="flex gap-3">
-                    <button onClick={() => window.print()} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg"><Printer className="w-4 h-4" />طباعة</button>
-                    <button onClick={() => setSelectedInvoice(null)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold">إغلاق</button>
+                <div className="flex gap-2">
+                    <button onClick={() => window.print()} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-md hover:bg-slate-700 transition-colors"><Printer className="w-4 h-4" />طباعة</button>
+                    <button onClick={handleDownloadPDF} disabled={isExporting} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-md hover:bg-red-700 transition-colors disabled:opacity-50"><Download className="w-4 h-4" /> PDF</button>
+                    <button onClick={handleWhatsApp} disabled={isExporting} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-md hover:bg-emerald-700 transition-colors disabled:opacity-50"><MessageCircle className="w-4 h-4" /> واتساب</button>
+                    <button onClick={() => setSelectedInvoice(null)} className="bg-gray-200 px-6 py-2 rounded-lg font-bold text-gray-700 hover:bg-gray-300 transition-colors">إغلاق</button>
                 </div>
             </div>
             <div className="invoice-modal-content">
