@@ -3,8 +3,7 @@ import { db } from '../services/db';
 
 const translations: Record<string, Record<string, string>> = {
   en: {
-    // ... existing translations
-    'set.paper_thermal_58': '58mm (2*2 inch)',
+    'set.paper_thermal_58': '58 mm wide roll',
     'set.paper_size': 'Paper Size',
     'set.paper_a4': 'A4 (Standard)',
     'set.paper_a5': 'A5 (Half)',
@@ -12,8 +11,7 @@ const translations: Record<string, Record<string, string>> = {
     // ... rest of translations
   },
   ar: {
-    // ... existing translations
-    'set.paper_thermal_58': '58 مم (2*2 بوصة)',
+    'set.paper_thermal_58': 'رول حراري 58 مم',
     'set.paper_size': 'حجم الورق',
     'set.paper_a4': 'A4 (قياسي)',
     'set.paper_a5': 'A5 (نصفي)',
@@ -22,7 +20,6 @@ const translations: Record<string, Record<string, string>> = {
   }
 };
 
-// ... keep existing file structure and export
 export const t = (key: string): string => {
   const settings = db.getSettings();
   const lang = settings.language || 'en';
