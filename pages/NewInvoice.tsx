@@ -33,6 +33,10 @@ export default function NewInvoice() {
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [showLastCost, setShowLastCost] = useState(false);
 
+  // حالة تعديل الكمية في الجدول
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [tempQty, setTempQty] = useState<number>(0);
+
   const [showSettings, setShowSettings] = useState(false);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceSettings>(() => {
       const saved = localStorage.getItem('invoice_settings');
@@ -180,6 +184,14 @@ export default function NewInvoice() {
     setDiscount(0);
     setManualPrice(0);
     setShowLastCost(false);
+    setTimeout(() => productRef.current?.focus(), 50);
+  };
+
+  const updateCartItemQty = (idx: number, newQty: number) => {
+    const newCart = [...cart];
+    newCart[idx] = { ...newCart[idx], quantity: newQty };
+    setCart(newCart);
+    setEditingIdx(null);
     setTimeout(() => productRef.current?.focus(), 50);
   };
 
@@ -377,7 +389,29 @@ export default function NewInvoice() {
                     <tr key={idx} className="hover:bg-slate-50">
                       <td className="px-4 py-3 text-slate-400">{idx + 1}</td>
                       <td className="px-4 py-3 font-bold text-slate-800">{item.product.name}</td>
-                      <td className="px-4 py-3 text-center font-bold text-slate-700">{item.quantity}{item.bonus_quantity > 0 && <span className="text-xs text-green-600 ml-1">+{item.bonus_quantity}</span>}</td>
+                      <td className="px-4 py-3 text-center">
+                        {editingIdx === idx ? (
+                          <input 
+                            autoFocus
+                            type="number"
+                            className="w-20 border-2 border-blue-500 rounded p-1 text-center font-bold"
+                            value={tempQty}
+                            onChange={(e) => setTempQty(parseInt(e.target.value) || 0)}
+                            onBlur={() => setEditingIdx(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') updateCartItemQty(idx, tempQty);
+                              if (e.key === 'Escape') setEditingIdx(null);
+                            }}
+                          />
+                        ) : (
+                          <button 
+                            onClick={() => { setEditingIdx(idx); setTempQty(item.quantity); }}
+                            className="font-bold text-slate-700 hover:text-blue-600 transition-colors px-2 py-1 rounded hover:bg-blue-50"
+                          >
+                            {item.quantity}{item.bonus_quantity > 0 && <span className="text-xs text-green-600 ml-1">+{item.bonus_quantity}</span>}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-center text-slate-600">{currency}{price}</td>
                       <td className="px-4 py-3 text-right font-bold text-slate-900">{currency}{total.toFixed(2)}</td>
                       <td className="px-4 py-3 text-center"><button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Trash2 className="w-4 h-4" /></button></td>
