@@ -81,12 +81,13 @@ export default function NewInvoice() {
     }
   }, [id]);
 
-  // آلية مراقبة اكتمال مزامنة الأصناف
+  // آلية مراقبة اكتمال مزامنة البيانات (الأصناف والعملاء)
   useEffect(() => {
     const checkInterval = setInterval(() => {
       if (db.isFullyLoaded !== isDbFullyLoaded) {
         setIsDbFullyLoaded(db.isFullyLoaded);
-        setProducts(db.getProductsWithBatches()); // تحديث القائمة فور اكتمال المزامنة
+        setProducts(db.getProductsWithBatches()); 
+        setCustomers(db.getCustomers()); // تحديث قائمة العملاء لضمان ظهور الأرصدة الحقيقية
       }
     }, 2000);
 
@@ -225,8 +226,12 @@ export default function NewInvoice() {
     }
   };
 
-  // بيانات العميل المختار (للحصول على الحساب السابق)
-  const selectedCustomerData = useMemo(() => customers.find(c => c.id === selectedCustomer), [selectedCustomer, customers]);
+  // جلب رصيد العميل الحالي من قاعدة البيانات مباشرة لضمان الدقة
+  const liveCustomerBalance = useMemo(() => {
+      if (!selectedCustomer) return 0;
+      const c = db.getCustomers().find(cust => cust.id === selectedCustomer);
+      return c ? c.current_balance : 0;
+  }, [selectedCustomer, isDbFullyLoaded, customers]);
 
   return (
     <div className="flex flex-col h-full space-y-4 max-w-[1600px] mx-auto pb-6">
@@ -425,15 +430,15 @@ export default function NewInvoice() {
                     <span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span>
                 </div>
 
-                {/* الحساب السابق للعميل */}
+                {/* الحساب السابق للعميل - تم التعديل لجلب الرصيد الحقيقي مباشرة من db */}
                 {selectedCustomer && (
                     <div className="flex justify-between items-center text-sm font-bold text-slate-500 bg-amber-50/50 p-2 rounded-lg border border-amber-100/50 mt-3 animate-in fade-in slide-in-from-top-1">
                         <div className="flex items-center gap-2">
-                            <RotateCcw className="w-3.5 h-3.5" />
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
                             <span>{t('inv.prev_balance')}</span>
                         </div>
-                        <span className={selectedCustomerData && selectedCustomerData.current_balance > 0 ? 'text-red-600' : 'text-emerald-600'}>
-                            {currency}{selectedCustomerData ? selectedCustomerData.current_balance.toFixed(2) : '0.00'}
+                        <span className={liveCustomerBalance > 0 ? 'text-red-600' : liveCustomerBalance < 0 ? 'text-blue-600' : 'text-emerald-600'}>
+                            {currency}{liveCustomerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                     </div>
                 )}
