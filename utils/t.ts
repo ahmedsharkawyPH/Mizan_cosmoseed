@@ -1,3 +1,4 @@
+
 import { db } from '../services/db';
 
 const translations: Record<string, Record<string, string>> = {
@@ -179,6 +180,7 @@ const translations: Record<string, Record<string, string>> = {
     'set.paper_a4': 'A4 (Standard)',
     'set.paper_a5': 'A5 (Half)',
     'set.paper_thermal': 'Thermal (Receipt)',
+    'set.paper_thermal_58': 'Thermal (58mm)',
     'set.company_info': 'Company Information',
     'set.company_name': 'Company Name',
     'set.tax_no': 'Tax Number / Reg ID',
@@ -616,6 +618,7 @@ const translations: Record<string, Record<string, string>> = {
     'set.paper_a4': 'A4 (قياسي)',
     'set.paper_a5': 'A5 (نصفي)',
     'set.paper_thermal': 'إيصال حراري (Thermal)',
+    'set.paper_thermal_58': 'إيصال حراري (58 مم)',
     'set.company_info': 'بيانات الشركة',
     'set.company_name': 'اسم الشركة',
     'set.tax_no': 'الرقم الضريبي / س.ت',
