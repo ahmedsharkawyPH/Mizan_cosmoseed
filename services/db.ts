@@ -469,7 +469,7 @@ class DatabaseService {
     
     this.invoices.push(invoice);
     
-    // تسجيل النقدية (بدون تحديث الرصيد مرة أخرى لأننا سنقوم بتحديث الرصيد النهائي دفعة واحدة)
+    // تسجيل النقدية
     if (cashPaid > 0) { 
         await this.addCashTransaction({ 
             type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, 
@@ -481,9 +481,22 @@ class DatabaseService {
         }, false); 
     }
     
+    // تحديث المخزون في السحابة
+    for (const item of items) {
+        if (item.batch) {
+            const batch = this.batches.find(b => b.id === item.batch?.id);
+            if (batch) {
+                const deduction = item.quantity + (item.bonus_quantity || 0);
+                batch.quantity -= (isReturn ? -deduction : deduction);
+                if (isSupabaseConfigured) {
+                    await supabase.from('batches').update({ quantity: batch.quantity }).eq('id', batch.id);
+                }
+            }
+        }
+    }
+
     if (isSupabaseConfigured) {
         await supabase.from('invoices').insert(invoice);
-        // تحديث رصيد العميل في السحابة
         if (customer) {
             await supabase.from('customers').update({ current_balance: invoice.final_balance }).eq('id', customer.id);
         }
@@ -494,6 +507,7 @@ class DatabaseService {
     }
 
     this.saveToLocalCache();
+    this.rebuildIndexes();
     return { success: true, message: 'Done', id: invoiceId };
   }
 
@@ -577,10 +591,61 @@ class DatabaseService {
     await this.addCashTransaction({ type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: inv.customer_id, amount: amount, date: new Date().toISOString(), notes: `Collection for INV#${inv.invoice_number}` });
     return { success: true, message: 'Payment recorded' };
   }
+  
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false) {
     const id = `PUR${Date.now()}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const inv: PurchaseInvoice = { id, invoice_number: `P-${Date.now()}`, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
+    
+    // تحديث أسعار الصنف والمخزون في السحابة
+    for (const item of items) {
+        // 1. تحديث سعر المنتج العام (Master Product) ليعكس السعر الجديد في المبيعات
+        const product = this.products.find(p => p.id === item.product_id);
+        if (product && !isReturn) {
+            product.purchase_price = item.cost_price;
+            product.selling_price = item.selling_price;
+            if (isSupabaseConfigured) {
+                await supabase.from('products').update({ 
+                    purchase_price: item.cost_price, 
+                    selling_price: item.selling_price 
+                }).eq('id', product.id);
+            }
+        }
+
+        // 2. تحديث الرصيد في التشغيلات (Batches)
+        let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && (item.batch_number !== 'AUTO' ? b.batch_number === item.batch_number : true));
+        
+        if (batch) {
+            batch.quantity += (isReturn ? -item.quantity : item.quantity);
+            if (!isReturn) {
+                batch.purchase_price = item.cost_price;
+                batch.selling_price = item.selling_price;
+            }
+            if (isSupabaseConfigured) {
+                await supabase.from('batches').update({ 
+                    quantity: batch.quantity, 
+                    purchase_price: batch.purchase_price, 
+                    selling_price: batch.selling_price 
+                }).eq('id', batch.id);
+            }
+        } else if (!isReturn) {
+            // إنشاء تشغيلة جديدة إذا لم توجد
+            const newBatch: Batch = {
+                id: `B${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+                product_id: item.product_id,
+                warehouse_id: item.warehouse_id,
+                batch_number: item.batch_number === 'AUTO' ? `BN-${Date.now().toString().slice(-4)}` : item.batch_number,
+                quantity: item.quantity,
+                purchase_price: item.cost_price,
+                selling_price: item.selling_price,
+                expiry_date: item.expiry_date,
+                status: BatchStatus.ACTIVE
+            };
+            this.batches.push(newBatch);
+            if (isSupabaseConfigured) await supabase.from('batches').insert(newBatch);
+        }
+    }
+
     this.purchaseInvoices.push(inv);
     
     if (cashPaid > 0) {
@@ -604,8 +669,12 @@ class DatabaseService {
     }
 
     if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(inv);
+    
+    this.rebuildIndexes();
+    this.saveToLocalCache();
     return { success: true, message: 'Done', id };
   }
+
   async createPurchaseOrder(supplierId: string, items: any[]) {
     const order: PurchaseOrder = { id: `PO${Date.now()}`, order_number: `PO-${Date.now()}`, supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items };
     this.purchaseOrders.push(order);
