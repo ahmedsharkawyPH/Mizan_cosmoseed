@@ -150,6 +150,12 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
             <div className="totals-area-ultra-compact">
                 {isLastPage ? (
                     <>
+                        {/* سطر الحساب السابق للعميل (المطلوب إضافته) */}
+                        <div className="cell-box" style={{ borderBottom: '1.5px solid #000', marginBottom: '4px', background: '#fefce8' }}>
+                            <span style={{ fontWeight: 'bold' }}>الحساب السابق المستحق على العميل:</span>
+                            <span style={{ fontWeight: '900', fontSize: '12px' }}>{currency} {(invoice.previous_balance || 0).toFixed(2)}</span>
+                        </div>
+
                         {/* السطر 1: ملخص الفاتورة */}
                         <div className="compact-line-row">
                             <div className="cell-box"><span>إجمالي الأصناف:</span><span>{invoice.total_before_discount.toFixed(2)}</span></div>
