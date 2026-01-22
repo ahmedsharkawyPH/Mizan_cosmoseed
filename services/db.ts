@@ -302,7 +302,6 @@ class DatabaseService {
     const dayExpenses = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category !== 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
     const cashPurchases = this.cashTransactions.filter(t => t.date.startsWith(targetDate) && t.type === CashTransactionType.EXPENSE && t.category === 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
     
-    // حساب قيمة المخزون الحالية
     const inventoryValue = this.batches.reduce((sum, b) => sum + (b.quantity * b.purchase_price), 0);
     
     const openingCash = this.cashTransactions.filter(t => t.date.split('T')[0] < targetDate).reduce((sum, t) => t.type === CashTransactionType.RECEIPT ? sum + t.amount : sum - t.amount, 0);
@@ -320,7 +319,6 @@ class DatabaseService {
   }
 
   async saveDailyClosing(closing: Omit<DailyClosing, 'id' | 'updated_at'>) {
-    // استخدام crypto.randomUUID لضمان التوافق مع نوع UUID في Supabase
     const id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `DC-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newClosing: DailyClosing = { 
         ...closing, 
@@ -347,7 +345,6 @@ class DatabaseService {
         }
     }
     
-    // إضافة للذاكرة المحلية فقط عند نجاح الإرسال للسحابة
     this.dailyClosings.push(newClosing);
     return true;
   }
@@ -356,13 +353,41 @@ class DatabaseService {
   getProductById(id: string): Product | undefined { return this.productsMap.get(id); }
   getCashBalance(): number { return this._cashBalance; }
 
-  async addCashTransaction(tx: Omit<CashTransaction, 'id'>) {
+  async addCashTransaction(tx: Omit<CashTransaction, 'id'>, updateAccountBalance: boolean = true) {
       const id = `TX${Date.now()}`;
       const newTx: CashTransaction = { ...tx, id, created_at: new Date().toISOString() };
       this.cashTransactions.push(newTx);
+      
       if (tx.type === CashTransactionType.RECEIPT) this._cashBalance += tx.amount;
       else this._cashBalance -= tx.amount;
+      
       if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(newTx);
+
+      // تحديث رصيد الحساب (عميل أو مورد) في السحابة إذا لزم الأمر
+      if (updateAccountBalance && tx.reference_id) {
+          if (tx.category === 'CUSTOMER_PAYMENT') {
+              const customer = this.customers.find(c => c.id === tx.reference_id);
+              if (customer) {
+                  // القبض يقلل المديونية، الصرف يزيد المديونية (استرداد)
+                  const adjustment = tx.type === CashTransactionType.RECEIPT ? -tx.amount : tx.amount;
+                  customer.current_balance += adjustment;
+                  if (isSupabaseConfigured) {
+                      await supabase.from('customers').update({ current_balance: customer.current_balance }).eq('id', customer.id);
+                  }
+              }
+          } else if (tx.category === 'SUPPLIER_PAYMENT') {
+              const supplier = this.suppliers.find(s => s.id === tx.reference_id);
+              if (supplier) {
+                  // الصرف (سداد مورد) يقلل المديونية، القبض (مرتجع نقدي) يزيد المديونية
+                  const adjustment = tx.type === CashTransactionType.EXPENSE ? -tx.amount : tx.amount;
+                  supplier.current_balance += adjustment;
+                  if (isSupabaseConfigured) {
+                      await supabase.from('suppliers').update({ current_balance: supplier.current_balance }).eq('id', supplier.id);
+                  }
+              }
+          }
+      }
+
       this.saveToLocalCache();
   }
 
@@ -398,7 +423,6 @@ class DatabaseService {
       language: dbData.language || this.settings.language,
       invoiceTemplate: dbData.invoicetemplate || dbData.invoice_template || this.settings.invoiceTemplate,
       printerPaperSize: dbData.printerpapersize || dbData.printer_paper_size || this.settings.printerPaperSize,
-      // Fix typos in property names to match SystemSettings interface
       expenseCategories: dbData.expensecategories || dbData.expense_categories || this.settings.expenseCategories,
       distributionLines: dbData.distributionlines || dbData.distribution_lines || this.settings.distributionLines,
       lowStockThreshold: dbData.lowstockthreshold || dbData.low_stock_threshold || this.settings.lowStockThreshold
@@ -412,11 +436,9 @@ class DatabaseService {
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `INV${Date.now()}`;
     
-    // جلب بيانات العميل لمعرفة رصيده السابق
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
 
-    // حساب رقم الفاتورة التسلسلي الجديد (يبدأ من 10001)
     const numericInvoices = this.invoices
         .map(inv => parseInt(inv.invoice_number))
         .filter(num => !isNaN(num) && num >= 10000);
@@ -446,14 +468,32 @@ class DatabaseService {
     };
     
     this.invoices.push(invoice);
-    if (cashPaid > 0) { await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` }); }
-    if (isSupabaseConfigured) await supabase.from('invoices').insert(invoice);
     
-    // تحديث رصيد العميل محلياً
+    // تسجيل النقدية (بدون تحديث الرصيد مرة أخرى لأننا سنقوم بتحديث الرصيد النهائي دفعة واحدة)
+    if (cashPaid > 0) { 
+        await this.addCashTransaction({ 
+            type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, 
+            category: 'CUSTOMER_PAYMENT', 
+            reference_id: customerId, 
+            amount: cashPaid, 
+            date: new Date().toISOString(), 
+            notes: `Payment for INV#${invoice.invoice_number}` 
+        }, false); 
+    }
+    
+    if (isSupabaseConfigured) {
+        await supabase.from('invoices').insert(invoice);
+        // تحديث رصيد العميل في السحابة
+        if (customer) {
+            await supabase.from('customers').update({ current_balance: invoice.final_balance }).eq('id', customer.id);
+        }
+    }
+    
     if (customer) {
         customer.current_balance = invoice.final_balance;
     }
 
+    this.saveToLocalCache();
     return { success: true, message: 'Done', id: invoiceId };
   }
 
@@ -492,7 +532,7 @@ class DatabaseService {
   }
 
   async addCustomer(c: any) {
-      const cust = { ...c, id: `C${Date.now()}`, current_balance: c.opening_balance || 0 };
+      const cust = { ...c, id: `C${Date.now()}`, current_balance: Number(c.opening_balance) || 0, opening_balance: Number(c.opening_balance) || 0 };
       this.customers.push(cust);
       if (isSupabaseConfigured) await supabase.from('customers').insert(cust);
       this.saveToLocalCache();
@@ -511,7 +551,7 @@ class DatabaseService {
     this.saveToLocalCache();
   }
   async addSupplier(s: any) {
-    const supplier: Supplier = { ...s, id: `S${Date.now()}`, current_balance: s.opening_balance || 0 };
+    const supplier: Supplier = { ...s, id: `S${Date.now()}`, current_balance: Number(s.opening_balance) || 0, opening_balance: Number(s.opening_balance) || 0 };
     this.suppliers.push(supplier);
     if (isSupabaseConfigured) await supabase.from('suppliers').insert(supplier);
   }
@@ -542,7 +582,27 @@ class DatabaseService {
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const inv: PurchaseInvoice = { id, invoice_number: `P-${Date.now()}`, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
     this.purchaseInvoices.push(inv);
-    if (cashPaid > 0) await this.addCashTransaction({ type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE, category: 'SUPPLIER_PAYMENT', reference_id: supplierId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for PUR#${inv.invoice_number}` });
+    
+    if (cashPaid > 0) {
+        await this.addCashTransaction({ 
+            type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE, 
+            category: 'SUPPLIER_PAYMENT', 
+            reference_id: supplierId, 
+            amount: cashPaid, 
+            date: new Date().toISOString(), 
+            notes: `Payment for PUR#${inv.invoice_number}` 
+        }, false);
+    }
+    
+    const supplier = this.suppliers.find(s => s.id === supplierId);
+    if (supplier) {
+        const adjustment = isReturn ? -total : total;
+        supplier.current_balance += (adjustment - cashPaid);
+        if (isSupabaseConfigured) {
+            await supabase.from('suppliers').update({ current_balance: supplier.current_balance }).eq('id', supplierId);
+        }
+    }
+
     if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(inv);
     return { success: true, message: 'Done', id };
   }
