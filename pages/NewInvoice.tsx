@@ -225,6 +225,9 @@ export default function NewInvoice() {
     }
   };
 
+  // بيانات العميل المختار (للحصول على الحساب السابق)
+  const selectedCustomerData = useMemo(() => customers.find(c => c.id === selectedCustomer), [selectedCustomer, customers]);
+
   return (
     <div className="flex flex-col h-full space-y-4 max-w-[1600px] mx-auto pb-6">
       <div className="flex items-center justify-between">
@@ -421,6 +424,19 @@ export default function NewInvoice() {
                     <span className="text-slate-800">{t('inv.net_total')}</span>
                     <span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span>
                 </div>
+
+                {/* الحساب السابق للعميل */}
+                {selectedCustomer && (
+                    <div className="flex justify-between items-center text-sm font-bold text-slate-500 bg-amber-50/50 p-2 rounded-lg border border-amber-100/50 mt-3 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-center gap-2">
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>{t('inv.prev_balance')}</span>
+                        </div>
+                        <span className={selectedCustomerData && selectedCustomerData.current_balance > 0 ? 'text-red-600' : 'text-emerald-600'}>
+                            {currency}{selectedCustomerData ? selectedCustomerData.current_balance.toFixed(2) : '0.00'}
+                        </span>
+                    </div>
+                )}
             </div>
 
             <div className="space-y-4 pt-4 border-t border-slate-100">
