@@ -226,12 +226,12 @@ export default function NewInvoice() {
     }
   };
 
-  // جلب رصيد العميل الحالي من قاعدة البيانات مباشرة لضمان الدقة
+  // جلب رصيد العميل الحالي من قائمة العملاء في الـ state لضمان الدقة والارتباط بالبيانات الحقيقية
   const liveCustomerBalance = useMemo(() => {
       if (!selectedCustomer) return 0;
-      const c = db.getCustomers().find(cust => cust.id === selectedCustomer);
-      return c ? c.current_balance : 0;
-  }, [selectedCustomer, isDbFullyLoaded, customers]);
+      const customer = customers.find(c => c.id === selectedCustomer);
+      return customer?.current_balance || 0;
+  }, [selectedCustomer, customers]);
 
   return (
     <div className="flex flex-col h-full space-y-4 max-w-[1600px] mx-auto pb-6">
@@ -430,7 +430,7 @@ export default function NewInvoice() {
                     <span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span>
                 </div>
 
-                {/* الحساب السابق للعميل - تم التعديل لجلب الرصيد الحقيقي مباشرة من db */}
+                {/* الحساب السابق للعميل - تم التعديل لجلب الرصيد الحقيقي مباشرة من قائمة الـ state */}
                 {selectedCustomer && (
                     <div className="flex justify-between items-center text-sm font-bold text-slate-500 bg-amber-50/50 p-2 rounded-lg border border-amber-100/50 mt-3 animate-in fade-in slide-in-from-top-1">
                         <div className="flex items-center gap-2">
