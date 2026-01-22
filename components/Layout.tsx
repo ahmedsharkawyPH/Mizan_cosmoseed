@@ -114,81 +114,81 @@ export default function Layout() {
   };
 
   const sidebarItems = [
-    { label: 'لوحة التحكم', path: '/', icon: NAV_ITEMS[0].icon, perm: 'VIEW_DASHBOARD', roles: ['ADMIN', 'TELESALES'] },
+    { label: t('nav.dashboard'), path: '/', icon: NAV_ITEMS[0].icon, perm: 'VIEW_DASHBOARD', roles: ['ADMIN', 'TELESALES'] },
     { label: 'المدير', path: '/settings', icon: ShieldCheck, perm: 'MANAGE_SETTINGS', roles: ['ADMIN'] },
     {
         key: 'sales_mgmt',
-        label: 'إدارة المبيعات',
+        label: t('nav.sales'),
         icon: ShoppingCart,
         perm: 'MANAGE_SALES',
         roles: ['ADMIN', 'REP', 'TELESALES'],
         children: [
-            { label: 'فاتورة جديدة', path: '/invoice/new', icon: PlusCircle },
-            { label: 'سجل الفواتير', path: '/invoices', icon: FileText },
+            { label: t('nav.new_invoice'), path: '/invoice/new', icon: PlusCircle },
+            { label: t('nav.invoices'), path: '/invoices', icon: FileText },
             { label: 'أصناف اليوم', path: '/today-items', icon: ListChecks }
         ]
     },
     {
         key: 'purchase_mgmt',
-        label: 'إدارة المشتريات',
+        label: t('nav.purchases'),
         icon: ShoppingBag,
         perm: 'MANAGE_INVENTORY',
         roles: ['ADMIN', 'TELESALES'],
         children: [
-            { label: 'إضافة مشتريات', path: '/purchases/new', icon: PlusCircle },
-            { label: 'سجل المشتريات', path: '/purchases/list', icon: FileText },
-            { label: 'أوامر التوريد', path: '/purchase-orders', icon: Truck }
+            { label: t('stock.purchase'), path: '/purchases/new', icon: PlusCircle },
+            { label: t('pur.list_title'), path: '/purchases/list', icon: FileText },
+            { label: t('stock.order'), path: '/purchase-orders', icon: Truck }
         ]
     },
     {
         key: 'product_mgmt',
-        label: 'إدارة الأصناف',
+        label: t('nav.products'),
         icon: LayoutGrid,
         perm: 'MANAGE_INVENTORY',
         roles: ['ADMIN', 'TELESALES'],
         children: [
-            { label: 'كل الأصناف', path: '/inventory', icon: Package },
-            { label: 'تحليل المخزون', path: '/inventory/analysis', icon: Activity },
-            { label: 'نواقص المخزن', path: '/shortages', icon: AlertTriangle }
+            { label: t('nav.all_items'), path: '/inventory', icon: Package },
+            { label: t('nav.inventory_analysis'), path: '/inventory/analysis', icon: Activity },
+            { label: t('nav.shortages'), path: '/shortages', icon: AlertTriangle }
         ]
     },
     {
         key: 'storage_mgmt',
-        label: 'إدارة المخازن',
+        label: t('nav.storage'),
         icon: WarehouseIcon,
         perm: 'MANAGE_WAREHOUSES',
         roles: ['ADMIN'],
         children: [
-            { label: 'تعريف المخازن', path: '/warehouses', icon: WarehouseIcon },
-            { label: 'جرد المخزن', path: '/stock-take', icon: ClipboardCheck }
+            { label: t('ware.title'), path: '/warehouses', icon: WarehouseIcon },
+            { label: t('stock.inventory_count'), path: '/stock-take', icon: ClipboardCheck }
         ]
     },
-    { label: 'قائمة العملاء', path: '/customers', icon: NAV_ITEMS[4].icon, perm: 'MANAGE_CUSTOMERS', roles: ['ADMIN', 'REP', 'TELESALES'] },
-    { label: 'قائمة الموردين', path: '/suppliers', icon: Users, perm: 'MANAGE_SUPPLIERS', roles: ['ADMIN'] },
+    { label: t('cust.title'), path: '/customers', icon: NAV_ITEMS[4].icon, perm: 'MANAGE_CUSTOMERS', roles: ['ADMIN', 'REP', 'TELESALES'] },
+    { label: t('supp.title'), path: '/suppliers', icon: Users, perm: 'MANAGE_SUPPLIERS', roles: ['ADMIN'] },
     {
         key: 'user_mgmt',
-        label: 'إدارة الموظفين',
+        label: t('nav.user_management'),
         icon: Users,
         perm: 'MANAGE_REPS', 
         roles: ['ADMIN'],
         children: [
-            { label: 'سجل المندوبين', path: '/representatives', icon: User },
-            { label: 'فريق المبيعات', path: '/telesales', icon: Phone }
+            { label: t('rep.title'), path: '/representatives', icon: User },
+            { label: t('nav.telesales'), path: '/telesales', icon: Phone }
         ]
     },
     {
         key: 'cash_mgmt',
-        label: 'الخزينة والحسابات',
+        label: t('nav.cash'),
         icon: NAV_ITEMS[5].icon,
         perm: 'MANAGE_CASH',
         roles: ['ADMIN', 'REP', 'TELESALES'],
         children: [
-            { label: 'حركة الخزينة', path: '/cash', icon: NAV_ITEMS[5].icon },
+            { label: 'الخزينة (حركات)', path: '/cash', icon: NAV_ITEMS[5].icon },
             { label: 'تقفيل اليومية', path: '/daily-closing', icon: ClipboardList }
         ]
     },
-    { label: 'تقارير تحليلية', path: '/reports', icon: TrendingUp, perm: 'VIEW_REPORTS', roles: ['ADMIN'] },
-    { label: 'الإعدادات العامة', path: '/settings', icon: NAV_ITEMS[6].icon, perm: 'MANAGE_SETTINGS', roles: ['ADMIN'] },
+    { label: t('nav.reports'), path: '/reports', icon: TrendingUp, perm: 'VIEW_REPORTS', roles: ['ADMIN'] },
+    { label: t('nav.settings'), path: '/settings', icon: NAV_ITEMS[6].icon, perm: 'MANAGE_SETTINGS', roles: ['ADMIN'] },
   ];
 
   return (
@@ -247,7 +247,7 @@ export default function Layout() {
              </div>
           </div>
           <button onClick={handleLogout} className="flex items-center w-full px-4 py-2 text-sm font-bold text-red-400 rounded-lg hover:bg-red-950/30 transition-colors">
-            <LogOut className="w-5 h-5 ltr:mr-3 rtl:ml-3" />تسجيل الخروج
+            <LogOut className="w-5 h-5 ltr:mr-3 rtl:ml-3" />{t('nav.logout') || 'تسجيل الخروج'}
           </button>
         </div>
       </aside>
@@ -286,7 +286,7 @@ export default function Layout() {
                 readOnly
                 onClick={() => setIsCommandOpen(true)}
                 className={`w-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none cursor-pointer transition-colors font-medium ${isPreviousDayUnclosed ? 'bg-white/10 border-white/20 text-white placeholder-white/60 hover:bg-white/20' : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100'}`}
-                placeholder="البحث السريع (Ctrl+K)"
+                placeholder={`${t('cust.search')} (Ctrl+K)`}
               />
             </div>
           </div>

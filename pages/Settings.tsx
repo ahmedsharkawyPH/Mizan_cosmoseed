@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { authService, PERMISSIONS } from '../services/auth';
@@ -8,7 +7,7 @@ import {
   Users, Plus, Edit2, Trash2, X, Shield, Key, CheckSquare, 
   Printer, Upload, Image as ImageIcon, Database, Download, 
   AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, 
-  Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck, Globe, Wifi, WifiOff, Smartphone
+  Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck, Globe, Wifi, WifiOff
 } from 'lucide-react';
 import { t } from '../utils/t';
 import { PendingAdjustment } from '../types';
@@ -330,20 +329,19 @@ export default function Settings() {
                 <h3 className="font-bold text-gray-800 flex items-center gap-2 border-b pb-2"><Printer className="w-5 h-5 text-blue-600" /> {t('set.tab_printer')}</h3>
                 <div className="space-y-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">{t('set.paper_size')}</label>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {[
                             { id: 'A4', label: t('set.paper_a4'), icon: FileType },
                             { id: 'A5', label: t('set.paper_a5'), icon: Layout },
-                            { id: 'THERMAL', label: t('set.paper_thermal'), icon: Monitor },
-                            { id: 'THERMAL_58', label: t('set.paper_thermal_58'), icon: Smartphone }
+                            { id: 'THERMAL', label: t('set.paper_thermal'), icon: Monitor }
                         ].map((paper) => (
                             <div 
                                 key={paper.id}
                                 onClick={() => setSettings({...settings, printerPaperSize: paper.id as any})}
-                                className={`flex flex-col items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all ${settings.printerPaperSize === paper.id ? 'border-blue-600 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'}`}
+                                className={`flex items-center gap-4 p-4 border-2 rounded-xl cursor-pointer transition-all ${settings.printerPaperSize === paper.id ? 'border-blue-600 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'}`}
                             >
-                                <div className={`p-3 rounded-lg ${settings.printerPaperSize === paper.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}><paper.icon className="w-6 h-6" /></div>
-                                <span className="font-bold text-xs text-gray-700 text-center">{paper.label}</span>
+                                <div className={`p-2 rounded-lg ${settings.printerPaperSize === paper.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}><paper.icon className="w-5 h-5" /></div>
+                                <span className="font-bold text-sm text-gray-700">{paper.label}</span>
                             </div>
                         ))}
                     </div>

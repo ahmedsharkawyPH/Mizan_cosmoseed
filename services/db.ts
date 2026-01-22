@@ -36,7 +36,7 @@ export interface SystemSettings {
   currency: string;
   language: string;
   invoiceTemplate: '1' | '2' | '3';
-  printerPaperSize: 'A4' | 'A5' | 'THERMAL' | 'THERMAL_58';
+  printerPaperSize: 'A4' | 'A5' | 'THERMAL';
   expenseCategories: string[];
   distributionLines: string[];
   lowStockThreshold: number;
