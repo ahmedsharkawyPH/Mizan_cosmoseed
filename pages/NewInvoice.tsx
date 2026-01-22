@@ -33,7 +33,7 @@ export default function NewInvoice() {
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [showLastCost, setShowLastCost] = useState(false);
 
-  // حالة تعديل الكمية في الجدول
+  // حالة تعديل الكمية في الجدول1
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [tempQty, setTempQty] = useState<number>(0);
 
