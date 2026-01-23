@@ -7,6 +7,8 @@ import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, Ar
 import { useNavigate, useParams } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 interface InvoiceSettings {
     enableManualPrice: boolean;
@@ -238,6 +240,29 @@ export default function NewInvoice() {
     }
   };
 
+  const handleConvertInvoice = async () => {
+      if (!id) return;
+      if (window.confirm("هل أنت متأكد من تحويل هذه الفاتورة من بيع إلى مرتجع؟\nسيتم عكس أثر المبيعات على المخزون وحساب العميل فوراً.")) {
+          setIsSubmitting(true);
+          try {
+              const res = await db.convertInvoiceToReturn(id);
+              if (res.success) {
+                  toast.success("تم تحويل الفاتورة إلى مرتجع بنجاح");
+                  setIsReturnMode(true);
+                  // Refresh data
+                  setCustomers(db.getCustomers());
+                  setProducts(db.getProductsWithBatches());
+              } else {
+                  toast.error(res.message);
+              }
+          } catch (err: any) {
+              toast.error(err.message || "حدث خطأ أثناء التحويل");
+          } finally {
+              setIsSubmitting(false);
+          }
+      }
+  };
+
   // جلب رصيد العميل الحالي من قاعدة البيانات مباشرة لضمان الدقة
   const liveCustomerBalance = useMemo(() => {
     if (!selectedCustomer) return 0;
@@ -268,6 +293,19 @@ export default function NewInvoice() {
                 جاري جلب كامل الأصناف...
               </div>
             )}
+            
+            {/* Convert Invoice Button */}
+            {id && !isReturnMode && (
+              <button 
+                onClick={handleConvertInvoice} 
+                disabled={isSubmitting}
+                className="bg-[#f59e0b] hover:bg-[#d97706] text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4" />
+                تحويل الفاتورة (لمرتجع)
+              </button>
+            )}
+
             <button onClick={() => setShowSettings(true)} className="p-2 text-slate-500 hover:text-blue-600"><SettingsIcon className="w-5 h-5" /></button>
           </div>
       </div>
