@@ -481,34 +481,180 @@ class DatabaseService {
     const invoiceId = `INV${Date.now()}`;
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
+    
     const numericInvoices = this.invoices.map(inv => parseInt(inv.invoice_number)).filter(num => !isNaN(num) && num >= 10000);
     const nextInvoiceNumber = numericInvoices.length > 0 ? Math.max(...numericInvoices) + 1 : 10001;
+    
     const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
+    const finalBalance = prevBalance + (isReturn ? -netTotal : netTotal) - cashPaid;
+
     const invoice: Invoice = { 
-        id: invoiceId, invoice_number: nextInvoiceNumber.toString(), customer_id: customerId, created_by: user?.id, created_by_name: user?.name, date: new Date().toISOString(), total_before_discount: netTotal + addDisc, total_discount: 0, additional_discount: addDisc, net_total: netTotal, previous_balance: prevBalance, final_balance: prevBalance + (isReturn ? -netTotal : netTotal) - cashPaid, payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), items, type: isReturn ? 'RETURN' : 'SALE' 
+        id: invoiceId, 
+        invoice_number: nextInvoiceNumber.toString(), 
+        customer_id: customerId, 
+        created_by: user?.id, 
+        created_by_name: user?.name, 
+        date: new Date().toISOString(), 
+        total_before_discount: netTotal + addDisc, 
+        total_discount: 0, 
+        additional_discount: addDisc, 
+        net_total: netTotal, 
+        previous_balance: prevBalance, 
+        final_balance: finalBalance, 
+        payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
+        items, 
+        type: isReturn ? 'RETURN' : 'SALE' 
     };
-    this.invoices.push(invoice);
-    if (cashPaid > 0) { 
-        await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` }, false); 
+
+    // Prepare Cash Transaction if any
+    let cashTx = null;
+    if (cashPaid > 0) {
+        cashTx = {
+            id: `TX${Date.now()}`,
+            ref_number: `PAY-${invoice.invoice_number}`,
+            type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
+            category: 'CUSTOMER_PAYMENT',
+            reference_id: customerId,
+            related_name: customer?.name || 'Unknown',
+            amount: cashPaid,
+            date: invoice.date,
+            notes: `Payment for INV#${invoice.invoice_number}`
+        };
     }
+
+    // Atomic Operation via Supabase RPC
+    if (isSupabaseConfigured) {
+        const { error } = await supabase.rpc('process_sales_invoice', {
+            p_invoice: invoice,
+            p_items: items,
+            p_cash_tx: cashTx
+        });
+        
+        if (error) {
+            console.error("Atomic Sales Error:", error.message);
+            return { success: false, message: `DB Transaction Failed: ${error.message}` };
+        }
+    }
+
+    // Update Local State for UI responsiveness
+    this.invoices.push(invoice);
+    if (cashTx) {
+        this.cashTransactions.push(cashTx as CashTransaction);
+        if (cashTx.type === CashTransactionType.RECEIPT) this._cashBalance += cashTx.amount;
+        else this._cashBalance -= cashTx.amount;
+    }
+    
     for (const item of items) {
         if (item.batch) {
-            const batch = this.batches.find(b => b.id === item.batch?.id);
-            if (batch) {
+            const bIdx = this.batches.findIndex(b => b.id === item.batch?.id);
+            if (bIdx !== -1) {
                 const deduction = item.quantity + (item.bonus_quantity || 0);
-                batch.quantity -= (isReturn ? -deduction : deduction);
-                if (isSupabaseConfigured) await supabase.from('batches').update({ quantity: batch.quantity }).eq('id', batch.id);
-                this.stockMovements.push({ id: `SM${Date.now()}`, date: new Date().toISOString(), type: isReturn ? 'RETURN_IN' : 'SALE', product_id: item.product.id, batch_number: batch.batch_number, warehouse_id: batch.warehouse_id, quantity: isReturn ? deduction : -deduction, reference_id: invoiceId });
+                this.batches[bIdx].quantity -= (isReturn ? -deduction : deduction);
+                this.stockMovements.push({ 
+                    id: `SM${Date.now()}`, 
+                    date: invoice.date, 
+                    type: isReturn ? 'RETURN_IN' : 'SALE', 
+                    product_id: item.product.id, 
+                    batch_number: this.batches[bIdx].batch_number, 
+                    warehouse_id: this.batches[bIdx].warehouse_id, 
+                    quantity: isReturn ? deduction : -deduction, 
+                    reference_id: invoiceId 
+                });
             }
         }
     }
-    if (isSupabaseConfigured) {
-        await supabase.from('invoices').insert(invoice);
-        if (customer) await supabase.from('customers').update({ current_balance: invoice.final_balance }).eq('id', customer.id);
-    }
-    if (customer) customer.current_balance = invoice.final_balance;
+
+    if (customer) customer.current_balance = finalBalance;
     this.saveToLocalCache();
     this.rebuildIndexes();
+    return { success: true, message: 'Done', id: invoiceId };
+  }
+
+  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false) {
+    const invoiceId = `PUR${Date.now()}`;
+    const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
+    const date = new Date().toISOString();
+    
+    const invoice: PurchaseInvoice = { 
+        id: invoiceId, 
+        invoice_number: `P-${Date.now()}`, 
+        supplier_id: supplierId, 
+        date: date, 
+        total_amount: total, 
+        paid_amount: cashPaid, 
+        type: isReturn ? 'RETURN' : 'PURCHASE', 
+        items 
+    };
+
+    let cashTx = null;
+    if (cashPaid > 0) {
+        cashTx = {
+            id: `TX${Date.now()}`,
+            type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
+            category: 'SUPPLIER_PAYMENT',
+            reference_id: supplierId,
+            amount: cashPaid,
+            date: date,
+            notes: `Payment for PUR#${invoice.invoice_number}`
+        };
+    }
+
+    // Atomic Operation via Supabase RPC
+    if (isSupabaseConfigured) {
+        const { error } = await supabase.rpc('process_purchase_invoice', {
+            p_invoice: invoice,
+            p_items: items,
+            p_cash_tx: cashTx
+        });
+        
+        if (error) {
+            console.error("Atomic Purchase Error:", error.message);
+            return { success: false, message: `DB Transaction Failed: ${error.message}` };
+        }
+    }
+
+    // Local Updates
+    this.purchaseInvoices.push(invoice);
+    if (cashTx) {
+        this.cashTransactions.push(cashTx as CashTransaction);
+        if (cashTx.type === CashTransactionType.RECEIPT) this._cashBalance += cashTx.amount;
+        else this._cashBalance -= cashTx.amount;
+    }
+
+    const supplier = this.suppliers.find(s => s.id === supplierId);
+    if (supplier) {
+        const adjustment = isReturn ? -total : total;
+        supplier.current_balance += (adjustment - cashPaid);
+    }
+
+    for (const item of items) {
+        const product = this.products.find(p => p.id === item.product_id);
+        if (product && !isReturn) {
+            product.purchase_price = item.cost_price;
+            product.selling_price = item.selling_price;
+        }
+        let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
+        if (batch) {
+            batch.quantity += (isReturn ? -item.quantity : item.quantity);
+            if (!isReturn) { batch.purchase_price = item.cost_price; batch.selling_price = item.selling_price; }
+        } else if (!isReturn) {
+            this.batches.push({ 
+                id: `B${Date.now()}-${Math.random().toString(36).substr(2, 4)}`, 
+                product_id: item.product_id, 
+                warehouse_id: item.warehouse_id, 
+                batch_number: item.batch_number, 
+                quantity: item.quantity, 
+                purchase_price: item.cost_price, 
+                selling_price: item.selling_price, 
+                expiry_date: item.expiry_date, 
+                status: BatchStatus.ACTIVE 
+            });
+        }
+        this.stockMovements.push({ id: `SM${Date.now()}`, date: date, type: isReturn ? 'RETURN_OUT' : 'PURCHASE', product_id: item.product_id, batch_number: item.batch_number, warehouse_id: item.warehouse_id, quantity: isReturn ? -item.quantity : item.quantity, reference_id: invoiceId });
+    }
+
+    this.rebuildIndexes();
+    this.saveToLocalCache();
     return { success: true, message: 'Done', id: invoiceId };
   }
 
@@ -620,43 +766,6 @@ class DatabaseService {
     return { success: true, message: 'Payment recorded' };
   }
   
-  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false) {
-    const id = `PUR${Date.now()}`;
-    const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
-    const inv: PurchaseInvoice = { id, invoice_number: `P-${Date.now()}`, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
-    for (const item of items) {
-        const product = this.products.find(p => p.id === item.product_id);
-        if (product && !isReturn) {
-            product.purchase_price = item.cost_price;
-            product.selling_price = item.selling_price;
-            if (isSupabaseConfigured) await supabase.from('products').update({ purchase_price: item.cost_price, selling_price: item.selling_price }).eq('id', product.id);
-        }
-        let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && (item.batch_number !== 'AUTO' ? b.batch_number === item.batch_number : true));
-        if (batch) {
-            batch.quantity += (isReturn ? -item.quantity : item.quantity);
-            if (!isReturn) { batch.purchase_price = item.cost_price; batch.selling_price = item.selling_price; }
-            if (isSupabaseConfigured) await supabase.from('batches').update({ quantity: batch.quantity, purchase_price: batch.purchase_price, selling_price: batch.selling_price }).eq('id', batch.id);
-        } else if (!isReturn) {
-            const newBatch: Batch = { id: `B${Date.now()}-${Math.random().toString(36).substr(2, 4)}`, product_id: item.product_id, warehouse_id: item.warehouse_id, batch_number: item.batch_number === 'AUTO' ? `BN-${Date.now().toString().slice(-4)}` : item.batch_number, quantity: item.quantity, purchase_price: item.cost_price, selling_price: item.selling_price, expiry_date: item.expiry_date, status: BatchStatus.ACTIVE };
-            this.batches.push(newBatch);
-            if (isSupabaseConfigured) await supabase.from('batches').insert(newBatch);
-        }
-        this.stockMovements.push({ id: `SM${Date.now()}`, date: new Date().toISOString(), type: isReturn ? 'RETURN_OUT' : 'PURCHASE', product_id: item.product_id, batch_number: item.batch_number, warehouse_id: item.warehouse_id, quantity: isReturn ? -item.quantity : item.quantity, reference_id: id });
-    }
-    this.purchaseInvoices.push(inv);
-    if (cashPaid > 0) await this.addCashTransaction({ type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE, category: 'SUPPLIER_PAYMENT', reference_id: supplierId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for PUR#${inv.invoice_number}` }, false);
-    const supplier = this.suppliers.find(s => s.id === supplierId);
-    if (supplier) {
-        const adjustment = isReturn ? -total : total;
-        supplier.current_balance += (adjustment - cashPaid);
-        if (isSupabaseConfigured) await supabase.from('suppliers').update({ current_balance: supplier.current_balance }).eq('id', supplierId);
-    }
-    if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(inv);
-    this.rebuildIndexes();
-    this.saveToLocalCache();
-    return { success: true, message: 'Done', id };
-  }
-
   async createPurchaseOrder(supplierId: string, items: any[]) {
     const order: PurchaseOrder = { id: `PO${Date.now()}`, order_number: `PO-${Date.now()}`, supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items };
     this.purchaseOrders.push(order);
