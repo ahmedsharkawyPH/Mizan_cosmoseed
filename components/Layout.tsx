@@ -138,6 +138,7 @@ export default function Layout() {
         children: [
             { label: t('stock.purchase'), path: '/purchases/new', icon: PlusCircle },
             { label: t('pur.list_title'), path: '/purchases/list', icon: FileText },
+            { label: 'مرتجع مشتريات', path: '/purchases/return-from-invoice', icon: RotateCcw },
             { label: t('stock.order'), path: '/purchase-orders', icon: Truck }
         ]
     },

@@ -31,6 +31,7 @@ const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Login = lazy(() => import('./pages/Login'));
 const SalesReturn = lazy(() => import('./pages/SalesReturn'));
+const PurchaseReturn = lazy(() => import('./pages/PurchaseReturn'));
 
 const PageLoader = () => (
     <div className="h-full w-full flex flex-col items-center justify-center p-20 gap-4">
@@ -93,6 +94,7 @@ function App() {
                   
                   <Route path="purchases/new" element={<PurchaseInvoice type="PURCHASE" />} />
                   <Route path="purchases/return" element={<PurchaseInvoice type="RETURN" />} />
+                  <Route path="purchases/return-from-invoice" element={<PurchaseReturn />} />
                   <Route path="purchases/list" element={<PurchaseList />} />
                   <Route path="purchase-orders" element={<PurchaseOrders />} />
                   
