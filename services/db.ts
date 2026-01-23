@@ -133,7 +133,6 @@ class Database {
       .reduce((sum, t) => sum + t.amount, 0);
   }
 
-  // Fix: Implemented createInvoice with atomic sync to Supabase
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `INV${Date.now()}`;
     const customer = this.customers.find(c => c.id === customerId);
@@ -214,8 +213,7 @@ class Database {
     return { success: true, message: 'تم الحفظ بنجاح', id: invoiceId };
   }
 
-  // Fix: Implemented createPurchaseInvoice with atomic sync to Supabase
-  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false) {
+  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `PUR${Date.now()}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const date = new Date().toISOString();
@@ -294,24 +292,22 @@ class Database {
     return { success: true, message: 'تم تسجيل المشتريات', id: invoiceId };
   }
 
-  // Update an existing invoice
-  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number) {
+  // Updated to include id in the return object to fix build error
+  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message?: string; id?: string }> {
       const idx = this.invoices.findIndex(i => i.id === id);
       if (idx !== -1) {
           this.invoices[idx] = { ...this.invoices[idx], customer_id: customerId, items };
           this.saveToLocalCache();
-          return { success: true };
+          return { success: true, id };
       }
-      return { success: false, message: 'Invoice not found' };
+      return { success: false, message: 'Invoice not found', id };
   }
 
-  // Delete an invoice
   async deleteInvoice(id: string) {
     this.invoices = this.invoices.filter(i => i.id !== id);
     this.saveToLocalCache();
   }
 
-  // Add a new product and optionally its first batch
   async addProduct(p: Partial<Product>, b?: Partial<Batch>) {
     const id = `PROD${Date.now()}`;
     const product: Product = { id, name: p.name || '', code: p.code, ...p };
@@ -334,7 +330,6 @@ class Database {
     return id;
   }
 
-  // Update product basic details
   async updateProduct(id: string, data: any) {
     const idx = this.products.findIndex(p => p.id === id);
     if (idx !== -1) {
@@ -343,20 +338,16 @@ class Database {
     }
   }
 
-  // Delete a product and all its batches
   async deleteProduct(id: string) {
     this.products = this.products.filter(p => p.id !== id);
     this.batches = this.batches.filter(b => b.product_id !== id);
     this.saveToLocalCache();
   }
 
-  // Get historical movements for a specific product
   getProductMovements(id: string): StockMovement[] { 
-    // Simplified: in a real app, this would query a dedicated movements table
     return []; 
   }
 
-  // Customer Management
   addCustomer(c: any) {
     const customer: Customer = { 
       id: `CUST${Date.now()}`, code: c.code || `${Date.now()}`, name: c.name, 
@@ -380,7 +371,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // Cash Register Helpers
   getNextTransactionRef(type: CashTransactionType) {
     return `${type === 'RECEIPT' ? 'REC' : 'EXP'}-${Date.now().toString().slice(-6)}`;
   }
@@ -400,7 +390,6 @@ class Database {
     }
   }
 
-  // Supplier Management
   addSupplier(s: any) {
     const supplier: Supplier = { 
       id: `SUPP${Date.now()}`, code: s.code || '', name: s.name, phone: s.phone || '', 
@@ -428,7 +417,6 @@ class Database {
     return { success: false, message: 'Invoice not found' };
   }
 
-  // Purchasing & Inventory Operations
   async createPurchaseOrder(supplierId: string, items: any[]) {
     const order: PurchaseOrder = { 
       id: `PO${Date.now()}`, order_number: `PO-${Date.now().toString().slice(-6)}`, 
@@ -477,7 +465,6 @@ class Database {
     return false;
   }
 
-  // Reports & Summaries
   getDailySummary(date: string) {
     const dayInvoices = this.invoices.filter(i => i.date.startsWith(date));
     const dayTxs = this.cashTransactions.filter(t => t.date.startsWith(date));
@@ -527,7 +514,6 @@ class Database {
     });
   }
 
-  // Backup & Restore
   exportDatabase() { return JSON.stringify({ ...this }); }
   importDatabase(json: string) { 
     try { 
@@ -539,12 +525,10 @@ class Database {
   }
   
   recalculateAllBalances() {
-    // Logic to recalculate all customer/supplier balances from transactions
   }
   
   resetDatabase() { localStorage.clear(); window.location.reload(); }
 
-  // Representative management
   addRepresentative(r: any) {
     this.representatives.push({ id: `REP${Date.now()}`, ...r });
     this.saveToLocalCache();
@@ -561,7 +545,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // Warehouse management
   addWarehouse(name: string) {
     this.warehouses.push({ id: `WH${Date.now()}`, name, is_default: false });
     this.saveToLocalCache();
