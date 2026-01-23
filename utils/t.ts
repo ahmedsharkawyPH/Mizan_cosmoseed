@@ -1,4 +1,3 @@
-
 import { db } from '../services/db';
 
 const translations: Record<string, Record<string, string>> = {
@@ -882,12 +881,13 @@ const translations: Record<string, Record<string, string>> = {
 
 export const t = (key: string): string => {
   const settings = db.getSettings();
-  const lang = settings.language || 'en';
+  const lang = settings.language || 'ar'; // تغيير القيمة الافتراضية هنا أيضاً
   // @ts-ignore
   return translations[lang]?.[key] || key;
 };
 
 export const isRTL = (): boolean => {
   const settings = db.getSettings();
-  return settings.language === 'ar';
+  const lang = settings.language || 'ar';
+  return lang === 'ar';
 };

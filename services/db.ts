@@ -23,9 +23,12 @@ class Database {
   private settings: any = {
       companyName: 'Mizan Online',
       currency: '$',
+      language: 'ar', // اللغة الافتراضية عربية
       lowStockThreshold: 10,
       expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'OTHER'],
-      distributionLines: []
+      distributionLines: [],
+      invoiceTemplate: '1',
+      printerPaperSize: 'A4'
   };
   private dailyClosings: DailyClosing[] = [];
   private pendingAdjustments: PendingAdjustment[] = [];
@@ -95,7 +98,6 @@ class Database {
   }
 
   private rebuildIndexes() {
-    // Placeholder for future index rebuilding logic if needed for performance
   }
 
   // Settings management
@@ -292,7 +294,6 @@ class Database {
     return { success: true, message: 'تم تسجيل المشتريات', id: invoiceId };
   }
 
-  // Updated to include id in the return object to fix build error
   async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message?: string; id?: string }> {
       const idx = this.invoices.findIndex(i => i.id === id);
       if (idx !== -1) {
