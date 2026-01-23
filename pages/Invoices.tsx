@@ -25,9 +25,9 @@ const INVOICE_STYLES = `
     
     .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; margin-bottom: 8px; background: #f8fafc; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0; }
     .table-container { flex-grow: 1; min-height: 380px; }
-    .invoice-table { width: 100%; border-collapse: collapse; font-size: 10px; }
-    .invoice-table th { background-color: #1e293b !important; color: white !important; border: 1px solid #334155; padding: 4px; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; }
-    .invoice-table td { border: 1px solid #cbd5e1; padding: 3px 5px; text-align: center; color: #0f172a; }
+    .invoice-half-container .invoice-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    .invoice-half-container .invoice-table th { background-color: #1e293b !important; color: white !important; border: 1px solid #334155; padding: 4px; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; }
+    .invoice-half-container .invoice-table td { border: 1px solid #cbd5e1; padding: 3px 5px; text-align: center; color: #0f172a; }
     .col-item { text-align: right !important; }
 
     /* منطقة الإجماليات (3 أسطر فقط) */
@@ -286,6 +286,7 @@ const Invoices: React.FC = () => {
                     <th className="px-6 py-4">#</th>
                     <th className="px-6 py-4">التاريخ</th>
                     <th className="px-6 py-4">العميل</th>
+                    <th className="px-6 py-4 text-center">النوع</th>
                     <th className="px-6 py-4">صافي الفاتورة</th>
                     <th className="px-6 py-4">المدفوع</th>
                     <th className="px-6 py-4 text-center">إجراء</th>
@@ -299,6 +300,13 @@ const Invoices: React.FC = () => {
                             <td className="px-6 py-4 font-mono font-medium">{inv.invoice_number}</td>
                             <td className="px-6 py-4">{new Date(inv.date).toLocaleDateString('en-GB')}</td>
                             <td className="px-6 py-4 font-medium">{db.getCustomers().find(c => c.id === inv.customer_id)?.name || 'غير معروف'}</td>
+                            <td className="px-6 py-4 text-center">
+                                {inv.type === 'SALE' ? (
+                                    <span className="font-bold text-emerald-800">مبيعات</span>
+                                ) : (
+                                    <span className="font-bold text-red-600">مرتجع مبيعات</span>
+                                )}
+                            </td>
                             <td className="px-6 py-4 font-bold">{currency}{inv.net_total.toFixed(2)}</td>
                             <td className="px-6 py-4 font-bold text-emerald-600">{currency}{paid.toFixed(2)}</td>
                             <td className="px-6 py-4 text-center">
