@@ -6,7 +6,8 @@ import { ArabicSmartSearch, SEARCH_CONFIG } from '../utils/search';
 import { 
   Search, Package, Filter, X, Zap, Brain, Sparkles,
   Command, Hash, Tag, DollarSign, Percent, Star, PlusCircle,
-  FileSpreadsheet, Loader2, Download, Upload, FileOutput, TrendingUp, AlertCircle, RefreshCw, Wifi, WifiOff, Award, Save, PackagePlus
+  FileSpreadsheet, Loader2, Download, Upload, FileOutput, TrendingUp, AlertCircle, RefreshCw, Wifi, WifiOff, Award, Save, PackagePlus,
+  Edit, Trash2, FileText, ChevronRight, LayoutList, History, ArrowRightLeft, Warehouse as WarehouseIcon
 } from 'lucide-react';
 import { exportFilteredProductsToExcel, readExcelFile, downloadInventoryTemplate } from '../utils/excel';
 // @ts-ignore
@@ -25,8 +26,9 @@ const Inventory: React.FC = () => {
   const [showLowStock, setShowLowStock] = useState(false);
   const [showOutOfStock, setShowOutOfStock] = useState(false);
 
-  // Quick Add State
+  // Quick Add / Edit State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
   const [quickAddForm, setQuickAddForm] = useState({
     name: '',
     code: '',
@@ -35,6 +37,10 @@ const Inventory: React.FC = () => {
     initial_qty: 0,
     warehouse_id: ''
   });
+
+  // Item Card State
+  const [isCardModalOpen, setIsCardModalOpen] = useState(false);
+  const [selectedCardProduct, setSelectedCardProduct] = useState<any>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<any>(null);
@@ -125,7 +131,6 @@ const Inventory: React.FC = () => {
         const data = await readExcelFile<any>(e.target.files[0]);
         let count = 0;
         for (const item of data) {
-          // Mapping excel columns to addProduct
           await db.addProduct(
             { code: item.code || item['كود الصنف'], name: item.name || item['اسم الصنف'] },
             { 
@@ -153,31 +158,70 @@ const Inventory: React.FC = () => {
   const handleQuickAdd = async () => {
     if (!quickAddForm.name) return toast.error("اسم الصنف مطلوب");
     
-    let finalCode = quickAddForm.code;
-    if (!finalCode) {
-      const numericCodes = products.map(p => parseInt(p.code)).filter(c => !isNaN(c));
-      finalCode = (numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 1001).toString();
-    }
-
-    try {
-      await db.addProduct(
-        { code: finalCode, name: quickAddForm.name },
-        {
-          quantity: quickAddForm.initial_qty,
-          purchase_price: quickAddForm.purchase_price,
-          selling_price: quickAddForm.selling_price,
-          batch_number: 'OPENING',
-          expiry_date: '2099-12-31',
-          warehouse_id: quickAddForm.warehouse_id || warehouses.find(w => w.is_default)?.id || warehouses[0]?.id
+    if (editingProduct) {
+        await db.updateProduct(editingProduct.id, {
+            name: quickAddForm.name,
+            code: quickAddForm.code,
+            purchase_price: quickAddForm.purchase_price,
+            selling_price: quickAddForm.selling_price
+        });
+        toast.success("تم تحديث الصنف بنجاح");
+    } else {
+        let finalCode = quickAddForm.code;
+        if (!finalCode) {
+          const numericCodes = products.map(p => parseInt(p.code)).filter(c => !isNaN(c));
+          finalCode = (numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 1001).toString();
         }
-      );
-      toast.success("تمت إضافة الصنف بنجاح");
-      loadProducts();
-      setIsAddModalOpen(false);
-      setQuickAddForm({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
-    } catch (err) {
-      toast.error("حدث خطأ أثناء الحفظ");
+
+        try {
+          await db.addProduct(
+            { code: finalCode, name: quickAddForm.name },
+            {
+              quantity: quickAddForm.initial_qty,
+              purchase_price: quickAddForm.purchase_price,
+              selling_price: quickAddForm.selling_price,
+              batch_number: 'OPENING',
+              expiry_date: '2099-12-31',
+              warehouse_id: quickAddForm.warehouse_id || warehouses.find(w => w.is_default)?.id || warehouses[0]?.id
+            }
+          );
+          toast.success("تمت إضافة الصنف بنجاح");
+        } catch (err) {
+          toast.error("حدث خطأ أثناء الحفظ");
+          return;
+        }
     }
+    
+    loadProducts();
+    setIsAddModalOpen(false);
+    setEditingProduct(null);
+    setQuickAddForm({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
+  };
+
+  const handleEditProduct = (product: any) => {
+      setEditingProduct(product);
+      setQuickAddForm({
+          name: product.name,
+          code: product.code || '',
+          purchase_price: product.purchase_price || 0,
+          selling_price: product.selling_price || 0,
+          initial_qty: 0,
+          warehouse_id: ''
+      });
+      setIsAddModalOpen(true);
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+      if (confirm("هل أنت متأكد من حذف هذا الصنف نهائياً؟ سيؤدي ذلك لحذف كافة التشغيلات المرتبطة به.")) {
+          await db.deleteProduct(id);
+          toast.success("تم حذف الصنف بنجاح");
+          loadProducts();
+      }
+  };
+
+  const handleViewCard = (product: any) => {
+      setSelectedCardProduct(product);
+      setIsCardModalOpen(true);
   };
 
   const displayedProducts = useMemo(() => {
@@ -216,7 +260,7 @@ const Inventory: React.FC = () => {
              <button onClick={() => setIsIEOpen(true)} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all">
                <FileSpreadsheet className="w-5 h-5" /> استيراد وتصدير
              </button>
-             <button onClick={() => setIsAddModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
+             <button onClick={() => { setEditingProduct(null); setIsAddModalOpen(true); setQuickAddForm({name:'', code:'', purchase_price:0, selling_price:0, initial_qty:0, warehouse_id:''}); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all">
                <PlusCircle className="w-5 h-5" /> {t('stock.new')}
              </button>
            </div>
@@ -254,6 +298,7 @@ const Inventory: React.FC = () => {
                   <th className="px-6 py-4 text-center">سعر التكلفة</th>
                   <th className="px-6 py-4 text-center">سعر البيع</th>
                   <th className="px-6 py-4 text-center">الرصيد</th>
+                  <th className="px-6 py-4 text-center">إجراء</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -264,6 +309,9 @@ const Inventory: React.FC = () => {
                     searchQuery={searchQuery} 
                     currency={currency} 
                     bestSupplier={bestSuppliersMap[product.id] || '---'}
+                    onEdit={handleEditProduct}
+                    onDelete={handleDeleteProduct}
+                    onViewCard={handleViewCard}
                   />
                 ))}
               </tbody>
@@ -279,13 +327,14 @@ const Inventory: React.FC = () => {
         </div>
       </div>
 
-      {/* QUICK ADD MODAL */}
+      {/* QUICK ADD / EDIT MODAL */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div className="bg-slate-50 p-6 border-b flex justify-between items-center">
               <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                <PackagePlus className="w-6 h-6 text-blue-600" /> إضافة صنف سريع
+                {editingProduct ? <Edit className="w-6 h-6 text-blue-600" /> : <PackagePlus className="w-6 h-6 text-blue-600" />}
+                {editingProduct ? 'تعديل بيانات صنف' : 'إضافة صنف سريع'}
               </h3>
               <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
                 <X className="w-6 h-6 text-slate-500" />
@@ -301,12 +350,15 @@ const Inventory: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">كود الصنف (اختياري)</label>
                   <input className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-mono" value={quickAddForm.code} onChange={e => setQuickAddForm({...quickAddForm, code: e.target.value})} placeholder="توليد تلقائي" />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">المخزن</label>
-                  <select className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.warehouse_id} onChange={e => setQuickAddForm({...quickAddForm, warehouse_id: e.target.value})}>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                  </select>
-                </div>
+                {!editingProduct && (
+                    <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">المخزن</label>
+                    <select className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.warehouse_id} onChange={e => setQuickAddForm({...quickAddForm, warehouse_id: e.target.value})}>
+                        <option value="">اختر المخزن</option>
+                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                    </div>
+                )}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر الشراء ({currency})</label>
                   <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-red-600" value={quickAddForm.purchase_price || ''} onChange={e => setQuickAddForm({...quickAddForm, purchase_price: parseFloat(e.target.value) || 0})} />
@@ -315,17 +367,104 @@ const Inventory: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر البيع ({currency})</label>
                   <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-blue-600" value={quickAddForm.selling_price || ''} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
                 </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">الكمية الافتتاحية (الرصيد الحالي)</label>
-                  <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-black text-center text-2xl" value={quickAddForm.initial_qty || ''} onChange={e => setQuickAddForm({...quickAddForm, initial_qty: parseFloat(e.target.value) || 0})} />
-                </div>
+                {!editingProduct && (
+                    <div className="col-span-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">الكمية الافتتاحية (الرصيد الحالي)</label>
+                    <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-black text-center text-2xl" value={quickAddForm.initial_qty || ''} onChange={e => setQuickAddForm({...quickAddForm, initial_qty: parseFloat(e.target.value) || 0})} />
+                    </div>
+                )}
               </div>
               <button onClick={handleQuickAdd} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
-                <Save className="w-5 h-5" /> حفظ الصنف الجديد
+                <Save className="w-5 h-5" /> {editingProduct ? 'تحديث بيانات الصنف' : 'حفظ الصنف الجديد'}
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ITEM CARD MODAL */}
+      {isCardModalOpen && selectedCardProduct && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4 animate-in zoom-in duration-200">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
+                  <div className="bg-slate-900 text-white p-6 flex justify-between items-center shrink-0">
+                      <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/10">
+                              <FileText className="w-6 h-6 text-blue-400" />
+                          </div>
+                          <div>
+                              <h3 className="text-xl font-black">{selectedCardProduct.name}</h3>
+                              <p className="text-slate-400 text-xs font-mono">#{selectedCardProduct.code}</p>
+                          </div>
+                      </div>
+                      <button onClick={() => setIsCardModalOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
+                          <X className="w-6 h-6" />
+                      </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                      {/* Warehouse Stocks */}
+                      <div>
+                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                              <WarehouseIcon className="w-4 h-4" /> الأرصدة الحالية في المخازن
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              {warehouses.map(w => {
+                                  const qty = selectedCardProduct.batches.filter((b:any) => b.warehouse_id === w.id).reduce((s:number, b:any) => s + b.quantity, 0);
+                                  return (
+                                      <div key={w.id} className="p-4 rounded-2xl border-2 border-slate-100 flex justify-between items-center group hover:border-blue-100 hover:bg-blue-50/30 transition-all">
+                                          <span className="font-bold text-slate-600">{w.name}</span>
+                                          <span className={`font-black text-lg ${qty > 0 ? 'text-blue-600' : 'text-slate-300'}`}>{qty}</span>
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      </div>
+
+                      {/* Movement History */}
+                      <div>
+                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                              <History className="w-4 h-4" /> سجل حركات الصنف (الوارد والصادر)
+                          </h4>
+                          <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
+                              <table className="w-full text-xs text-right">
+                                  <thead className="bg-white border-b border-slate-200 text-slate-500 font-black uppercase">
+                                      <tr>
+                                          <th className="p-4">التاريخ</th>
+                                          <th className="p-4">نوع الحركة</th>
+                                          <th className="p-4 text-center">الكمية</th>
+                                          <th className="p-4">المخزن</th>
+                                          <th className="p-4">المرجع</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-200">
+                                      {db.getProductMovements(selectedCardProduct.id).map((m:any) => (
+                                          <tr key={m.id} className="hover:bg-white transition-colors">
+                                              <td className="p-4 text-slate-500 font-mono">{new Date(m.date).toLocaleDateString()}</td>
+                                              <td className="p-4">
+                                                  <span className={`inline-flex items-center gap-1.5 font-bold ${m.quantity > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                      {m.quantity > 0 ? <ArrowRightLeft className="w-3 h-3 rotate-45" /> : <ArrowRightLeft className="w-3 h-3 -rotate-45" />}
+                                                      {t(`stock.movement.${m.type}`) || m.type}
+                                                  </span>
+                                              </td>
+                                              <td className="p-4 text-center font-black">{Math.abs(m.quantity)}</td>
+                                              <td className="p-4 font-bold text-slate-600">{warehouses.find(w => w.id === m.warehouse_id)?.name || '---'}</td>
+                                              <td className="p-4 text-slate-400 font-mono">{m.reference_id || '---'}</td>
+                                          </tr>
+                                      ))}
+                                      {db.getProductMovements(selectedCardProduct.id).length === 0 && (
+                                          <tr><td colSpan={5} className="p-10 text-center text-slate-300 font-bold">لا يوجد حركات مسجلة لهذا الصنف</td></tr>
+                                      )}
+                                  </tbody>
+                              </table>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end gap-3">
+                      <button onClick={() => setIsCardModalOpen(false)} className="px-6 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-all">إغلاق</button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* IMPORT/EXPORT MODAL */}
@@ -379,7 +518,7 @@ const Inventory: React.FC = () => {
   );
 };
 
-const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier }: { product: any; searchQuery: string; currency: string; bestSupplier: string }) => {
+const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier, onEdit, onDelete, onViewCard }: { product: any; searchQuery: string; currency: string; bestSupplier: string; onEdit: (p:any)=>void; onDelete: (id:string)=>void; onViewCard: (p:any)=>void; }) => {
   const totalQty = product.batches?.reduce((sum: number, b: any) => sum + (b.quantity || 0), 0) || 0;
   
   const costPrice = product.batches && product.batches.length > 0 
@@ -425,6 +564,31 @@ const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier }:
         <span className={`inline-flex items-center justify-center min-w-[40px] px-2 py-1 rounded-lg font-black text-sm ${totalQty <= 0 ? 'bg-red-50 text-red-600 border border-red-100' : totalQty < 10 ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}>
           {totalQty}
         </span>
+      </td>
+      <td className="px-6 py-4 text-center">
+          <div className="flex justify-center gap-2">
+              <button 
+                onClick={() => onViewCard(product)}
+                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                title="كارت الصنف"
+              >
+                  <FileText className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => onEdit(product)}
+                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
+                title="تعديل"
+              >
+                  <Edit className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => onDelete(product.id)}
+                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                title="حذف"
+              >
+                  <Trash2 className="w-4 h-4" />
+              </button>
+          </div>
       </td>
     </tr>
   );

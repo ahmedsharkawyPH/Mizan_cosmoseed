@@ -234,15 +234,10 @@ class DatabaseService {
       }, 0);
   }
 
-  /**
-   * دالة لإعادة احتساب الأرصدة لكافة العملاء والموردين وتحديث قاعدة البيانات
-   * مفيدة جداً للتأكد من أن حقل current_balance في الجدول يطابق الحقيقة
-   */
   async recalculateAllBalances() {
     const toastId = toast.loading("جاري إعادة احتساب الأرصدة ومزامنة قاعدة البيانات...");
     
     try {
-        // 1. العملاء
         for (const customer of this.customers) {
             const cInvoices = this.invoices.filter(i => i.customer_id === customer.id);
             const cPayments = this.cashTransactions.filter(t => t.reference_id === customer.id && t.category === 'CUSTOMER_PAYMENT');
@@ -260,7 +255,6 @@ class DatabaseService {
             }
         }
 
-        // 2. الموردين
         for (const supplier of this.suppliers) {
             const sPurchases = this.purchaseInvoices.filter(i => i.supplier_id === supplier.id);
             const sPayments = this.cashTransactions.filter(t => t.reference_id === supplier.id && t.category === 'SUPPLIER_PAYMENT');
@@ -282,7 +276,7 @@ class DatabaseService {
         toast.success("تمت مزامنة كافة الأرصدة في قاعدة البيانات بنجاح", { id: toastId });
         return true;
     } catch (err) {
-        toast.error("فشلت عملية المزامنة", { id: toastId });
+        toast.error("فشل عملية المزامنة", { id: toastId });
         return false;
     }
   }
@@ -416,12 +410,10 @@ class DatabaseService {
       
       if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(newTx);
 
-      // تحديث رصيد الحساب (عميل أو مورد) في السحابة إذا لزم الأمر
       if (updateAccountBalance && tx.reference_id) {
           if (tx.category === 'CUSTOMER_PAYMENT') {
               const customer = this.customers.find(c => c.id === tx.reference_id);
               if (customer) {
-                  // القبض يقلل المديونية، الصرف يزيد المديونية (استرداد)
                   const adjustment = tx.type === CashTransactionType.RECEIPT ? -tx.amount : tx.amount;
                   customer.current_balance += adjustment;
                   if (isSupabaseConfigured) {
@@ -431,7 +423,6 @@ class DatabaseService {
           } else if (tx.category === 'SUPPLIER_PAYMENT') {
               const supplier = this.suppliers.find(s => s.id === tx.reference_id);
               if (supplier) {
-                  // الصرف (سداد مورد) يقلل المديونية، القبض (مرتجع نقدي) يزيد المديونية
                   const adjustment = tx.type === CashTransactionType.EXPENSE ? -tx.amount : tx.amount;
                   supplier.current_balance += adjustment;
                   if (isSupabaseConfigured) {
@@ -488,77 +479,34 @@ class DatabaseService {
 
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `INV${Date.now()}`;
-    
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
-
-    const numericInvoices = this.invoices
-        .map(inv => parseInt(inv.invoice_number))
-        .filter(num => !isNaN(num) && num >= 10000);
-    
-    const nextInvoiceNumber = numericInvoices.length > 0 
-        ? Math.max(...numericInvoices) + 1 
-        : 10001;
-
+    const numericInvoices = this.invoices.map(inv => parseInt(inv.invoice_number)).filter(num => !isNaN(num) && num >= 10000);
+    const nextInvoiceNumber = numericInvoices.length > 0 ? Math.max(...numericInvoices) + 1 : 10001;
     const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
-    
     const invoice: Invoice = { 
-        id: invoiceId, 
-        invoice_number: nextInvoiceNumber.toString(), 
-        customer_id: customerId, 
-        created_by: user?.id,
-        created_by_name: user?.name,
-        date: new Date().toISOString(), 
-        total_before_discount: netTotal + addDisc, 
-        total_discount: 0, 
-        additional_discount: addDisc, 
-        net_total: netTotal, 
-        previous_balance: prevBalance, 
-        final_balance: prevBalance + (isReturn ? -netTotal : netTotal) - cashPaid, 
-        payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
-        items, 
-        type: isReturn ? 'RETURN' : 'SALE' 
+        id: invoiceId, invoice_number: nextInvoiceNumber.toString(), customer_id: customerId, created_by: user?.id, created_by_name: user?.name, date: new Date().toISOString(), total_before_discount: netTotal + addDisc, total_discount: 0, additional_discount: addDisc, net_total: netTotal, previous_balance: prevBalance, final_balance: prevBalance + (isReturn ? -netTotal : netTotal) - cashPaid, payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), items, type: isReturn ? 'RETURN' : 'SALE' 
     };
-    
     this.invoices.push(invoice);
-    
-    // تسجيل النقدية
     if (cashPaid > 0) { 
-        await this.addCashTransaction({ 
-            type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, 
-            category: 'CUSTOMER_PAYMENT', 
-            reference_id: customerId, 
-            amount: cashPaid, 
-            date: new Date().toISOString(), 
-            notes: `Payment for INV#${invoice.invoice_number}` 
-        }, false); 
+        await this.addCashTransaction({ type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: customerId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for INV#${invoice.invoice_number}` }, false); 
     }
-    
-    // تحديث المخزون في السحابة
     for (const item of items) {
         if (item.batch) {
             const batch = this.batches.find(b => b.id === item.batch?.id);
             if (batch) {
                 const deduction = item.quantity + (item.bonus_quantity || 0);
                 batch.quantity -= (isReturn ? -deduction : deduction);
-                if (isSupabaseConfigured) {
-                    await supabase.from('batches').update({ quantity: batch.quantity }).eq('id', batch.id);
-                }
+                if (isSupabaseConfigured) await supabase.from('batches').update({ quantity: batch.quantity }).eq('id', batch.id);
+                this.stockMovements.push({ id: `SM${Date.now()}`, date: new Date().toISOString(), type: isReturn ? 'RETURN_IN' : 'SALE', product_id: item.product.id, batch_number: batch.batch_number, warehouse_id: batch.warehouse_id, quantity: isReturn ? deduction : -deduction, reference_id: invoiceId });
             }
         }
     }
-
     if (isSupabaseConfigured) {
         await supabase.from('invoices').insert(invoice);
-        if (customer) {
-            await supabase.from('customers').update({ current_balance: invoice.final_balance }).eq('id', customer.id);
-        }
+        if (customer) await supabase.from('customers').update({ current_balance: invoice.final_balance }).eq('id', customer.id);
     }
-    
-    if (customer) {
-        customer.current_balance = invoice.final_balance;
-    }
-
+    if (customer) customer.current_balance = invoice.final_balance;
     this.saveToLocalCache();
     this.rebuildIndexes();
     return { success: true, message: 'Done', id: invoiceId };
@@ -573,8 +521,6 @@ class DatabaseService {
   }
 
   async deleteInvoice(id: string) {
-    const inv = this.invoices.find(i => i.id === id);
-    if (!inv) return;
     this.invoices = this.invoices.filter(i => i.id !== id);
     if (isSupabaseConfigured) await supabase.from('invoices').delete().eq('id', id);
     this.saveToLocalCache();
@@ -592,10 +538,39 @@ class DatabaseService {
         if (!this.batchesByProductId.has(pid)) this.batchesByProductId.set(pid, []);
         this.batchesByProductId.get(pid)!.push(batch);
         if (isSupabaseConfigured) await supabase.from('batches').insert(batch);
+        this.stockMovements.push({ id: `SM${Date.now()}`, date: new Date().toISOString(), type: 'INITIAL', product_id: pid, batch_number: batch.batch_number, warehouse_id: batch.warehouse_id, quantity: b.quantity });
     }
     if (isSupabaseConfigured) await supabase.from('products').insert(product);
     this.saveToLocalCache();
     return pid;
+  }
+
+  async updateProduct(id: string, data: Partial<Product>) {
+    const idx = this.products.findIndex(p => p.id === id);
+    if (idx !== -1) {
+      this.products[idx] = { ...this.products[idx], ...data };
+      this.productsMap.set(id, this.products[idx]);
+      if (isSupabaseConfigured) await supabase.from('products').update(data).eq('id', id);
+      this.saveToLocalCache();
+    }
+  }
+
+  async deleteProduct(id: string) {
+    this.products = this.products.filter(p => p.id !== id);
+    this.productsMap.delete(id);
+    this.batches = this.batches.filter(b => b.product_id !== id);
+    if (isSupabaseConfigured) {
+        await supabase.from('products').delete().eq('id', id);
+        await supabase.from('batches').delete().eq('product_id', id);
+    }
+    this.rebuildIndexes();
+    this.saveToLocalCache();
+  }
+
+  getProductMovements(productId: string): StockMovement[] {
+    return this.stockMovements
+      .filter(m => m.product_id === productId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   async addCustomer(c: any) {
@@ -649,80 +624,34 @@ class DatabaseService {
     const id = `PUR${Date.now()}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const inv: PurchaseInvoice = { id, invoice_number: `P-${Date.now()}`, supplier_id: supplierId, date: new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items };
-    
-    // تحديث أسعار الصنف والمخزون في السحابة
     for (const item of items) {
-        // 1. تحديث سعر المنتج العام (Master Product) ليعكس السعر الجديد في المبيعات
         const product = this.products.find(p => p.id === item.product_id);
         if (product && !isReturn) {
             product.purchase_price = item.cost_price;
             product.selling_price = item.selling_price;
-            if (isSupabaseConfigured) {
-                await supabase.from('products').update({ 
-                    purchase_price: item.cost_price, 
-                    selling_price: item.selling_price 
-                }).eq('id', product.id);
-            }
+            if (isSupabaseConfigured) await supabase.from('products').update({ purchase_price: item.cost_price, selling_price: item.selling_price }).eq('id', product.id);
         }
-
-        // 2. تحديث الرصيد في التشغيلات (Batches)
         let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && (item.batch_number !== 'AUTO' ? b.batch_number === item.batch_number : true));
-        
         if (batch) {
             batch.quantity += (isReturn ? -item.quantity : item.quantity);
-            if (!isReturn) {
-                batch.purchase_price = item.cost_price;
-                batch.selling_price = item.selling_price;
-            }
-            if (isSupabaseConfigured) {
-                await supabase.from('batches').update({ 
-                    quantity: batch.quantity, 
-                    purchase_price: batch.purchase_price, 
-                    selling_price: batch.selling_price 
-                }).eq('id', batch.id);
-            }
+            if (!isReturn) { batch.purchase_price = item.cost_price; batch.selling_price = item.selling_price; }
+            if (isSupabaseConfigured) await supabase.from('batches').update({ quantity: batch.quantity, purchase_price: batch.purchase_price, selling_price: batch.selling_price }).eq('id', batch.id);
         } else if (!isReturn) {
-            // إنشاء تشغيلة جديدة إذا لم توجد
-            const newBatch: Batch = {
-                id: `B${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-                product_id: item.product_id,
-                warehouse_id: item.warehouse_id,
-                batch_number: item.batch_number === 'AUTO' ? `BN-${Date.now().toString().slice(-4)}` : item.batch_number,
-                quantity: item.quantity,
-                purchase_price: item.cost_price,
-                selling_price: item.selling_price,
-                expiry_date: item.expiry_date,
-                status: BatchStatus.ACTIVE
-            };
+            const newBatch: Batch = { id: `B${Date.now()}-${Math.random().toString(36).substr(2, 4)}`, product_id: item.product_id, warehouse_id: item.warehouse_id, batch_number: item.batch_number === 'AUTO' ? `BN-${Date.now().toString().slice(-4)}` : item.batch_number, quantity: item.quantity, purchase_price: item.cost_price, selling_price: item.selling_price, expiry_date: item.expiry_date, status: BatchStatus.ACTIVE };
             this.batches.push(newBatch);
             if (isSupabaseConfigured) await supabase.from('batches').insert(newBatch);
         }
+        this.stockMovements.push({ id: `SM${Date.now()}`, date: new Date().toISOString(), type: isReturn ? 'RETURN_OUT' : 'PURCHASE', product_id: item.product_id, batch_number: item.batch_number, warehouse_id: item.warehouse_id, quantity: isReturn ? -item.quantity : item.quantity, reference_id: id });
     }
-
     this.purchaseInvoices.push(inv);
-    
-    if (cashPaid > 0) {
-        await this.addCashTransaction({ 
-            type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE, 
-            category: 'SUPPLIER_PAYMENT', 
-            reference_id: supplierId, 
-            amount: cashPaid, 
-            date: new Date().toISOString(), 
-            notes: `Payment for PUR#${inv.invoice_number}` 
-        }, false);
-    }
-    
+    if (cashPaid > 0) await this.addCashTransaction({ type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE, category: 'SUPPLIER_PAYMENT', reference_id: supplierId, amount: cashPaid, date: new Date().toISOString(), notes: `Payment for PUR#${inv.invoice_number}` }, false);
     const supplier = this.suppliers.find(s => s.id === supplierId);
     if (supplier) {
         const adjustment = isReturn ? -total : total;
         supplier.current_balance += (adjustment - cashPaid);
-        if (isSupabaseConfigured) {
-            await supabase.from('suppliers').update({ current_balance: supplier.current_balance }).eq('id', supplierId);
-        }
+        if (isSupabaseConfigured) await supabase.from('suppliers').update({ current_balance: supplier.current_balance }).eq('id', supplierId);
     }
-
     if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(inv);
-    
     this.rebuildIndexes();
     this.saveToLocalCache();
     return { success: true, message: 'Done', id };
