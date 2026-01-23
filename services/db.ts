@@ -23,7 +23,7 @@ class Database {
   private settings: any = {
       companyName: 'Mizan Online',
       currency: '$',
-      language: 'ar', // اللغة الافتراضية عربية
+      language: 'ar',
       lowStockThreshold: 10,
       expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'OTHER'],
       distributionLines: [],
@@ -34,17 +34,72 @@ class Database {
   private pendingAdjustments: PendingAdjustment[] = [];
   private purchaseOrders: PurchaseOrder[] = [];
 
-  public isFullyLoaded: boolean = true;
+  public isFullyLoaded: boolean = false;
   public isOffline: boolean = false;
 
   constructor() {
     this.loadFromLocalCache();
   }
 
-  // Initialize the database, checking for local cache and optionally syncing
+  // Initialize the database, checking for local cache and syncing with cloud
   async init() {
     this.loadFromLocalCache();
+    if (isSupabaseConfigured) {
+        await this.syncFromCloud();
+    } else {
+        this.isFullyLoaded = true;
+    }
     this.rebuildIndexes();
+  }
+
+  private async syncFromCloud() {
+    try {
+        this.isOffline = false;
+        
+        // Fetch all tables in parallel for speed
+        const [
+            { data: cust }, { data: prod }, { data: bat }, { data: inv },
+            { data: pur }, { data: cash }, { data: wh }, { data: reps },
+            { data: closings }, { data: adjs }, { data: orders }
+        ] = await Promise.all([
+            supabase.from('customers').select('*'),
+            supabase.from('products').select('*'),
+            supabase.from('batches').select('*'),
+            supabase.from('invoices').select('*'),
+            supabase.from('purchase_invoices').select('*'),
+            supabase.from('cash_transactions').select('*'),
+            supabase.from('warehouses').select('*'),
+            supabase.from('representatives').select('*'),
+            supabase.from('daily_closings').select('*'),
+            supabase.from('pending_adjustments').select('*'),
+            supabase.from('purchase_orders').select('*')
+        ]);
+
+        if (cust) this.customers = cust;
+        if (prod) this.products = prod;
+        if (bat) this.batches = bat;
+        if (inv) this.invoices = inv;
+        if (pur) this.purchaseInvoices = pur;
+        if (cash) this.cashTransactions = cash;
+        if (wh && wh.length > 0) this.warehouses = wh;
+        if (reps) this.representatives = reps;
+        if (closings) this.dailyClosings = closings;
+        if (adjs) this.pendingAdjustments = adjs;
+        if (orders) this.purchaseOrders = orders;
+
+        // Recalculate global cash balance from transactions
+        this._cashBalance = this.cashTransactions.reduce((sum, tx) => {
+            return tx.type === CashTransactionType.RECEIPT ? sum + tx.amount : sum - tx.amount;
+        }, 0);
+
+        this.isFullyLoaded = true;
+        this.saveToLocalCache();
+        console.log("Cloud sync completed successfully.");
+    } catch (error) {
+        console.error("Cloud sync failed, working in offline mode:", error);
+        this.isOffline = true;
+        this.isFullyLoaded = true; // Fallback to local data
+    }
   }
 
   private loadFromLocalCache() {
@@ -131,7 +186,7 @@ class Database {
     const inv = this.invoices.find(i => i.id === id);
     if (!inv) return 0;
     return this.cashTransactions
-      .filter(t => t.ref_number === `PAY-${inv.invoice_number}`)
+      .filter(t => t.ref_number === `PAY-${inv.invoice_number}` || t.reference_id === id)
       .reduce((sum, t) => sum + t.amount, 0);
   }
 
@@ -305,6 +360,9 @@ class Database {
   }
 
   async deleteInvoice(id: string) {
+    if (isSupabaseConfigured) {
+        await supabase.from('invoices').delete().eq('id', id);
+    }
     this.invoices = this.invoices.filter(i => i.id !== id);
     this.saveToLocalCache();
   }
@@ -312,9 +370,14 @@ class Database {
   async addProduct(p: Partial<Product>, b?: Partial<Batch>) {
     const id = `PROD${Date.now()}`;
     const product: Product = { id, name: p.name || '', code: p.code, ...p };
+    
+    if (isSupabaseConfigured) {
+        await supabase.from('products').insert(product);
+    }
     this.products.push(product);
+    
     if (b) {
-      this.batches.push({
+      const batch = {
         id: `B${Date.now()}`,
         product_id: id,
         warehouse_id: b.warehouse_id || 'W1',
@@ -325,13 +388,21 @@ class Database {
         expiry_date: b.expiry_date || '2099-12-31',
         status: BatchStatus.ACTIVE,
         ...b
-      } as Batch);
+      } as Batch;
+      
+      if (isSupabaseConfigured) {
+          await supabase.from('batches').insert(batch);
+      }
+      this.batches.push(batch);
     }
     this.saveToLocalCache();
     return id;
   }
 
   async updateProduct(id: string, data: any) {
+    if (isSupabaseConfigured) {
+        await supabase.from('products').update(data).eq('id', id);
+    }
     const idx = this.products.findIndex(p => p.id === id);
     if (idx !== -1) {
       this.products[idx] = { ...this.products[idx], ...data };
@@ -340,6 +411,10 @@ class Database {
   }
 
   async deleteProduct(id: string) {
+    if (isSupabaseConfigured) {
+        await supabase.from('products').delete().eq('id', id);
+        await supabase.from('batches').delete().eq('product_id', id);
+    }
     this.products = this.products.filter(p => p.id !== id);
     this.batches = this.batches.filter(b => b.product_id !== id);
     this.saveToLocalCache();
@@ -349,17 +424,24 @@ class Database {
     return []; 
   }
 
-  addCustomer(c: any) {
+  async addCustomer(c: any) {
     const customer: Customer = { 
       id: `CUST${Date.now()}`, code: c.code || `${Date.now()}`, name: c.name, 
       phone: c.phone || '', area: c.area || '', address: c.address || '', 
       opening_balance: c.opening_balance || 0, current_balance: c.opening_balance || 0, ...c 
     };
+    
+    if (isSupabaseConfigured) {
+        await supabase.from('customers').insert(customer);
+    }
     this.customers.push(customer);
     this.saveToLocalCache();
   }
 
-  updateCustomer(id: string, data: any) {
+  async updateCustomer(id: string, data: any) {
+    if (isSupabaseConfigured) {
+        await supabase.from('customers').update(data).eq('id', id);
+    }
     const idx = this.customers.findIndex(c => c.id === id);
     if (idx !== -1) {
       this.customers[idx] = { ...this.customers[idx], ...data };
@@ -367,7 +449,10 @@ class Database {
     }
   }
 
-  deleteCustomer(id: string) {
+  async deleteCustomer(id: string) {
+    if (isSupabaseConfigured) {
+        await supabase.from('customers').delete().eq('id', id);
+    }
     this.customers = this.customers.filter(c => c.id !== id);
     this.saveToLocalCache();
   }
@@ -376,27 +461,36 @@ class Database {
     return `${type === 'RECEIPT' ? 'REC' : 'EXP'}-${Date.now().toString().slice(-6)}`;
   }
 
-  addCashTransaction(data: any) {
+  async addCashTransaction(data: any) {
     const tx: CashTransaction = { id: `TX${Date.now()}`, date: new Date().toISOString(), ...data };
+    
+    if (isSupabaseConfigured) {
+        await supabase.from('cash_transactions').insert(tx);
+    }
+    
     this.cashTransactions.push(tx);
     if (tx.type === CashTransactionType.RECEIPT) this._cashBalance += tx.amount;
     else this._cashBalance -= tx.amount;
     this.saveToLocalCache();
   }
 
-  addExpenseCategory(cat: string) {
+  async addExpenseCategory(cat: string) {
     if (!this.settings.expenseCategories.includes(cat)) {
       this.settings.expenseCategories.push(cat);
-      this.saveToLocalCache();
+      await this.updateSettings(this.settings);
     }
   }
 
-  addSupplier(s: any) {
+  async addSupplier(s: any) {
     const supplier: Supplier = { 
       id: `SUPP${Date.now()}`, code: s.code || '', name: s.name, phone: s.phone || '', 
       contact_person: s.contact_person || '', address: s.address || '', 
       opening_balance: s.opening_balance || 0, current_balance: s.opening_balance || 0 
     };
+    
+    if (isSupabaseConfigured) {
+        await supabase.from('suppliers').insert(supplier);
+    }
     this.suppliers.push(supplier);
     this.saveToLocalCache();
   }
@@ -404,7 +498,7 @@ class Database {
   async recordInvoicePayment(invoiceId: string, amount: number) {
     const inv = this.invoices.find(i => i.id === invoiceId);
     if (inv) {
-      this.addCashTransaction({
+      await this.addCashTransaction({
         type: CashTransactionType.RECEIPT,
         category: 'CUSTOMER_PAYMENT',
         reference_id: inv.customer_id,
@@ -423,23 +517,36 @@ class Database {
       id: `PO${Date.now()}`, order_number: `PO-${Date.now().toString().slice(-6)}`, 
       supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items 
     };
+    
+    if (isSupabaseConfigured) {
+        await supabase.from('purchase_orders').insert(order);
+    }
     this.purchaseOrders.push(order);
     this.saveToLocalCache();
     return { success: true };
   }
 
-  updatePurchaseOrderStatus(id: string, status: any) {
+  async updatePurchaseOrderStatus(id: string, status: any) {
+    if (isSupabaseConfigured) {
+        await supabase.from('purchase_orders').update({ status }).eq('id', id);
+    }
     const idx = this.purchaseOrders.findIndex(o => o.id === id);
     if (idx !== -1) { this.purchaseOrders[idx].status = status; this.saveToLocalCache(); }
   }
 
   async submitStockTake(adjustments: any[]) {
-    adjustments.forEach(adj => {
-      this.pendingAdjustments.push({ 
-        id: `ADJ${Date.now()}${Math.random()}`, date: new Date().toISOString(), 
-        status: 'PENDING', ...adj 
-      });
-    });
+    const newAdjs = adjustments.map(adj => ({
+        id: `ADJ${Date.now()}${Math.random()}`, 
+        date: new Date().toISOString(), 
+        status: 'PENDING', 
+        ...adj
+    }));
+
+    if (isSupabaseConfigured) {
+        await supabase.from('pending_adjustments').insert(newAdjs);
+    }
+    
+    this.pendingAdjustments.push(...newAdjs);
     this.saveToLocalCache();
   }
 
@@ -448,8 +555,18 @@ class Database {
     if (idx !== -1) {
       const adj = this.pendingAdjustments[idx];
       const batch = this.batches.find(b => b.product_id === adj.product_id && b.warehouse_id === adj.warehouse_id);
-      if (batch) batch.quantity = adj.actual_qty;
+      
+      if (batch) {
+          batch.quantity = adj.actual_qty;
+          if (isSupabaseConfigured) {
+              await supabase.from('batches').update({ quantity: adj.actual_qty }).eq('id', batch.id);
+          }
+      }
+      
       this.pendingAdjustments[idx].status = 'APPROVED';
+      if (isSupabaseConfigured) {
+          await supabase.from('pending_adjustments').update({ status: 'APPROVED' }).eq('id', id);
+      }
       this.saveToLocalCache();
       return true;
     }
@@ -457,6 +574,9 @@ class Database {
   }
 
   async rejectAdjustment(id: string) {
+    if (isSupabaseConfigured) {
+        await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id);
+    }
     const idx = this.pendingAdjustments.findIndex(a => a.id === id);
     if (idx !== -1) { 
       this.pendingAdjustments[idx].status = 'REJECTED'; 
@@ -480,9 +600,15 @@ class Database {
   }
 
   async saveDailyClosing(closing: any) {
-    this.dailyClosings.push({ 
+    const newClosing = { 
       id: `CLOSE${Date.now()}`, updated_at: new Date().toISOString(), ...closing 
-    } as DailyClosing);
+    } as DailyClosing;
+
+    if (isSupabaseConfigured) {
+        await supabase.from('daily_closings').insert(newClosing);
+    }
+    
+    this.dailyClosings.push(newClosing);
     this.saveToLocalCache();
     return true;
   }
@@ -515,7 +641,18 @@ class Database {
     });
   }
 
-  exportDatabase() { return JSON.stringify({ ...this }); }
+  exportDatabase() { return JSON.stringify({ 
+      customers: this.customers,
+      products: this.products,
+      batches: this.batches,
+      invoices: this.invoices,
+      purchaseInvoices: this.purchaseInvoices,
+      cashTransactions: this.cashTransactions,
+      warehouses: this.warehouses,
+      representatives: this.representatives,
+      settings: this.settings
+   }); }
+
   importDatabase(json: string) { 
     try { 
       const data = JSON.parse(json); 
@@ -525,32 +662,54 @@ class Database {
     } catch(e) { return false; } 
   }
   
-  recalculateAllBalances() {
+  async recalculateAllBalances() {
+      // Logic for cloud-based recalculation can be added here
+      await this.syncFromCloud();
   }
   
   resetDatabase() { localStorage.clear(); window.location.reload(); }
 
-  addRepresentative(r: any) {
-    this.representatives.push({ id: `REP${Date.now()}`, ...r });
+  async addRepresentative(r: any) {
+    const newRep = { id: `REP${Date.now()}`, ...r };
+    if (isSupabaseConfigured) {
+        await supabase.from('representatives').insert(newRep);
+    }
+    this.representatives.push(newRep);
     this.saveToLocalCache();
   }
-  updateRepresentative(id: string, data: any) {
+
+  async updateRepresentative(id: string, data: any) {
+    if (isSupabaseConfigured) {
+        await supabase.from('representatives').update(data).eq('id', id);
+    }
     const idx = this.representatives.findIndex(r => r.id === id);
     if (idx !== -1) { 
       this.representatives[idx] = { ...this.representatives[idx], ...data }; 
       this.saveToLocalCache(); 
     }
   }
-  deleteRepresentative(id: string) {
+
+  async deleteRepresentative(id: string) {
+    if (isSupabaseConfigured) {
+        await supabase.from('representatives').delete().eq('id', id);
+    }
     this.representatives = this.representatives.filter(r => r.id !== id);
     this.saveToLocalCache();
   }
 
-  addWarehouse(name: string) {
-    this.warehouses.push({ id: `WH${Date.now()}`, name, is_default: false });
+  async addWarehouse(name: string) {
+    const newWh = { id: `WH${Date.now()}`, name, is_default: false };
+    if (isSupabaseConfigured) {
+        await supabase.from('warehouses').insert(newWh);
+    }
+    this.warehouses.push(newWh);
     this.saveToLocalCache();
   }
-  updateWarehouse(id: string, name: string) {
+
+  async updateWarehouse(id: string, name: string) {
+    if (isSupabaseConfigured) {
+        await supabase.from('warehouses').update({ name }).eq('id', id);
+    }
     const idx = this.warehouses.findIndex(w => w.id === id);
     if (idx !== -1) { this.warehouses[idx].name = name; this.saveToLocalCache(); }
   }
