@@ -30,6 +30,7 @@ const CashRegister = lazy(() => import('./pages/CashRegister'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Login = lazy(() => import('./pages/Login'));
+const SalesReturn = lazy(() => import('./pages/SalesReturn'));
 
 const PageLoader = () => (
     <div className="h-full w-full flex flex-col items-center justify-center p-20 gap-4">
@@ -82,6 +83,7 @@ function App() {
                   <Route index element={<Dashboard />} />
                   <Route path="invoice/new" element={<NewInvoice />} />
                   <Route path="invoice/edit/:id" element={<NewInvoice />} />
+                  <Route path="invoice/return" element={<SalesReturn />} />
                   <Route path="invoices" element={<Invoices />} />
                   <Route path="today-items" element={<TodayItems />} />
                   
