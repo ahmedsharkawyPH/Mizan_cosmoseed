@@ -25,7 +25,6 @@ const Inventory: React.FC = () => {
   const [showLowStock, setShowLowStock] = useState(false);
   const [showOutOfStock, setShowOutOfStock] = useState(false);
 
-  // Quick Add / Edit State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [quickAddForm, setQuickAddForm] = useState({
@@ -37,7 +36,6 @@ const Inventory: React.FC = () => {
     warehouse_id: ''
   });
 
-  // Item Card State
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [selectedCardProduct, setSelectedCardProduct] = useState<any>(null);
 
@@ -88,7 +86,6 @@ const Inventory: React.FC = () => {
   useEffect(() => {
     if (searchTimeoutRef.current) { clearTimeout(searchTimeoutRef.current); }
     
-    // إذا كان البحث فارغاً ولكن هناك فلاتر مفعلة، نقوم بالبحث
     if (searchQuery.trim().length === 0 && !showLowStock && !showOutOfStock) {
       setSearchResults([]);
       setIsSearching(false);
@@ -119,9 +116,7 @@ const Inventory: React.FC = () => {
       results = results.filter(p => p.batches.reduce((sum: any, b: any) => sum + b.quantity, 0) === 0); 
     }
     
-    // البحث الذكي
     results = ArabicSmartSearch.smartSearch(results, searchQuery);
-    
     setSearchResults(results);
   }, [searchQuery, products, showLowStock, showOutOfStock, settings.lowStockThreshold]);
 
@@ -231,10 +226,8 @@ const Inventory: React.FC = () => {
   };
 
   const displayedProducts = useMemo(() => {
-    // إذا كان هناك بحث أو فلتر، نستخدم نتائج البحث المحسنة
     if (searchQuery.trim() || showLowStock || showOutOfStock) return searchResults;
-    // العرض الافتراضي (زيادة الحد لـ 500)
-    return products.slice(0, 500);
+    return products; // عرض كافة الأصناف المجلوبة
   }, [searchResults, searchQuery, showLowStock, showOutOfStock, products]);
 
   return (
@@ -251,7 +244,7 @@ const Inventory: React.FC = () => {
                 {!dbFullLoaded && (
                     <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-100">
                         <RefreshCw className="w-3 h-3 animate-spin" />
-                        <span className="text-[10px] font-bold">جاري مزامنة باقي الأصناف...</span>
+                        <span className="text-[10px] font-bold">جاري مزامنة الأصناف (تم جلب {products.length})...</span>
                     </div>
                 )}
                 {isOffline && (
@@ -283,7 +276,7 @@ const Inventory: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="🔍 ابحث عن أي منتج... النتائج تظهر لحظياً"
+                placeholder="🔍 ابحث في كامل المخزون... النتائج تظهر لحظياً"
                 className="w-full pl-4 pr-14 py-4 text-xl border-2 border-slate-100 rounded-2xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none transition-all bg-slate-50 focus:bg-white shadow-inner"
               />
           </div>
@@ -409,7 +402,6 @@ const Inventory: React.FC = () => {
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                      {/* Warehouse Stocks */}
                       <div>
                           <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                               <WarehouseIcon className="w-4 h-4" /> الأرصدة الحالية في المخازن
@@ -426,8 +418,6 @@ const Inventory: React.FC = () => {
                               })}
                           </div>
                       </div>
-
-                      {/* Movement History */}
                       <div>
                           <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                               <History className="w-4 h-4" /> سجل حركات الصنف (الوارد والصادر)
