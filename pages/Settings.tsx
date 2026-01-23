@@ -8,7 +8,7 @@ import {
   Users, Plus, Edit2, Trash2, X, Shield, Key, CheckSquare, 
   Printer, Upload, Image as ImageIcon, Database, Download, 
   AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, 
-  Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck, Globe, Wifi, WifiOff
+  Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck, Globe, Wifi, WifiOff, RefreshCcw
 } from 'lucide-react';
 import { t } from '../utils/t';
 import { PendingAdjustment } from '../types';
@@ -422,13 +422,22 @@ export default function Settings() {
                     <p className="text-sm text-gray-500">{t('set.danger_desc')}</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
+                    <div className="p-6 rounded-xl border border-blue-100 bg-blue-50/20 flex flex-col justify-between hover:shadow-md transition-shadow">
                         <div className="flex gap-4 mb-4">
-                            <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center shrink-0"><FileMinus className="w-6 h-6 text-red-600" /></div>
-                            <div><h4 className="font-bold text-gray-800">{t('set.clear_trans')}</h4><p className="text-xs text-gray-500 mt-1">{t('set.clear_trans_desc')}</p></div>
+                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center shrink-0"><RefreshCcw className="w-6 h-6 text-blue-600" /></div>
+                            <div>
+                                <h4 className="font-bold text-gray-800 text-sm">إعادة مزامنة الأرصدة الحالية</h4>
+                                <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">يقوم النظام بإعادة حساب أرصدة العملاء والموردين بناءً على الفواتير والسندات المسجلة فعلياً وتحديث حقل الرصيد في قاعدة البيانات السحابية فوراً.</p>
+                            </div>
                         </div>
-                        <button onClick={handleSaveSettings} className="bg-white border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-50 w-full">فحص سلامة قاعدة البيانات</button>
+                        <button 
+                            onClick={() => db.recalculateAllBalances()} 
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm flex items-center justify-center gap-2"
+                        >
+                            <RefreshCcw className="w-4 h-4" /> تحديث الأرصدة في DB
+                        </button>
                     </div>
+                    
                     <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
                         <div className="flex gap-4 mb-4">
                             <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center shrink-0"><RefreshCw className="w-6 h-6 text-white" /></div>

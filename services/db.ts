@@ -234,6 +234,59 @@ class DatabaseService {
       }, 0);
   }
 
+  /**
+   * دالة لإعادة احتساب الأرصدة لكافة العملاء والموردين وتحديث قاعدة البيانات
+   * مفيدة جداً للتأكد من أن حقل current_balance في الجدول يطابق الحقيقة
+   */
+  async recalculateAllBalances() {
+    const toastId = toast.loading("جاري إعادة احتساب الأرصدة ومزامنة قاعدة البيانات...");
+    
+    try {
+        // 1. العملاء
+        for (const customer of this.customers) {
+            const cInvoices = this.invoices.filter(i => i.customer_id === customer.id);
+            const cPayments = this.cashTransactions.filter(t => t.reference_id === customer.id && t.category === 'CUSTOMER_PAYMENT');
+            
+            const totalSales = cInvoices.filter(i => i.type === 'SALE').reduce((sum, i) => sum + i.net_total, 0);
+            const totalReturns = cInvoices.filter(i => i.type === 'RETURN').reduce((sum, i) => sum + i.net_total, 0);
+            const totalPaid = cPayments.filter(t => t.type === 'RECEIPT').reduce((sum, t) => sum + t.amount, 0);
+            const totalRefunded = cPayments.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+
+            const actualBalance = customer.opening_balance + totalSales - totalReturns - totalPaid + totalRefunded;
+            
+            customer.current_balance = actualBalance;
+            if (isSupabaseConfigured) {
+                await supabase.from('customers').update({ current_balance: actualBalance }).eq('id', customer.id);
+            }
+        }
+
+        // 2. الموردين
+        for (const supplier of this.suppliers) {
+            const sPurchases = this.purchaseInvoices.filter(i => i.supplier_id === supplier.id);
+            const sPayments = this.cashTransactions.filter(t => t.reference_id === supplier.id && t.category === 'SUPPLIER_PAYMENT');
+
+            const totalPurchases = sPurchases.filter(i => i.type === 'PURCHASE').reduce((sum, i) => sum + i.total_amount, 0);
+            const totalReturns = sPurchases.filter(i => i.type === 'RETURN').reduce((sum, i) => sum + i.total_amount, 0);
+            const totalPaid = sPayments.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+            const totalRefunded = sPayments.filter(t => t.type === 'RECEIPT').reduce((sum, t) => sum + t.amount, 0);
+
+            const actualBalance = supplier.opening_balance + totalPurchases - totalReturns - totalPaid + totalRefunded;
+            
+            supplier.current_balance = actualBalance;
+            if (isSupabaseConfigured) {
+                await supabase.from('suppliers').update({ current_balance: actualBalance }).eq('id', supplier.id);
+            }
+        }
+
+        this.saveToLocalCache();
+        toast.success("تمت مزامنة كافة الأرصدة في قاعدة البيانات بنجاح", { id: toastId });
+        return true;
+    } catch (err) {
+        toast.error("فشلت عملية المزامنة", { id: toastId });
+        return false;
+    }
+  }
+
   getProductsWithBatches(): ProductWithBatches[] {
     return this.products.map(p => ({
       ...p,
