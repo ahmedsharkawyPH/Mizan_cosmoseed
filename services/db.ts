@@ -519,59 +519,6 @@ class DatabaseService {
     return { success: true, message: 'Updated', id };
   }
 
-  async convertInvoiceToReturn(invoiceId: string): Promise<{ success: boolean; message: string }> {
-      const idx = this.invoices.findIndex(i => i.id === invoiceId);
-      if (idx === -1) return { success: false, message: 'Invoice not found' };
-      
-      const invoice = this.invoices[idx];
-      if (invoice.type === 'RETURN') return { success: false, message: 'Invoice is already a return' };
-
-      const oldType = invoice.type;
-      invoice.type = 'RETURN';
-      
-      // logic: To go from Sale (deducted stock) to Return (added stock), we need to add 2x the qty.
-      // Customer: Sale increased debt, Return decreases debt. Diff = -2 * net_total.
-      
-      const customer = this.customers.find(c => c.id === invoice.customer_id);
-      
-      // Reverse Stock
-      for (const item of invoice.items) {
-          if (item.batch) {
-              const batch = this.batches.find(b => b.id === item.batch?.id);
-              if (batch) {
-                  const qtyToFlip = item.quantity + (item.bonus_quantity || 0);
-                  // Sale logic was: batch.qty -= qty
-                  // Return logic is: batch.qty += qty
-                  // Conversion delta = +2 * qty
-                  batch.quantity += (2 * qtyToFlip);
-                  if (isSupabaseConfigured) {
-                      await supabase.from('batches').update({ quantity: batch.quantity }).eq('id', batch.id);
-                  }
-              }
-          }
-      }
-
-      // Reverse Customer Balance
-      if (customer) {
-          // Sale was: Bal += Net. Return is: Bal -= Net.
-          // Conversion delta = -2 * Net.
-          const adjustment = 2 * invoice.net_total;
-          invoice.final_balance -= adjustment;
-          customer.current_balance -= adjustment;
-          if (isSupabaseConfigured) {
-              await supabase.from('customers').update({ current_balance: customer.current_balance }).eq('id', customer.id);
-          }
-      }
-
-      if (isSupabaseConfigured) {
-          await supabase.from('invoices').update({ type: 'RETURN', final_balance: invoice.final_balance }).eq('id', invoiceId);
-      }
-
-      this.saveToLocalCache();
-      this.rebuildIndexes();
-      return { success: true, message: 'Converted to Return' };
-  }
-
   async deleteInvoice(id: string) {
     const inv = this.invoices.find(i => i.id === id);
     if (!inv) return;
