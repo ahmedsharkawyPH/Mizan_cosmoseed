@@ -1,11 +1,10 @@
-
 export const SEARCH_CONFIG = {
-  DEBOUNCE_TIME: 300,
-  MIN_CHARS: 1, // تم تقليل الحد الأدنى للبحث لزيادة الاستجابة
-  MAX_RESULTS: 1000, // زيادة عدد النتائج المسموح بها في البحث
+  DEBOUNCE_TIME: 200,
+  MIN_CHARS: 1,
+  MAX_RESULTS: 5000, // زيادة كبيرة لاستيعاب أي مخزون
   WEIGHTS: {
     name: 10,
-    code: 15, // رفع وزن الكود ليكون البحث به أدق
+    code: 50, // الكود له أولوية قصوى
     batchNumber: 5,
     category: 3,
     notes: 2
@@ -14,81 +13,92 @@ export const SEARCH_CONFIG = {
 
 export class ArabicSmartSearch {
   /**
-   * يقوم بتطبيع النصوص مع الحفاظ على الحروف الإنجليزية والأرقام
+   * تطبيع متقدم للنصوص العربية والإنجليزية
    */
   static normalizeArabic(text: string): string {
     if (!text) return '';
     
     return text
       .toLowerCase()
-      .replace(/[أإآ]/g, 'ا')        // توحيد الألف
-      .replace(/ة/g, 'ه')           // التاء المربوطة
-      .replace(/ى/g, 'ي')           // الألف المقصورة
-      .replace(/ؤ/g, 'و')           
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/ؤ/g, 'و')
       .replace(/ئ/g, 'ي')
-      // تم تعديل الريجكس للسماح بالحروف الإنجليزية (a-z) والأرقام والمسافات والرموز الأساسية
-      .replace(/[^\u0621-\u064A0-9a-zA-Z\s\-\.\/]/g, '') 
+      .replace(/[\u064B-\u065F]/g, '') // إزالة التشكيل تماماً
+      .replace(/[^\u0621-\u064A0-9a-z\s\-\.\/]/g, ' ') // استبدال الرموز الغريبة بمسافات
+      .replace(/\s+/g, ' ') // توحيد المسافات
       .trim();
   }
   
   /**
-   * تقسيم استعلام البحث إلى كلمات (Tokens)
+   * تقسيم البحث لضمان مطابقة الكلمات المبعثرة
    */
   static tokenizeQuery(query: string): string[] {
     const normalized = this.normalizeArabic(query);
     return normalized
       .split(/\s+/)
-      .filter(word => word.length >= 1) 
-      .map(word => word.trim());
+      .filter(word => word.length >= 1);
   }
   
   /**
-   * حساب درجة المطابقة
+   * حساب درجة المطابقة بشكل تراكمي
    */
   static calculateMatchScore(item: any, searchTokens: string[]): number {
-    let totalScore = 0;
     if (searchTokens.length === 0) return 0;
 
     const normalizedName = this.normalizeArabic(item.name || '');
     const normalizedCode = this.normalizeArabic(item.code || '');
-    
-    searchTokens.forEach(token => {
+    let totalScore = 0;
+    let matchesAllTokens = true;
+
+    for (const token of searchTokens) {
+      let tokenMatched = false;
+
       // مطابقة الاسم
       if (normalizedName.includes(token)) {
         totalScore += SEARCH_CONFIG.WEIGHTS.name;
-        if (normalizedName.startsWith(token)) totalScore += 10;
+        if (normalizedName.startsWith(token)) totalScore += 20; // بونص للبداية
+        tokenMatched = true;
       }
       
-      // مطابقة الكود (دقة عالية)
+      // مطابقة الكود
       if (normalizedCode.includes(token)) {
         totalScore += SEARCH_CONFIG.WEIGHTS.code;
-        if (normalizedCode === token) totalScore += 20; // مطابقة كاملة للكود
+        if (normalizedCode === token) totalScore += 100; // مطابقة تامة للكود
+        tokenMatched = true;
       }
 
       // مطابقة التشغيلات
       if (item.batches && Array.isArray(item.batches)) {
-        item.batches.forEach((b: any) => {
+        for (const b of item.batches) {
           if (this.normalizeArabic(b.batch_number || '').includes(token)) {
             totalScore += SEARCH_CONFIG.WEIGHTS.batchNumber;
+            tokenMatched = true;
+            break;
           }
-        });
+        }
       }
-    });
+
+      if (!tokenMatched) {
+        matchesAllTokens = false;
+        break;
+      }
+    }
     
-    return totalScore;
+    return matchesAllTokens ? totalScore : 0;
   }
 
   /**
-   * الفلترة والترتيب الذكي
+   * البحث والترتيب
    */
   static smartSearch<T>(items: T[], query: string): T[] {
     if (!query || query.trim().length < 1) {
-      // إرجاع أول 200 صنف بدلاً من 100 في حال عدم وجود بحث لضمان رؤية أكبر
-      return items.slice(0, 200);
+      return items.slice(0, 500); // عرض 500 صنف افتراضياً
     }
     
     const tokens = this.tokenizeQuery(query);
-    if (tokens.length === 0) return items.slice(0, 200);
+    if (tokens.length === 0) return items.slice(0, 500);
     
     return items
       .map(item => ({

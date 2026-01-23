@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { Search, ChevronDown, Check, Zap } from 'lucide-react';
 import { ArabicSmartSearch } from '../utils/search';
@@ -49,7 +48,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   }));
 
   const filteredOptions = useMemo(() => {
-    if (!isOpen || searchTerm.length < minSearchChars) return [];
+    if (!isOpen) return [];
     
     const searchableItems = options.map(opt => ({
       ...opt,
@@ -57,11 +56,12 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       code: opt.subLabel || ''
     }));
 
+    // نستخدم محرك البحث الذكي المطور
     const results = ArabicSmartSearch.smartSearch(searchableItems, searchTerm);
-    return results.slice(0, 50); 
-  }, [options, searchTerm, isOpen, minSearchChars]);
+    // نرفع الحد لضمان ظهور كافة النتائج
+    return results.slice(0, 1000); 
+  }, [options, searchTerm, isOpen]);
 
-  // تحديث التمرير عند تغيير العنصر المحدد بالأسهم
   useEffect(() => {
     if (isOpen && listRef.current && filteredOptions.length > 0) {
       const highlightedElement = listRef.current.children[highlightedIndex] as HTMLElement;
@@ -174,7 +174,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
       {isOpen && !disabled && (
         <>
-          {searchTerm.length >= minSearchChars && filteredOptions.length > 0 && (
+          {filteredOptions.length > 0 && (
             <ul 
               ref={listRef}
               className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in slide-in-from-top-1"
@@ -192,7 +192,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                   <div className="flex-1">
                     <div className="font-bold flex items-center gap-2">
                        {opt.label}
-                       {opt._searchScore > 15 && <Zap className={`w-3 h-3 ${idx === highlightedIndex ? 'text-yellow-400' : 'text-emerald-500'}`} />}
+                       {opt._searchScore > 50 && <Zap className={`w-3 h-3 ${idx === highlightedIndex ? 'text-yellow-400' : 'text-emerald-500'}`} />}
                     </div>
                     {opt.subLabel && <div className={`text-[10px] font-mono ${idx === highlightedIndex ? 'text-slate-300' : 'text-slate-400'}`}>{opt.subLabel}</div>}
                   </div>
@@ -200,12 +200,6 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                 </li>
               ))}
             </ul>
-          )}
-          
-          {searchTerm.length > 0 && searchTerm.length < minSearchChars && (
-            <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl p-4 text-center text-xs text-slate-500 font-bold animate-in fade-in slide-in-from-top-1">
-              اكتب حرفين على الأقل للبحث الذكي...
-            </div>
           )}
 
           {searchTerm.length >= minSearchChars && filteredOptions.length === 0 && searchTerm.trim() !== '' && (

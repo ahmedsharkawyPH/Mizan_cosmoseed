@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
@@ -88,21 +87,26 @@ const Inventory: React.FC = () => {
 
   useEffect(() => {
     if (searchTimeoutRef.current) { clearTimeout(searchTimeoutRef.current); }
+    
+    // إذا كان البحث فارغاً ولكن هناك فلاتر مفعلة، نقوم بالبحث
     if (searchQuery.trim().length === 0 && !showLowStock && !showOutOfStock) {
       setSearchResults([]);
       setIsSearching(false);
       return;
     }
+
     setIsSearching(true);
     searchTimeoutRef.current = setTimeout(() => {
       performSearch();
       setIsSearching(false);
     }, SEARCH_CONFIG.DEBOUNCE_TIME);
+    
     return () => { if (searchTimeoutRef.current) { clearTimeout(searchTimeoutRef.current); } };
   }, [searchQuery, products, showLowStock, showOutOfStock]);
 
   const performSearch = useCallback(() => {
     let results = [...products];
+    
     if (showLowStock) {
       const threshold = settings.lowStockThreshold || 10;
       results = results.filter(p => {
@@ -110,12 +114,14 @@ const Inventory: React.FC = () => {
         return total > 0 && total <= threshold;
       });
     }
-    if (showOutOfStock) { results = results.filter(p => p.batches.reduce((sum: any, b: any) => sum + b.quantity, 0) === 0); }
-    if (searchQuery.trim()) {
-      results = ArabicSmartSearch.smartSearch(results, searchQuery);
-    } else if (!showLowStock && !showOutOfStock) { 
-      results = []; 
+    
+    if (showOutOfStock) { 
+      results = results.filter(p => p.batches.reduce((sum: any, b: any) => sum + b.quantity, 0) === 0); 
     }
+    
+    // البحث الذكي
+    results = ArabicSmartSearch.smartSearch(results, searchQuery);
+    
     setSearchResults(results);
   }, [searchQuery, products, showLowStock, showOutOfStock, settings.lowStockThreshold]);
 
@@ -225,9 +231,10 @@ const Inventory: React.FC = () => {
   };
 
   const displayedProducts = useMemo(() => {
-    if (searchResults.length > 0) return searchResults;
-    if (searchQuery || showLowStock || showOutOfStock) return [];
-    return products.slice(0, 100);
+    // إذا كان هناك بحث أو فلتر، نستخدم نتائج البحث المحسنة
+    if (searchQuery.trim() || showLowStock || showOutOfStock) return searchResults;
+    // العرض الافتراضي (زيادة الحد لـ 500)
+    return products.slice(0, 500);
   }, [searchResults, searchQuery, showLowStock, showOutOfStock, products]);
 
   return (
