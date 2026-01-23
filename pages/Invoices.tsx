@@ -109,7 +109,7 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
                 <div style={{ flex: 1, textAlign: 'left' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '5px' }}>
                         <span style={{fontFamily:'monospace', fontWeight:'bold', fontSize: '14px'}}>{invoice.invoice_number}</span>
-                        <div className="invoice-type-badge">فاتورة مبيعات</div>
+                        <div className="invoice-type-badge">{invoice.type === 'RETURN' ? 'مرتجع مبيعات' : 'فاتورة مبيعات'}</div>
                     </div>
                     <div style={{ fontSize: '10px', marginTop: '2px' }}><b>{title}</b> | صفحة {pageNumber}/{totalPages}</div>
                 </div>
