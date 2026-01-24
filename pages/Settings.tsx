@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { authService, PERMISSIONS } from '../services/auth';
@@ -22,7 +21,6 @@ export default function Settings() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingAdjustment[]>([]);
   const user = authService.getCurrentUser();
   
-  // Users Management State
   const [users, setUsers] = useState<any[]>([]);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [userForm, setUserForm] = useState({ 
@@ -31,12 +29,8 @@ export default function Settings() {
   });
 
   useEffect(() => {
-    if (activeTab === 'users') {
-        setUsers(authService.getUsers());
-    }
-    if (activeTab === 'approvals') {
-        setPendingApprovals(db.getPendingAdjustments());
-    }
+    if (activeTab === 'users') { setUsers(authService.getUsers()); }
+    if (activeTab === 'approvals') { setPendingApprovals(db.getPendingAdjustments()); }
   }, [activeTab]);
 
   const handleApprove = async (id: string) => {
@@ -65,9 +59,7 @@ export default function Settings() {
         const success = await db.updateSettings(settings);
         if (success) {
             toast.success("تم حفظ الإعدادات بنجاح");
-            setTimeout(() => {
-                window.location.reload();
-            }, 800);
+            setTimeout(() => { window.location.reload(); }, 800);
         } else {
             toast.error("حدث خطأ أثناء الحفظ.");
             setIsSaving(false);
@@ -104,7 +96,6 @@ export default function Settings() {
   const handleSaveUser = () => {
       if (!userForm.name || !userForm.username) return toast.error("الاسم واسم المستخدم مطلوبان");
       if (!userForm.id && !userForm.password) return toast.error("كلمة المرور مطلوبة للمستخدم الجديد");
-      
       authService.saveUser(userForm);
       setUsers(authService.getUsers());
       setIsUserModalOpen(false);
@@ -122,11 +113,8 @@ export default function Settings() {
   const togglePermission = (permId: string) => {
       setUserForm(prev => {
           const exists = prev.permissions.includes(permId);
-          if (exists) {
-              return { ...prev, permissions: prev.permissions.filter(p => p !== permId) };
-          } else {
-              return { ...prev, permissions: [...prev.permissions, permId] };
-          }
+          if (exists) { return { ...prev, permissions: prev.permissions.filter(p => p !== permId) }; }
+          else { return { ...prev, permissions: [...prev.permissions, permId] }; }
       });
   };
 
@@ -158,9 +146,7 @@ export default function Settings() {
                           setTimeout(() => window.location.reload(), 1000);
                       }
                   }
-              } catch (err) {
-                  toast.error("خطأ في قراءة الملف.");
-              }
+              } catch (err) { toast.error("خطأ في قراءة الملف."); }
           };
           reader.readAsText(file);
       }
@@ -185,7 +171,6 @@ export default function Settings() {
         </div>
       </div>
       
-      {/* TABS */}
       <div className="flex space-x-2 border-b border-gray-200 rtl:space-x-reverse overflow-x-auto">
           <button onClick={() => setActiveTab('general')} className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'general' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
              <SettingsIcon className="w-4 h-4" /> {t('set.tab_general')}
@@ -221,17 +206,17 @@ export default function Settings() {
                         </div>
                         <div className="flex-1">
                             <h4 className="font-bold text-gray-700 mb-1">شعار الشركة</h4>
-                            <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 inline-flex items-center gap-2 transition-all shadow-sm">
+                            <label htmlFor="company_logo_input" className="cursor-pointer bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 inline-flex items-center gap-2 transition-all shadow-sm">
                                 <Upload className="w-4 h-4" />
                                 <span>رفع شعار جديد</span>
-                                <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                                <input id="company_logo_input" name="company_logo" type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
                             </label>
                         </div>
                     </div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('set.company_name')}</label><input className="w-full border p-2 rounded-lg" value={settings.companyName} onChange={e => setSettings({...settings, companyName: e.target.value})} /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('set.tax_no')}</label><input className="w-full border p-2 rounded-lg" value={settings.companyTaxNumber} onChange={e => setSettings({...settings, companyTaxNumber: e.target.value})} /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('set.phone')}</label><input className="w-full border p-2 rounded-lg" value={settings.companyPhone} onChange={e => setSettings({...settings, companyPhone: e.target.value})} /></div>
-                    <div className="col-span-1 md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">{t('set.address')}</label><input className="w-full border p-2 rounded-lg" value={settings.companyAddress} onChange={e => setSettings({...settings, companyAddress: e.target.value})} /></div>
+                    <div><label htmlFor="set_comp_name" className="block text-sm font-medium text-gray-700 mb-1">{t('set.company_name')}</label><input id="set_comp_name" name="set_comp_name" className="w-full border p-2 rounded-lg" value={settings.companyName} onChange={e => setSettings({...settings, companyName: e.target.value})} /></div>
+                    <div><label htmlFor="set_comp_tax" className="block text-sm font-medium text-gray-700 mb-1">{t('set.tax_no')}</label><input id="set_comp_tax" name="set_comp_tax" className="w-full border p-2 rounded-lg" value={settings.companyTaxNumber} onChange={e => setSettings({...settings, companyTaxNumber: e.target.value})} /></div>
+                    <div><label htmlFor="set_comp_phone" className="block text-sm font-medium text-gray-700 mb-1">{t('set.phone')}</label><input id="set_comp_phone" name="set_comp_phone" className="w-full border p-2 rounded-lg" value={settings.companyPhone} onChange={e => setSettings({...settings, companyPhone: e.target.value})} /></div>
+                    <div className="col-span-1 md:col-span-2"><label htmlFor="set_comp_address" className="block text-sm font-medium text-gray-700 mb-1">{t('set.address')}</label><input id="set_comp_address" name="set_comp_address" className="w-full border p-2 rounded-lg" value={settings.companyAddress} onChange={e => setSettings({...settings, companyAddress: e.target.value})} /></div>
                 </div>
                 <div className="flex justify-end pt-4"><button onClick={handleSaveSettings} disabled={isSaving} className="bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 shadow-sm hover:bg-blue-700 disabled:bg-blue-400">{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{isSaving ? "جاري الحفظ..." : t('set.save')}</button></div>
             </div>
@@ -329,8 +314,8 @@ export default function Settings() {
             <div className="space-y-6 animate-in fade-in">
                 <h3 className="font-bold text-gray-800 flex items-center gap-2 border-b pb-2"><Printer className="w-5 h-5 text-blue-600" /> {t('set.tab_printer')}</h3>
                 <div className="space-y-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('set.paper_size')}</label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label htmlFor="printer_paper_selector" className="block text-sm font-medium text-gray-700 mb-2">{t('set.paper_size')}</label>
+                    <div id="printer_paper_selector" className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {[
                             { id: 'A4', label: t('set.paper_a4'), icon: FileType },
                             { id: 'A5', label: t('set.paper_a5'), icon: Layout },
@@ -360,9 +345,8 @@ export default function Settings() {
                         <Plus className="w-4 h-4" /> {t('user.add')}
                     </button>
                 </div>
-                
                 <div className="border rounded-xl overflow-hidden shadow-sm">
-                    <table className="w-full text-sm text-left rtl:text-right">
+                    <table className="w-full text-sm text-right rtl:text-right">
                         <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
                             <tr>
                                 <th className="p-4">{t('user.fullname')}</th>
@@ -409,7 +393,7 @@ export default function Settings() {
                     <div className="bg-amber-50 p-6 rounded-xl border border-amber-100 flex flex-col items-center text-center">
                         <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4"><Upload className="w-8 h-8 text-amber-600" /></div>
                         <h4 className="font-bold text-gray-800 mb-2">{t('set.import_data')}</h4>
-                        <label className="bg-amber-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-amber-700 w-full cursor-pointer transition-all shadow-md">{t('set.select_file')}<input type="file" className="hidden" accept=".json" onChange={handleRestore} /></label>
+                        <label htmlFor="restore_file_input" className="bg-amber-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-amber-700 w-full cursor-pointer transition-all shadow-md">{t('set.select_file')}<input id="restore_file_input" name="restore_file" type="file" className="hidden" accept=".json" onChange={handleRestore} /></label>
                     </div>
                 </div>
             </div>
@@ -430,14 +414,10 @@ export default function Settings() {
                                 <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">يقوم النظام بإعادة حساب أرصدة العملاء والموردين بناءً على الفواتير والسندات المسجلة فعلياً وتحديث حقل الرصيد في قاعدة البيانات السحابية فوراً.</p>
                             </div>
                         </div>
-                        <button 
-                            onClick={() => db.recalculateAllBalances()} 
-                            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm flex items-center justify-center gap-2"
-                        >
+                        <button onClick={() => db.recalculateAllBalances()} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm flex items-center justify-center gap-2">
                             <RefreshCcw className="w-4 h-4" /> تحديث الأرصدة في DB
                         </button>
                     </div>
-                    
                     <div className="p-6 rounded-xl border border-red-100 bg-white flex flex-col justify-between hover:shadow-md transition-shadow">
                         <div className="flex gap-4 mb-4">
                             <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center shrink-0"><RefreshCw className="w-6 h-6 text-white" /></div>
@@ -450,25 +430,24 @@ export default function Settings() {
         )}
       </div>
 
-      {/* User Management Modal */}
       {isUserModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 relative flex flex-col max-h-[90vh]">
                 <button onClick={() => setIsUserModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Key className="w-5 h-5 text-blue-600" />{userForm.id ? t('user.edit') : t('user.add')}</h3>
                 <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.fullname')}</label><input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} /></div>
+                    <div><label htmlFor="user_full_name" className="block text-sm font-medium text-gray-700 mb-1">{t('user.fullname')}</label><input id="user_full_name" name="user_full_name" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.name} onChange={e => setUserForm({...userForm, name: e.target.value})} /></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.username')}</label><input className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} /></div>
-                        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.role')}</label><select className="w-full border p-2 rounded-lg" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as any})}><option value="USER">User</option><option value="ADMIN">Administrator</option><option value="TELESALES">Telesales</option><option value="REP">Sales Rep</option></select></div>
+                        <div><label htmlFor="user_username" className="block text-sm font-medium text-gray-700 mb-1">{t('user.username')}</label><input id="user_username" name="user_username" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.username} onChange={e => setUserForm({...userForm, username: e.target.value})} /></div>
+                        <div><label htmlFor="user_role" className="block text-sm font-medium text-gray-700 mb-1">{t('user.role')}</label><select id="user_role" name="user_role" className="w-full border p-2 rounded-lg" value={userForm.role} onChange={e => setUserForm({...userForm, role: e.target.value as any})}><option value="USER">User</option><option value="ADMIN">Administrator</option><option value="TELESALES">Telesales</option><option value="REP">Sales Rep</option></select></div>
                     </div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('user.password')} {userForm.id && <span className="text-gray-400 font-normal text-xs">(اتركه فارغاً للحفاظ على الحالي)</span>}</label><input type="password" title="password" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} /></div>
+                    <div><label htmlFor="user_pass" className="block text-sm font-medium text-gray-700 mb-1">{t('user.password')} {userForm.id && <span className="text-gray-400 font-normal text-xs">(اتركه فارغاً للحفاظ على الحالي)</span>}</label><input id="user_pass" name="user_pass" type="password" title="password" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userForm.password} onChange={e => setUserForm({...userForm, password: e.target.value})} /></div>
                     <div>
                         <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><Shield className="w-4 h-4" /> {t('user.permissions')}</h4>
                         <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 grid grid-cols-1 gap-2">
                             {PERMISSIONS.map(perm => (
                                 <label key={perm.id} className="flex items-center gap-3 cursor-pointer p-1.5 hover:bg-white rounded transition-colors">
-                                    <input type="checkbox" className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" checked={userForm.role === 'ADMIN' || userForm.permissions.includes(perm.id)} disabled={userForm.role === 'ADMIN'} onChange={() => togglePermission(perm.id)} />
+                                    <input id={`perm_${perm.id}`} name={`perm_${perm.id}`} type="checkbox" className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" checked={userForm.role === 'ADMIN' || userForm.permissions.includes(perm.id)} disabled={userForm.role === 'ADMIN'} onChange={() => togglePermission(perm.id)} />
                                     <span className="text-sm text-gray-700">{t(`perm.${perm.id}`) !== `perm.${perm.id}` ? t(`perm.${perm.id}`) : perm.label}</span>
                                 </label>
                             ))}

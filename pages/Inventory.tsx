@@ -68,7 +68,6 @@ const Inventory: React.FC = () => {
     const suppliers = db.getSuppliers();
     const map: Record<string, string> = {};
     const bestPrices: Record<string, number> = {};
-
     purchaseInvoices.forEach(inv => {
       if (inv.type === 'PURCHASE') {
         const supplier = suppliers.find(s => s.id === inv.supplier_id);
@@ -85,25 +84,21 @@ const Inventory: React.FC = () => {
 
   useEffect(() => {
     if (searchTimeoutRef.current) { clearTimeout(searchTimeoutRef.current); }
-    
     if (searchQuery.trim().length === 0 && !showLowStock && !showOutOfStock) {
       setSearchResults([]);
       setIsSearching(false);
       return;
     }
-
     setIsSearching(true);
     searchTimeoutRef.current = setTimeout(() => {
       performSearch();
       setIsSearching(false);
     }, SEARCH_CONFIG.DEBOUNCE_TIME);
-    
     return () => { if (searchTimeoutRef.current) { clearTimeout(searchTimeoutRef.current); } };
   }, [searchQuery, products, showLowStock, showOutOfStock]);
 
   const performSearch = useCallback(() => {
     let results = [...products];
-    
     if (showLowStock) {
       const threshold = settings.lowStockThreshold || 10;
       results = results.filter(p => {
@@ -111,11 +106,7 @@ const Inventory: React.FC = () => {
         return total > 0 && total <= threshold;
       });
     }
-    
-    if (showOutOfStock) { 
-      results = results.filter(p => p.batches.reduce((sum: any, b: any) => sum + b.quantity, 0) === 0); 
-    }
-    
+    if (showOutOfStock) { results = results.filter(p => p.batches.reduce((sum: any, b: any) => sum + b.quantity, 0) === 0); }
     results = ArabicSmartSearch.smartSearch(results, searchQuery);
     setSearchResults(results);
   }, [searchQuery, products, showLowStock, showOutOfStock, settings.lowStockThreshold]);
@@ -158,7 +149,6 @@ const Inventory: React.FC = () => {
 
   const handleQuickAdd = async () => {
     if (!quickAddForm.name) return toast.error("اسم الصنف مطلوب");
-    
     if (editingProduct) {
         await db.updateProduct(editingProduct.id, {
             name: quickAddForm.name,
@@ -173,7 +163,6 @@ const Inventory: React.FC = () => {
           const numericCodes = products.map(p => parseInt(p.code)).filter(c => !isNaN(c));
           finalCode = (numericCodes.length > 0 ? Math.max(...numericCodes) + 1 : 1001).toString();
         }
-
         try {
           await db.addProduct(
             { code: finalCode, name: quickAddForm.name },
@@ -192,7 +181,6 @@ const Inventory: React.FC = () => {
           return;
         }
     }
-    
     loadProducts();
     setIsAddModalOpen(false);
     setEditingProduct(null);
@@ -227,7 +215,7 @@ const Inventory: React.FC = () => {
 
   const displayedProducts = useMemo(() => {
     if (searchQuery.trim() || showLowStock || showOutOfStock) return searchResults;
-    return products; // عرض كافة الأصناف المجلوبة
+    return products;
   }, [searchResults, searchQuery, showLowStock, showOutOfStock, products]);
 
   return (
@@ -272,6 +260,8 @@ const Inventory: React.FC = () => {
                 {isSearching ? <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div> : <Search className="h-6 w-6 text-slate-400" />}
               </div>
               <input
+                id="inventory_main_search"
+                name="inventory_search"
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
@@ -340,44 +330,44 @@ const Inventory: React.FC = () => {
                 <X className="w-6 h-6 text-slate-500" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <form className="p-6 space-y-4" onSubmit={(e) => { e.preventDefault(); handleQuickAdd(); }}>
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">اسم الصنف *</label>
-                  <input className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.name} onChange={e => setQuickAddForm({...quickAddForm, name: e.target.value})} placeholder="أدخل اسم المنتج" />
+                  <label htmlFor="prod_name" className="block text-xs font-bold text-slate-500 uppercase mb-1">اسم الصنف *</label>
+                  <input id="prod_name" name="prod_name" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.name} onChange={e => setQuickAddForm({...quickAddForm, name: e.target.value})} placeholder="أدخل اسم المنتج" required />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">كود الصنف (اختياري)</label>
-                  <input className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-mono" value={quickAddForm.code} onChange={e => setQuickAddForm({...quickAddForm, code: e.target.value})} placeholder="توليد تلقائي" />
+                  <label htmlFor="prod_code" className="block text-xs font-bold text-slate-500 uppercase mb-1">كود الصنف (اختياري)</label>
+                  <input id="prod_code" name="prod_code" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-mono" value={quickAddForm.code} onChange={e => setQuickAddForm({...quickAddForm, code: e.target.value})} placeholder="توليد تلقائي" />
                 </div>
                 {!editingProduct && (
                     <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">المخزن</label>
-                    <select className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.warehouse_id} onChange={e => setQuickAddForm({...quickAddForm, warehouse_id: e.target.value})}>
+                    <label htmlFor="prod_warehouse" className="block text-xs font-bold text-slate-500 uppercase mb-1">المخزن</label>
+                    <select id="prod_warehouse" name="prod_warehouse" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold" value={quickAddForm.warehouse_id} onChange={e => setQuickAddForm({...quickAddForm, warehouse_id: e.target.value})}>
                         <option value="">اختر المخزن</option>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                     </div>
                 )}
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر الشراء ({currency})</label>
-                  <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-red-600" value={quickAddForm.purchase_price || ''} onChange={e => setQuickAddForm({...quickAddForm, purchase_price: parseFloat(e.target.value) || 0})} />
+                  <label htmlFor="prod_purchase_price" className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر الشراء ({currency})</label>
+                  <input id="prod_purchase_price" name="prod_purchase_price" type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-red-600" value={quickAddForm.purchase_price || ''} onChange={e => setQuickAddForm({...quickAddForm, purchase_price: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر البيع ({currency})</label>
-                  <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-blue-600" value={quickAddForm.selling_price || ''} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
+                  <label htmlFor="prod_selling_price" className="block text-xs font-bold text-slate-500 uppercase mb-1">سعر البيع ({currency})</label>
+                  <input id="prod_selling_price" name="prod_selling_price" type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-bold text-blue-600" value={quickAddForm.selling_price || ''} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
                 </div>
                 {!editingProduct && (
                     <div className="col-span-2">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">الكمية الافتتاحية (الرصيد الحالي)</label>
-                    <input type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-black text-center text-2xl" value={quickAddForm.initial_qty || ''} onChange={e => setQuickAddForm({...quickAddForm, initial_qty: parseFloat(e.target.value) || 0})} />
+                    <label htmlFor="prod_initial_qty" className="block text-xs font-bold text-slate-500 uppercase mb-1">الكمية الافتتاحية (الرصيد الحالي)</label>
+                    <input id="prod_initial_qty" name="prod_initial_qty" type="number" className="w-full border-2 border-slate-100 rounded-xl p-3 outline-none focus:border-blue-500 transition-all font-black text-center text-2xl" value={quickAddForm.initial_qty || ''} onChange={e => setQuickAddForm({...quickAddForm, initial_qty: parseFloat(e.target.value) || 0})} />
                     </div>
                 )}
               </div>
-              <button onClick={handleQuickAdd} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+              <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
                 <Save className="w-5 h-5" /> {editingProduct ? 'تحديث بيانات الصنف' : 'حفظ الصنف الجديد'}
               </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -498,13 +488,13 @@ const Inventory: React.FC = () => {
               </button>
 
               <div className="relative pt-4 border-t border-slate-100">
-                <label className={`w-full p-4 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${isImporting ? 'bg-slate-50 border-slate-200 opacity-50' : 'border-slate-200 hover:border-blue-500 hover:bg-blue-50'}`}>
+                <label htmlFor="import_excel_file" className={`w-full p-4 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${isImporting ? 'bg-slate-50 border-slate-200 opacity-50' : 'border-slate-200 hover:border-blue-500 hover:bg-blue-50'}`}>
                   {isImporting ? <Loader2 className="w-8 h-8 text-blue-600 animate-spin" /> : <Upload className="w-8 h-8 text-slate-400" />}
                   <div className="text-center">
                     <p className="font-bold text-slate-700">رفع ملف الأصناف</p>
                     <p className="text-xs text-slate-400">اختر ملف Excel من جهازك</p>
                   </div>
-                  <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImport} disabled={isImporting} />
+                  <input id="import_excel_file" name="import_excel_file" type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImport} disabled={isImporting} />
                 </label>
               </div>
             </div>
@@ -517,15 +507,12 @@ const Inventory: React.FC = () => {
 
 const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier, onEdit, onDelete, onViewCard }: { product: any; searchQuery: string; currency: string; bestSupplier: string; onEdit: (p:any)=>void; onDelete: (id:string)=>void; onViewCard: (p:any)=>void; }) => {
   const totalQty = product.batches?.reduce((sum: number, b: any) => sum + (b.quantity || 0), 0) || 0;
-  
   const costPrice = product.batches && product.batches.length > 0 
     ? product.batches[product.batches.length - 1].purchase_price 
     : (product.purchase_price || 0);
-    
   const sellingPrice = product.batches && product.batches.length > 0 
     ? product.batches[product.batches.length - 1].selling_price 
     : (product.selling_price || 0);
-
   const highlightMatch = (text: string, query: string) => {
     if (!text || !query) return text;
     const tokens = ArabicSmartSearch.tokenizeQuery(query);
@@ -536,7 +523,6 @@ const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier, o
     });
     return highlighted;
   };
-
   return (
     <tr className="hover:bg-blue-50/50 transition-colors group">
       <td className="px-6 py-4">
@@ -564,25 +550,13 @@ const ProductRow = React.memo(({ product, searchQuery, currency, bestSupplier, o
       </td>
       <td className="px-6 py-4 text-center">
           <div className="flex justify-center gap-2">
-              <button 
-                onClick={() => onViewCard(product)}
-                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
-                title="كارت الصنف"
-              >
+              <button onClick={() => onViewCard(product)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="كارت الصنف">
                   <FileText className="w-4 h-4" />
               </button>
-              <button 
-                onClick={() => onEdit(product)}
-                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                title="تعديل"
-              >
+              <button onClick={() => onEdit(product)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="تعديل">
                   <Edit className="w-4 h-4" />
               </button>
-              <button 
-                onClick={() => onDelete(product.id)}
-                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                title="حذف"
-              >
+              <button onClick={() => onDelete(product.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="حذف">
                   <Trash2 className="w-4 h-4" />
               </button>
           </div>

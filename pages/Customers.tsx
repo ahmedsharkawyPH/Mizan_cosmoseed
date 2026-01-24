@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { Customer } from '../types';
@@ -102,18 +101,14 @@ export default function Customers() {
       const allInvoices = db.getInvoices();
       const allTransactions = db.getCashTransactions();
       const now = new Date().getTime();
-
       return customers.map(c => {
           const cInvoices = allInvoices.filter(i => i.customer_id === c.id);
           const cPayments = allTransactions.filter(t => t.reference_id === c.id && t.category === 'CUSTOMER_PAYMENT');
-          
           const totalSales = cInvoices.filter(i => i.type === 'SALE').reduce((sum, i) => sum + i.net_total, 0);
           const totalReturns = cInvoices.filter(i => i.type === 'RETURN').reduce((sum, i) => sum + i.net_total, 0);
           const totalPaid = cPayments.filter(t => t.type === 'RECEIPT').reduce((sum, t) => sum + t.amount, 0);
           const totalRefunded = cPayments.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
-
           const actualBalance = c.opening_balance + totalSales - totalReturns - totalPaid + totalRefunded;
-          
           const invCount = cInvoices.filter(i => i.type === 'SALE').length;
           let diffMonths = 1;
           if (invCount > 0) {
@@ -122,7 +117,6 @@ export default function Customers() {
               const diffTime = Math.abs(now - firstDate);
               diffMonths = Math.max(1, diffTime / (1000 * 60 * 60 * 24 * 30)); 
           }
-
           return { 
               ...c, 
               actualBalance,
@@ -258,9 +252,9 @@ export default function Customers() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">{t('cust.title')}</h1>
         <div className="flex gap-2">
-          <label className="cursor-pointer bg-emerald-600 text-white px-3 py-2 rounded-lg flex items-center gap-2">
+          <label htmlFor="import_cust_excel" className="cursor-pointer bg-emerald-600 text-white px-3 py-2 rounded-lg flex items-center gap-2">
             <Upload className="w-4 h-4" /> Import
-            <input type="file" className="hidden" onChange={handleImport} />
+            <input id="import_cust_excel" name="import_cust_excel" type="file" className="hidden" onChange={handleImport} />
           </label>
           <button onClick={openAddModal} className="bg-blue-600 text-white px-3 py-2 rounded-lg flex items-center gap-2">
             <Plus className="w-4 h-4" /> {t('cust.add')}
@@ -278,7 +272,7 @@ export default function Customers() {
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center">
             <div className="relative max-w-md w-full">
                 <Search className="absolute top-2.5 left-3 w-4 h-4 text-gray-400 rtl:right-3 rtl:left-auto" />
-                <input className="pl-10 pr-4 py-2 border rounded-lg w-full rtl:pr-10 rtl:pl-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder={t('cust.search')} value={search} onChange={e => setSearch(e.target.value)} />
+                <input id="customer_search_input" name="customer_search" className="pl-10 pr-4 py-2 border rounded-lg w-full rtl:pr-10 rtl:pl-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder={t('cust.search')} value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {activeTab === 'ANALYSIS' && (
                 <div className="flex gap-2">
@@ -386,7 +380,7 @@ export default function Customers() {
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-fit">
                   <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Plus className="w-5 h-5 text-emerald-600" />إضافة خط توزيع جديد</h3>
                   <div className="flex gap-2">
-                      <input className="flex-1 border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500" placeholder="مثلاً: خط الدقي، خط الهرم..." value={newLineName} onChange={e => setNewLineName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddLine()} />
+                      <input id="new_dist_line_input" name="new_dist_line" className="flex-1 border p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500" placeholder="مثلاً: خط الدقي، خط الهرم..." value={newLineName} onChange={e => setNewLineName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddLine()} />
                       <button onClick={handleAddLine} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-100">إضافة</button>
                   </div>
               </div>
@@ -417,15 +411,15 @@ export default function Customers() {
              <button onClick={() => setIsOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
           <h3 className="font-bold text-lg">{isEditMode ? 'Edit Customer' : t('cust.add')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.code')}</label><input className="w-full border p-2 rounded bg-gray-50 font-mono" value={form.code} readOnly={isEditMode} onChange={e => setForm({...form, code: e.target.value})} /></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.name')}</label><input className="w-full border p-2 rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.phone')}</label><input className="w-full border p-2 rounded" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.address')}</label><input className="w-full border p-2 rounded" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.dist_line')}</label><select className="w-full border p-2 rounded" value={form.distribution_line} onChange={e => setForm({...form, distribution_line: e.target.value})}><option value="">-- بلا خط --</option>{(settings.distributionLines || []).map((l: string) => <option key={l} value={l}>{l}</option>)}</select></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">{t('cust.rep')}</label><select className="w-full border p-2 rounded" value={form.representative_code} onChange={e => setForm({...form, representative_code: e.target.value})}><option value="">-- بلا مندوب --</option>{representatives.map(r => <option key={r.id} value={r.code}>{r.name} ({r.code})</option>)}</select></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">الرصيد الافتتاحي</label><input type="number" className="w-full border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} disabled={isEditMode} /></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">الحد الائتماني</label><input type="number" className="w-full border p-2 rounded" value={form.credit_limit} onChange={e => setForm({...form, credit_limit: +e.target.value})} /></div>
-            <div><label className="block text-xs font-bold text-gray-400 mb-1">نسبة خصم ثابتة %</label><input type="number" className="w-full border p-2 rounded font-bold text-blue-600" value={form.default_discount_percent} onChange={e => setForm({...form, default_discount_percent: +e.target.value})} /></div>
+            <div><label htmlFor="cust_code" className="block text-xs font-bold text-gray-400 mb-1">{t('cust.code')}</label><input id="cust_code" name="cust_code" className="w-full border p-2 rounded bg-gray-50 font-mono" value={form.code} readOnly={isEditMode} onChange={e => setForm({...form, code: e.target.value})} /></div>
+            <div><label htmlFor="cust_name" className="block text-xs font-bold text-gray-400 mb-1">{t('cust.name')}</label><input id="cust_name" name="cust_name" className="w-full border p-2 rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} /></div>
+            <div><label htmlFor="cust_phone" className="block text-xs font-bold text-gray-400 mb-1">{t('cust.phone')}</label><input id="cust_phone" name="cust_phone" className="w-full border p-2 rounded" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
+            <div><label htmlFor="cust_address" className="block text-xs font-bold text-gray-400 mb-1">{t('cust.address')}</label><input id="cust_address" name="cust_address" className="w-full border p-2 rounded" value={form.address} onChange={e => setForm({...form, address: e.target.value})} /></div>
+            <div><label htmlFor="cust_dist" className="block text-xs font-bold text-gray-400 mb-1">{t('cust.dist_line')}</label><select id="cust_dist" name="cust_dist" className="w-full border p-2 rounded" value={form.distribution_line} onChange={e => setForm({...form, distribution_line: e.target.value})}><option value="">-- بلا خط --</option>{(settings.distributionLines || []).map((l: string) => <option key={l} value={l}>{l}</option>)}</select></div>
+            <div><label htmlFor="cust_rep" className="block text-xs font-bold text-gray-400 mb-1">{t('cust.rep')}</label><select id="cust_rep" name="cust_rep" className="w-full border p-2 rounded" value={form.representative_code} onChange={e => setForm({...form, representative_code: e.target.value})}><option value="">-- بلا مندوب --</option>{representatives.map(r => <option key={r.id} value={r.code}>{r.name} ({r.code})</option>)}</select></div>
+            <div><label htmlFor="cust_opening" className="block text-xs font-bold text-gray-400 mb-1">الرصيد الافتتاحي</label><input id="cust_opening" name="cust_opening" type="number" className="w-full border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} disabled={isEditMode} /></div>
+            <div><label htmlFor="cust_limit" className="block text-xs font-bold text-gray-400 mb-1">الحد الائتماني</label><input id="cust_limit" name="cust_limit" type="number" className="w-full border p-2 rounded" value={form.credit_limit} onChange={e => setForm({...form, credit_limit: +e.target.value})} /></div>
+            <div><label htmlFor="cust_disc" className="block text-xs font-bold text-gray-400 mb-1">نسبة خصم ثابتة %</label><input id="cust_disc" name="cust_disc" type="number" className="w-full border p-2 rounded font-bold text-blue-600" value={form.default_discount_percent} onChange={e => setForm({...form, default_discount_percent: +e.target.value})} /></div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.cancel')}</button>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
@@ -33,7 +32,6 @@ export default function NewInvoice() {
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [showLastCost, setShowLastCost] = useState(false);
 
-  // حالة تعديل الكمية في الجدول1
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [tempQty, setTempQty] = useState<number>(0);
 
@@ -64,7 +62,6 @@ export default function NewInvoice() {
 
   const currency = db.getSettings().currency;
 
-  // تحميل البيانات الأولية
   useEffect(() => {
     setCustomers(db.getCustomers());
     setProducts(db.getProductsWithBatches());
@@ -85,16 +82,14 @@ export default function NewInvoice() {
     }
   }, [id]);
 
-  // آلية مراقبة اكتمال مزامنة البيانات (الأصناف والعملاء)
   useEffect(() => {
     const checkInterval = setInterval(() => {
       if (db.isFullyLoaded !== isDbFullyLoaded) {
         setIsDbFullyLoaded(db.isFullyLoaded);
         setProducts(db.getProductsWithBatches()); 
-        setCustomers(db.getCustomers()); // تحديث قائمة العملاء لضمان ظهور الأرصدة الحقيقية
+        setCustomers(db.getCustomers());
       }
     }, 2000);
-
     return () => clearInterval(checkInterval);
   }, [isDbFullyLoaded]);
 
@@ -164,10 +159,8 @@ export default function NewInvoice() {
 
   const addItemToCart = () => {
     if (!currentProduct) return;
-
     const finalPrice = invoiceConfig.enableManualPrice ? manualPrice : currentSellingPrice;
     const finalDiscount = invoiceConfig.enableDiscount ? discount : 0;
-
     const newItem: CartItem = {
       product: currentProduct,
       batch: availableBatch || undefined,
@@ -176,7 +169,6 @@ export default function NewInvoice() {
       discount_percentage: finalDiscount,
       unit_price: finalPrice
     };
-
     setCart([...cart, newItem]);
     setSelectedProduct('');
     setQty(1);
@@ -207,7 +199,6 @@ export default function NewInvoice() {
     const subtotal = totalGross - totalItemDiscount;
     const discountFromPercent = (subtotal * additionalDiscountPercent / 100);
     const totalAdditionalDiscountValue = discountFromPercent + additionalDiscount;
-    
     return { 
       gross: totalGross, 
       itemDiscount: totalItemDiscount, 
@@ -228,7 +219,6 @@ export default function NewInvoice() {
       const result = id 
         ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
         : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined);
-      
       if (result.success) navigate('/invoices', result.id ? { state: { autoPrintId: result.id } } : undefined);
       else setError(result.message);
     } catch (e: any) {
@@ -238,14 +228,9 @@ export default function NewInvoice() {
     }
   };
 
-  // جلب رصيد العميل الحالي من قاعدة البيانات مباشرة لضمان الدقة
   const liveCustomerBalance = useMemo(() => {
     if (!selectedCustomer) return 0;
-    
-    // الطريقة الصحيحة: البحث في قاعدة البيانات المحدثة
     const customer = db.getCustomers().find(c => c.id === selectedCustomer);
-    
-    // استخدم الحقل الصحيح: current_balance
     return customer?.current_balance || 0;
   }, [selectedCustomer, customers]);
 
@@ -276,7 +261,7 @@ export default function NewInvoice() {
         <div className="flex-1 flex flex-col space-y-6 w-full">
           <div className="bg-white p-4 rounded-2xl shadow-card border border-slate-100">
              <SearchableSelect 
-                id="customerSelect"
+                id="invoice_customer_select"
                 name="customer_id"
                 ref={customerRef} 
                 label={t('inv.customer')} 
@@ -293,8 +278,8 @@ export default function NewInvoice() {
                     <Package className={`w-5 h-5 ${!selectedCustomer ? 'text-slate-300' : 'text-blue-600'}`} /> {isReturnMode ? t('inv.add_return_item') : t('inv.add_product')}
                  </h3>
                  <div className="flex items-center gap-2">
-                    <label htmlFor="warehouseSelect" className="text-xs font-bold text-slate-400 uppercase tracking-wider">المخزن:</label>
-                    <select id="warehouseSelect" name="warehouse_id" disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-lg p-2 font-bold focus:ring-2 focus:ring-blue-500 disabled:opacity-50" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                    <label htmlFor="warehouse_selector" className="text-xs font-bold text-slate-400 uppercase tracking-wider">المخزن:</label>
+                    <select id="warehouse_selector" name="warehouse_id" disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-lg p-2 font-bold focus:ring-2 focus:ring-blue-500 disabled:opacity-50" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                  </div>
@@ -303,7 +288,7 @@ export default function NewInvoice() {
             <div className="grid grid-cols-12 gap-4">
               <div className="col-span-12 md:col-span-9">
                 <SearchableSelect 
-                    id="productSelect"
+                    id="invoice_product_select"
                     name="product_id"
                     ref={productRef} 
                     label={t('inv.product')} 
@@ -316,21 +301,16 @@ export default function NewInvoice() {
                 />
               </div>
               <div className="col-span-12 md:col-span-3">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
+                <label htmlFor="stock_display" className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
                     {t('stock.total')}
                     {selectedProduct && (
-                        <button 
-                            type="button"
-                            onClick={() => setShowLastCost(!showLastCost)}
-                            className={`p-1 rounded-full transition-colors ${showLastCost ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-blue-500'}`}
-                            title="آخر سعر شراء"
-                        >
+                        <button type="button" onClick={() => setShowLastCost(!showLastCost)} className={`p-1 rounded-full transition-colors ${showLastCost ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-blue-500'}`} title="آخر سعر شراء">
                             <Info className="w-3.5 h-3.5" />
                         </button>
                     )}
                 </label>
                 <div className="relative">
-                    <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800 flex justify-between items-center min-h-[46px]">
+                    <div id="stock_display" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-bold text-slate-800 flex justify-between items-center min-h-[46px]">
                         <span>{availableBatch ? availableBatch.quantity : "0"}</span>
                         {showLastCost && (
                             <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full animate-in fade-in slide-in-from-top-1 flex items-center gap-1">
@@ -343,22 +323,22 @@ export default function NewInvoice() {
 
               {invoiceConfig.enableManualPrice && (
                   <div className="col-span-6 md:col-span-3">
-                    <label htmlFor="priceInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.price')}</label>
-                    <input id="priceInput" disabled={!selectedProduct} name="unit_price" ref={priceRef} type="number" className="w-full bg-white border border-orange-300 text-orange-700 rounded-xl p-2.5 font-bold focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50" value={manualPrice} onChange={e => setManualPrice(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
+                    <label htmlFor="manual_price_input" className="block text-sm font-bold text-slate-500 uppercase mb-1">{t('inv.price')}</label>
+                    <input id="manual_price_input" disabled={!selectedProduct} name="unit_price" ref={priceRef} type="number" className="w-full bg-white border border-orange-300 text-orange-700 rounded-xl p-2.5 font-bold focus:ring-2 focus:ring-orange-500 outline-none disabled:opacity-50" value={manualPrice} onChange={e => setManualPrice(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
                   </div>
               )}
               <div className="col-span-6 md:col-span-2">
-                <label htmlFor="qtyInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.qty')}</label>
-                <input id="qtyInput" disabled={!selectedProduct} name="quantity" ref={qtyRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={qty} onChange={e => setQty(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} />
+                <label htmlFor="qty_input" className="block text-sm font-bold text-slate-500 uppercase mb-1">{t('inv.qty')}</label>
+                <input id="qty_input" disabled={!selectedProduct} name="quantity" ref={qtyRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={qty} onChange={e => setQty(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} />
               </div>
               <div className="col-span-6 md:col-span-2">
-                <label htmlFor="bonusInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.bonus')}</label>
-                <input id="bonusInput" disabled={!selectedProduct} name="bonus" ref={bonusRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={bonus} onChange={e => setBonus(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && (invoiceConfig.enableDiscount ? discountRef.current?.focus() : addItemToCart())} />
+                <label htmlFor="bonus_input" className="block text-sm font-bold text-slate-500 uppercase mb-1">{t('inv.bonus')}</label>
+                <input id="bonus_input" disabled={!selectedProduct} name="bonus" ref={bonusRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-bold focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={bonus} onChange={e => setBonus(parseInt(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && (invoiceConfig.enableDiscount ? discountRef.current?.focus() : addItemToCart())} />
               </div>
               {invoiceConfig.enableDiscount && (
                <div className="col-span-6 md:col-span-2">
-                <label htmlFor="discountInput" className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('inv.disc_percent')}</label>
-                <input id="discountInput" disabled={!selectedProduct} name="discount_percent" ref={discountRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center text-red-500 font-bold focus:ring-2 focus:ring-red-500 outline-none disabled:opacity-50" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && addItemToCart()} />
+                <label htmlFor="discount_percent_input" className="block text-sm font-bold text-slate-500 uppercase mb-1">{t('inv.disc_percent')}</label>
+                <input id="discount_percent_input" disabled={!selectedProduct} name="discount_percent" ref={discountRef} type="number" className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center text-red-500 font-bold focus:ring-2 focus:ring-red-500 outline-none disabled:opacity-50" value={discount} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && addItemToCart()} />
               </div>
               )}
               <div className="col-span-12 md:col-span-3 flex items-end">
@@ -392,6 +372,8 @@ export default function NewInvoice() {
                       <td className="px-4 py-3 text-center">
                         {editingIdx === idx ? (
                           <input 
+                            id={`editing_qty_${idx}`}
+                            name={`editing_qty_${idx}`}
                             autoFocus
                             type="number"
                             className="w-20 border-2 border-blue-500 rounded p-1 text-center font-bold"
@@ -404,10 +386,7 @@ export default function NewInvoice() {
                             }}
                           />
                         ) : (
-                          <button 
-                            onClick={() => { setEditingIdx(idx); setTempQty(item.quantity); }}
-                            className="font-bold text-slate-700 hover:text-blue-600 transition-colors px-2 py-1 rounded hover:bg-blue-50"
-                          >
+                          <button onClick={() => { setEditingIdx(idx); setTempQty(item.quantity); }} className="font-bold text-slate-700 hover:text-blue-600 transition-colors px-2 py-1 rounded hover:bg-blue-50">
                             {item.quantity}{item.bonus_quantity > 0 && <span className="text-xs text-green-600 ml-1">+{item.bonus_quantity}</span>}
                           </button>
                         )}
@@ -427,68 +406,36 @@ export default function NewInvoice() {
             <h3 className="font-bold text-slate-700 text-lg border-b pb-4">{t('inv.details')}</h3>
             <div className="space-y-3 text-sm">
                 <div className="flex justify-between"><span>{t('inv.subtotal')}</span><span className="font-bold">{currency}{totals.subtotal.toFixed(2)}</span></div>
-                
                 <div className="space-y-3 pt-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                     <div className="flex items-center gap-2">
-                        <label htmlFor="customerDiscInput" className="text-[10px] font-black text-slate-400 uppercase flex-1">خصم العميل (%)</label>
+                        <label htmlFor="customer_disc_percent_input" className="text-[10px] font-black text-slate-400 uppercase flex-1">خصم العميل (%)</label>
                         <div className="relative w-24">
-                            <input 
-                                id="customerDiscInput"
-                                disabled={!selectedCustomer}
-                                name="customer_discount_percent"
-                                type="number" 
-                                className="w-full border border-slate-200 rounded-lg p-1.5 text-center font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" 
-                                value={additionalDiscountPercent} 
-                                onChange={e => setAdditionalDiscountPercent(parseFloat(e.target.value) || 0)} 
-                            />
+                            <input id="customer_disc_percent_input" disabled={!selectedCustomer} name="customer_discount_percent" type="number" className="w-full border border-slate-200 rounded-lg p-1.5 text-center font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={additionalDiscountPercent} onChange={e => setAdditionalDiscountPercent(parseFloat(e.target.value) || 0)} />
                             <Percent className="absolute right-2 top-2 w-3 h-3 text-slate-300" />
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="extraDiscInput" className="text-[10px] font-black text-slate-400 uppercase flex-1">{t('inv.additional_discount')} (مبلغ)</label>
-                        <input 
-                            id="extraDiscInput"
-                            disabled={!selectedCustomer}
-                            name="extra_discount_value"
-                            type="number" 
-                            className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-bold text-red-600 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" 
-                            value={additionalDiscount} 
-                            onChange={e => setAdditionalDiscount(parseFloat(e.target.value) || 0)} 
-                        />
+                        <label htmlFor="extra_disc_value_input" className="text-[10px] font-black text-slate-400 uppercase flex-1">{t('inv.additional_discount')} (مبلغ)</label>
+                        <input id="extra_disc_value_input" disabled={!selectedCustomer} name="extra_discount_value" type="number" className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-bold text-red-600 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={additionalDiscount} onChange={e => setAdditionalDiscount(parseFloat(e.target.value) || 0)} />
                     </div>
                 </div>
-
-                <div className="flex justify-between text-red-500 font-bold border-t pt-2 mt-2">
-                    <span>إجمالي الخصم</span>
-                    <span>-{currency}{totals.totalAdditionalDiscount.toFixed(2)}</span>
-                </div>
-                
-                <div className="flex justify-between text-2xl font-black border-t-2 border-slate-100 pt-3 mt-2">
-                    <span className="text-slate-800">{t('inv.net_total')}</span>
-                    <span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span>
-                </div>
-
-                {/* الحساب السابق للعميل */}
+                <div className="flex justify-between text-red-500 font-bold border-t pt-2 mt-2"><span>إجمالي الخصم</span><span>-{currency}{totals.totalAdditionalDiscount.toFixed(2)}</span></div>
+                <div className="flex justify-between text-2xl font-black border-t-2 border-slate-100 pt-3 mt-2"><span className="text-slate-800">{t('inv.net_total')}</span><span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span></div>
                 {selectedCustomer && (
                     <div className="flex justify-between items-center text-sm font-bold text-slate-500 bg-amber-50/50 p-2 rounded-lg border border-amber-100/50 mt-3 animate-in fade-in slide-in-from-top-1">
-                        <div className="flex items-center gap-2">
-                            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                            <span>{t('inv.prev_balance')}</span>
-                        </div>
-                        <span className={liveCustomerBalance > 0 ? 'text-red-600' : liveCustomerBalance < 0 ? 'text-blue-600' : 'text-emerald-600'}>
-                            {currency}{liveCustomerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
+                        <div className="flex items-center gap-2"><RotateCcw className="w-3.5 h-3.5 text-amber-600" /><span>{t('inv.prev_balance')}</span></div>
+                        <span className={liveCustomerBalance > 0 ? 'text-red-600' : liveCustomerBalance < 0 ? 'text-blue-600' : 'text-emerald-600'}>{currency}{liveCustomerBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                 )}
             </div>
 
             <div className="space-y-4 pt-4 border-t border-slate-100">
                 <div>
-                  <label htmlFor="cashPaidInput" className="block text-xs font-bold text-slate-500 uppercase mb-1.5">{t('inv.cash_paid')}</label>
-                  <input id="cashPaidInput" disabled={!selectedCustomer} name="cash_paid" ref={cashRef} type="number" className="w-full border border-slate-200 rounded-xl p-3 text-xl font-black text-emerald-600 bg-emerald-50/30 focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} />
+                  <label htmlFor="cash_paid_final_input" className="block text-sm font-bold text-slate-500 uppercase mb-1.5">{t('inv.cash_paid')}</label>
+                  <input id="cash_paid_final_input" disabled={!selectedCustomer} name="cash_paid" ref={cashRef} type="number" className="w-full border border-slate-200 rounded-xl p-3 text-xl font-black text-emerald-600 bg-emerald-50/30 focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} />
                 </div>
-                <button onClick={() => { handleCheckout(true); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
-                <button onClick={() => { handleCheckout(false); }} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
+                <button onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
+                <button onClick={() => handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
             </div>
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-bold flex items-center gap-2 border border-red-100 animate-in fade-in shake"><AlertCircle className="w-5 h-5" />{error}</div>}
         </div>
@@ -497,15 +444,15 @@ export default function NewInvoice() {
       {showSettings && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
-                  <div className="bg-slate-50 p-5 border-b flex justify-between items-center"><h3 className="font-black text-slate-800">{t('inv.settings')}</h3><button onClick={() => setShowSettings(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><X className="w-5 h-5 text-slate-500" /></button></div>
+                  <div className="bg-slate-50 p-5 border-b flex justify-between items-center"><h3 className="font-black text-slate-800">{t('inv.settings')}</h3><button onClick={() => setShowSettings(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><X className="w-5 h-5" text-slate-500 /></button></div>
                   <div className="p-6 space-y-4">
                       <label className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
                         <span className="text-sm font-bold text-slate-700">{t('inv.manual_price')}</span>
-                        <input type="checkbox" className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 cursor-pointer" checked={invoiceConfig.enableManualPrice} onChange={e => setInvoiceConfig({...invoiceConfig, enableManualPrice: e.target.checked})} />
+                        <input id="setting_manual_price" name="setting_manual_price" type="checkbox" className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 cursor-pointer" checked={invoiceConfig.enableManualPrice} onChange={e => setInvoiceConfig({...invoiceConfig, enableManualPrice: e.target.checked})} />
                       </label>
                       <label className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
                         <span className="text-sm font-bold text-slate-700">{t('inv.discount')}</span>
-                        <input type="checkbox" className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 cursor-pointer" checked={invoiceConfig.enableDiscount} onChange={e => setInvoiceConfig({...invoiceConfig, enableDiscount: e.target.checked})} />
+                        <input id="setting_discount" name="setting_discount" type="checkbox" className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 cursor-pointer" checked={invoiceConfig.enableDiscount} onChange={e => setInvoiceConfig({...invoiceConfig, enableDiscount: e.target.checked})} />
                       </label>
                   </div>
               </div>
