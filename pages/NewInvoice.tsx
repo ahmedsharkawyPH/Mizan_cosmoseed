@@ -304,7 +304,7 @@ export default function NewInvoice() {
                 <label htmlFor="stock_display" className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
                     {t('stock.total')}
                     {selectedProduct && (
-                        <button type="button" onClick={() => setShowLastCost(!showLastCost)} className={`p-1 rounded-full transition-colors ${showLastCost ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-blue-500'}`} title="آخر سعر شراء">
+                        <button type="button" id="info_btn_cost" onClick={() => setShowLastCost(!showLastCost)} className={`p-1 rounded-full transition-colors ${showLastCost ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-blue-500'}`} title="آخر سعر شراء">
                             <Info className="w-3.5 h-3.5" />
                         </button>
                     )}
@@ -342,7 +342,7 @@ export default function NewInvoice() {
               </div>
               )}
               <div className="col-span-12 md:col-span-3 flex items-end">
-                  <button onClick={addItemToCart} disabled={!selectedProduct} className="w-full h-[46px] bg-blue-600 text-white rounded-xl font-bold shadow-md hover:bg-blue-700 transition-all flex items-center justify-center disabled:opacity-50">
+                  <button id="add_to_invoice_btn" name="add_to_invoice" onClick={addItemToCart} disabled={!selectedProduct} className="w-full h-[46px] bg-blue-600 text-white rounded-xl font-bold shadow-md hover:bg-blue-700 transition-all flex items-center justify-center disabled:opacity-50">
                     <Plus className="w-5 h-5 mr-2" /> {t('inv.add_btn')}
                   </button>
               </div>
@@ -434,8 +434,8 @@ export default function NewInvoice() {
                   <label htmlFor="cash_paid_final_input" className="block text-sm font-bold text-slate-500 uppercase mb-1.5">{t('inv.cash_paid')}</label>
                   <input id="cash_paid_final_input" disabled={!selectedCustomer} name="cash_paid" ref={cashRef} type="number" className="w-full border border-slate-200 rounded-xl p-3 text-xl font-black text-emerald-600 bg-emerald-50/30 focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50" value={cashPayment} onChange={e => setCashPayment(parseFloat(e.target.value) || 0)} />
                 </div>
-                <button onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
-                <button onClick={() => handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
+                <button id="save_print_btn" name="save_print" onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Printer className="w-5 h-5" /> {t('inv.save_print')}</button>
+                <button id="finalize_btn" name="finalize" onClick={() => handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"><Save className="w-5 h-5" /> {t('inv.finalize')}</button>
             </div>
             {error && <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-bold flex items-center gap-2 border border-red-100 animate-in fade-in shake"><AlertCircle className="w-5 h-5" />{error}</div>}
         </div>
@@ -446,11 +446,11 @@ export default function NewInvoice() {
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
                   <div className="bg-slate-50 p-5 border-b flex justify-between items-center"><h3 className="font-black text-slate-800">{t('inv.settings')}</h3><button onClick={() => setShowSettings(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><X className="w-5 h-5" text-slate-500 /></button></div>
                   <div className="p-6 space-y-4">
-                      <label className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
+                      <label htmlFor="setting_manual_price" className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
                         <span className="text-sm font-bold text-slate-700">{t('inv.manual_price')}</span>
                         <input id="setting_manual_price" name="setting_manual_price" type="checkbox" className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 cursor-pointer" checked={invoiceConfig.enableManualPrice} onChange={e => setInvoiceConfig({...invoiceConfig, enableManualPrice: e.target.checked})} />
                       </label>
-                      <label className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
+                      <label htmlFor="setting_discount" className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
                         <span className="text-sm font-bold text-slate-700">{t('inv.discount')}</span>
                         <input id="setting_discount" name="setting_discount" type="checkbox" className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 cursor-pointer" checked={invoiceConfig.enableDiscount} onChange={e => setInvoiceConfig({...invoiceConfig, enableDiscount: e.target.checked})} />
                       </label>

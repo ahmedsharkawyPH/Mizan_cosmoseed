@@ -46,16 +46,19 @@ export default function PurchaseInvoice({ type }: Props) {
     if(def) setSelectedWarehouse(def.id);
   }, [warehouses]);
 
-  // Handle Cost Change: Update Margin based on current Sell, or Sell based on current Margin
+  // Logic: Cost Change
   const handleCostChange = (val: number) => {
     setCost(val);
     if (val > 0 && margin > 0) {
       const calculatedSell = val * (1 + margin / 100);
       setSell(parseFloat(calculatedSell.toFixed(2)));
+    } else if (val > 0 && sell > 0) {
+      const calculatedMargin = ((sell / val) - 1) * 100;
+      setMargin(parseFloat(calculatedMargin.toFixed(1)));
     }
   };
 
-  // Handle Margin Change: Update Sell Price
+  // Logic: Margin Change (Updates Sell)
   const handleMarginChange = (val: number) => {
     setMargin(val);
     if (cost > 0) {
@@ -64,7 +67,7 @@ export default function PurchaseInvoice({ type }: Props) {
     }
   };
 
-  // Handle Sell Price Change: Update Margin %
+  // Logic: Sell Price Change (Updates Margin)
   const handleSellChange = (val: number) => {
     setSell(val);
     if (cost > 0 && val > 0) {
@@ -89,6 +92,7 @@ export default function PurchaseInvoice({ type }: Props) {
         setSell(0);
         setMargin(0);
       }
+      setTimeout(() => costRef.current?.focus(), 50);
     }
   }, [selProd, products]);
 
@@ -97,7 +101,7 @@ export default function PurchaseInvoice({ type }: Props) {
         toast.error("يرجى اختيار الصنف أولاً");
         return;
     }
-    if (qty <= 0) {
+    if (Number(qty) <= 0) {
         toast.error("الكمية يجب أن تكون أكبر من صفر");
         return;
     }
@@ -109,7 +113,7 @@ export default function PurchaseInvoice({ type }: Props) {
     const newItem: PurchaseItem = {
       product_id: selProd,
       warehouse_id: selectedWarehouse,
-      batch_number: `AUTO-${Date.now().toString().slice(-4)}`,
+      batch_number: `BATCH-${Date.now().toString().slice(-6)}`,
       quantity: Number(qty),
       cost_price: Number(cost),
       selling_price: Number(sell),
@@ -118,33 +122,15 @@ export default function PurchaseInvoice({ type }: Props) {
     
     setCart(prev => [...prev, newItem]);
 
-    // Reset fields for next item
+    // Reset fields
     setSelProd('');
     setQty(1);
     setCost(0);
     setMargin(0);
     setSell(0);
     
-    toast.success("تمت الإضافة للمسودة");
+    toast.success("تمت الإضافة للفاتورة");
     setTimeout(() => productRef.current?.focus(), 100);
-  };
-
-  const handleQuickAddProduct = async () => {
-    if (!newProdForm.name) return alert("يرجى إدخال اسم الصنف");
-    const allProds = db.getProductsWithBatches();
-    const codes = allProds.map(p => parseInt(p.code || '0')).filter(c => !isNaN(c));
-    const nextCode = (codes.length > 0 ? Math.max(...codes) + 1 : 1001).toString();
-    const pid = await db.addProduct(
-        { code: nextCode, name: newProdForm.name },
-        { quantity: 0, purchase_price: 0, selling_price: newProdForm.sellingPrice, batch_number: 'AUTO', expiry_date: '2099-12-31' }
-    );
-    if (pid) {
-        setProducts(db.getProductsWithBatches());
-        setSelProd(pid);
-        setIsAddModalOpen(false);
-        setNewProdForm({ name: '', sellingPrice: 0 });
-        setTimeout(() => costRef.current?.focus(), 100);
-    }
   };
 
   const save = async () => {
@@ -181,25 +167,26 @@ export default function PurchaseInvoice({ type }: Props) {
         <div className="flex-1 space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
             <SearchableSelect 
+                id="pur_supplier_select"
+                name="pur_supplier"
                 label={t('pur.select_supplier')} 
                 placeholder="ابحث عن المورد..." 
                 options={suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
                 value={selectedSupplier} 
                 onChange={setSelectedSupplier} 
-                autoFocus={!isReturn} 
             />
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 space-y-4">
             <div className="flex justify-between items-center border-b pb-2">
                 <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-blue-500" /> تفاصيل الصنف
+                    <TrendingUp className="w-4 h-4 text-blue-500" /> تفاصيل الصنف المشتراة
                 </h3>
                 <div className="flex items-center gap-3">
                     <button onClick={() => setIsAddModalOpen(true)} className="text-blue-600 hover:text-blue-700 text-sm font-bold flex items-center gap-1 px-3 py-1 bg-blue-50 rounded-lg transition-colors border border-blue-100">
                         <PackagePlus className="w-4 h-4" /> صنف جديد
                     </button>
-                    <select className="text-sm border p-1 rounded font-bold text-slate-600 outline-none focus:ring-1 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                    <select id="pur_warehouse_select" name="pur_warehouse" className="text-sm border p-1 rounded font-bold text-slate-600 outline-none focus:ring-1 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                 </div>
@@ -207,26 +194,35 @@ export default function PurchaseInvoice({ type }: Props) {
             
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <div className="md:col-span-6">
-                    <SearchableSelect ref={productRef} label={t('inv.product')} placeholder="ابحث عن الصنف..." options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} value={selProd} onChange={setSelProd} />
+                    <SearchableSelect 
+                        id="pur_product_select"
+                        name="pur_product"
+                        ref={productRef} 
+                        label={t('inv.product')} 
+                        placeholder="ابحث عن الصنف..." 
+                        options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} 
+                        value={selProd} 
+                        onChange={setSelProd} 
+                    />
                 </div>
                 <div>
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t('pur.cost')}</label>
-                    <input ref={costRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} />
+                    <label htmlFor="pur_cost_input" className="text-[10px] font-bold text-gray-500 uppercase">{t('pur.cost')}</label>
+                    <input id="pur_cost_input" name="pur_cost" ref={costRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} />
                 </div>
                 <div>
-                    <label className="text-[10px] font-bold text-blue-500 uppercase">{t('pur.profit_margin')} %</label>
-                    <input ref={marginRef} type="number" className="w-full border border-blue-200 p-2 rounded font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
+                    <label htmlFor="pur_margin_input" className="text-[10px] font-bold text-blue-500 uppercase">{t('pur.profit_margin')} %</label>
+                    <input id="pur_margin_input" name="pur_margin" ref={marginRef} type="number" className="w-full border border-blue-200 p-2 rounded font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
                 </div>
                 <div>
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t('stock.qty')}</label>
-                    <input ref={qtyRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} />
+                    <label htmlFor="pur_qty_input" className="text-[10px] font-bold text-gray-500 uppercase">{t('stock.qty')}</label>
+                    <input id="pur_qty_input" name="pur_qty" ref={qtyRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} />
                 </div>
                 <div className="md:col-span-2">
-                    <label className="text-[10px] font-bold text-emerald-600 uppercase">{t('pur.sell')} (سعر البيع النهائي)</label>
-                    <input ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2 rounded font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} />
+                    <label htmlFor="pur_sell_input" className="text-[10px] font-bold text-emerald-600 uppercase">{t('pur.sell')} (البيع النهائي)</label>
+                    <input id="pur_sell_input" name="pur_sell" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2 rounded font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} />
                 </div>
                 <div className="flex items-end">
-                    <button onClick={addItem} type="button" className="w-full bg-blue-600 text-white h-[42px] rounded-lg font-bold hover:bg-blue-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <button id="add_pur_item_btn" name="add_pur_item" onClick={addItem} type="button" className="w-full bg-blue-600 text-white h-[42px] rounded-lg font-bold hover:bg-blue-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
                         <Plus className="w-4 h-4" /> {t('inv.add_btn')}
                     </button>
                 </div>
@@ -243,7 +239,7 @@ export default function PurchaseInvoice({ type }: Props) {
                     <div className="text-center py-6 text-slate-400 text-xs italic">لا توجد أصناف مضافة حالياً</div>
                 ) : (
                     cart.map((item, i) => (
-                        <div key={i} className="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-xl border border-slate-100 animate-in slide-in-from-right-2">
+                        <div key={i} className="flex justify-between items-center text-sm p-3 bg-slate-50 rounded-xl border border-slate-100">
                             <div className="flex flex-col">
                                 <span className="font-bold text-slate-800">{products.find(x => x.id === item.product_id)?.name}</span>
                                 <span className="text-[10px] text-slate-400">الكمية: {item.quantity} | البيع: {currency}{item.selling_price}</span>
@@ -258,30 +254,14 @@ export default function PurchaseInvoice({ type }: Props) {
                 <div className="text-3xl font-black text-blue-700">{currency}{totalAmount.toLocaleString()}</div>
             </div>
             <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">{isReturn ? 'المبلغ المستلم' : 'المبلغ المدفوع'}</label>
-                <input type="number" className="w-full border p-2.5 rounded-xl font-black text-xl text-emerald-600 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 outline-none" value={cashPaid || ''} onChange={e => setCashPaid(Number(e.target.value))} placeholder="0.00" />
+                <label htmlFor="pur_cash_paid" className="block text-xs font-bold text-gray-500 uppercase mb-1">{isReturn ? 'المبلغ المستلم' : 'المبلغ المدفوع كاش'}</label>
+                <input id="pur_cash_paid" name="pur_cash_paid" type="number" className="w-full border p-2.5 rounded-xl font-black text-xl text-emerald-600 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 outline-none" value={cashPaid || ''} onChange={e => setCashPaid(Number(e.target.value))} placeholder="0.00" />
             </div>
-            <button onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50">
+            <button id="submit_pur_btn" name="submit_pur" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50">
                 {t('pur.submit')}
             </button>
         </div>
       </div>
-
-      {isAddModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-                  <div className="bg-slate-50 p-4 border-b flex justify-between items-center">
-                      <h3 className="font-bold flex items-center gap-2 text-slate-800"><PackagePlus className="w-5 h-5 text-blue-600" /> إضافة صنف سريع</h3>
-                      <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                      <div><label className="block text-sm font-bold text-gray-700 mb-1">اسم الصنف *</label><input className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={newProdForm.name} onChange={e => setNewProdForm({...newProdForm, name: e.target.value})} placeholder="أدخل اسم المنتج" autoFocus /></div>
-                      <div><label className="block text-sm font-bold text-gray-700 mb-1">سعر البيع الافتراضي</label><input type="number" className="w-full border p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={newProdForm.sellingPrice || ''} onChange={e => setNewProdForm({...newProdForm, sellingPrice: parseFloat(e.target.value) || 0})} placeholder="0.00" /></div>
-                      <button onClick={handleQuickAddProduct} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors">حفظ الصنف</button>
-                  </div>
-              </div>
-          </div>
-      )}
     </div>
   );
 }

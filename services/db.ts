@@ -1,3 +1,4 @@
+
 import { 
   Customer, Product, ProductWithBatches, CartItem, Invoice, 
   PurchaseInvoice, PurchaseItem, CashTransaction, CashTransactionType, 
@@ -50,54 +51,28 @@ class Database {
     this.rebuildIndexes();
   }
 
-  /**
-   * Helper function to fetch ALL records from a table, bypasses the 1000 row limit
-   */
   private async fetchAllFromTable(tableName: string) {
     let allData: any[] = [];
-    let errorOccurred = false;
     let from = 0;
     const step = 1000;
-
     while (true) {
-        const { data, error } = await supabase
-            .from(tableName)
-            .select('*')
-            .range(from, from + step - 1);
-        
-        if (error) {
-            console.error(`Error fetching ${tableName}:`, error);
-            errorOccurred = true;
-            break;
-        }
-        if (!data || data.length === 0) break;
-        
+        const { data, error } = await supabase.from(tableName).select('*').range(from, from + step - 1);
+        if (error || !data || data.length === 0) break;
         allData = [...allData, ...data];
         if (data.length < step) break;
         from += step;
     }
-    return errorOccurred ? null : allData;
+    return allData;
   }
 
   private async syncFromCloud() {
     try {
         this.isOffline = false;
-        
-        // Fetch tables that might exceed 1000 rows using chunked fetching
-        const [
-            cust, prod, bat, inv, pur, cash, wh, reps, closings, adjs, orders
-        ] = await Promise.all([
-            this.fetchAllFromTable('customers'),
-            this.fetchAllFromTable('products'),
-            this.fetchAllFromTable('batches'),
-            this.fetchAllFromTable('invoices'),
-            this.fetchAllFromTable('purchase_invoices'),
-            this.fetchAllFromTable('cash_transactions'),
-            this.fetchAllFromTable('warehouses'),
-            this.fetchAllFromTable('representatives'),
-            this.fetchAllFromTable('daily_closings'),
-            this.fetchAllFromTable('pending_adjustments'),
-            this.fetchAllFromTable('purchase_orders')
+        const [cust, prod, bat, inv, pur, cash, wh, reps, closings, adjs, orders] = await Promise.all([
+            this.fetchAllFromTable('customers'), this.fetchAllFromTable('products'), this.fetchAllFromTable('batches'),
+            this.fetchAllFromTable('invoices'), this.fetchAllFromTable('purchase_invoices'), this.fetchAllFromTable('cash_transactions'),
+            this.fetchAllFromTable('warehouses'), this.fetchAllFromTable('representatives'), this.fetchAllFromTable('daily_closings'),
+            this.fetchAllFromTable('pending_adjustments'), this.fetchAllFromTable('purchase_orders')
         ]);
 
         if (cust) this.customers = cust;
@@ -112,15 +87,10 @@ class Database {
         if (adjs) this.pendingAdjustments = adjs;
         if (orders) this.purchaseOrders = orders;
 
-        this._cashBalance = this.cashTransactions.reduce((sum, tx) => {
-            return tx.type === CashTransactionType.RECEIPT ? sum + tx.amount : sum - tx.amount;
-        }, 0);
-
+        this._cashBalance = this.cashTransactions.reduce((sum, tx) => tx.type === CashTransactionType.RECEIPT ? sum + tx.amount : sum - tx.amount, 0);
         this.isFullyLoaded = true;
         this.saveToLocalCache();
-        console.log(`Cloud sync completed: Loaded ${this.products.length} products.`);
     } catch (error) {
-        console.error("Cloud sync failed:", error);
         this.isOffline = true;
         this.isFullyLoaded = true;
     }
@@ -131,46 +101,21 @@ class Database {
     if (data) {
       try {
         const parsed = JSON.parse(data);
-        if (parsed.customers) this.customers = parsed.customers;
-        if (parsed.products) this.products = parsed.products;
-        if (parsed.invoices) this.invoices = parsed.invoices;
-        if (parsed.batches) this.batches = parsed.batches;
-        if (parsed.suppliers) this.suppliers = parsed.suppliers;
-        if (parsed.purchaseInvoices) this.purchaseInvoices = parsed.purchaseInvoices;
-        if (parsed.cashTransactions) this.cashTransactions = parsed.cashTransactions;
-        if (parsed.warehouses) this.warehouses = parsed.warehouses;
-        if (parsed.representatives) this.representatives = parsed.representatives;
-        if (parsed.dailyClosings) this.dailyClosings = parsed.dailyClosings;
-        if (parsed.pendingAdjustments) this.pendingAdjustments = parsed.pendingAdjustments;
-        if (parsed.purchaseOrders) this.purchaseOrders = parsed.purchaseOrders;
-        if (parsed._cashBalance !== undefined) this._cashBalance = parsed._cashBalance;
-      } catch (e) {
-        console.error("Failed to load local cache", e);
-      }
+        Object.assign(this, parsed);
+      } catch (e) {}
     }
     const settings = localStorage.getItem('mizan_settings');
     if (settings) {
-      try {
-        this.settings = { ...this.settings, ...JSON.parse(settings) };
-      } catch (e) {}
+      try { this.settings = { ...this.settings, ...JSON.parse(settings) }; } catch (e) {}
     }
   }
 
   private saveToLocalCache() {
     const data = {
-      customers: this.customers,
-      products: this.products,
-      invoices: this.invoices,
-      batches: this.batches,
-      suppliers: this.suppliers,
-      purchaseInvoices: this.purchaseInvoices,
-      cashTransactions: this.cashTransactions,
-      warehouses: this.warehouses,
-      representatives: this.representatives,
-      dailyClosings: this.dailyClosings,
-      pendingAdjustments: this.pendingAdjustments,
-      purchaseOrders: this.purchaseOrders,
-      _cashBalance: this._cashBalance
+      customers: this.customers, products: this.products, invoices: this.invoices, batches: this.batches,
+      suppliers: this.suppliers, purchaseInvoices: this.purchaseInvoices, cashTransactions: this.cashTransactions,
+      warehouses: this.warehouses, representatives: this.representatives, dailyClosings: this.dailyClosings,
+      pendingAdjustments: this.pendingAdjustments, purchaseOrders: this.purchaseOrders, _cashBalance: this._cashBalance
     };
     localStorage.setItem('mizan_db', JSON.stringify(data));
     localStorage.setItem('mizan_settings', JSON.stringify(this.settings));
@@ -179,19 +124,11 @@ class Database {
   private rebuildIndexes() {}
 
   getSettings() { return this.settings; }
-  async updateSettings(s: any) { 
-    this.settings = s; 
-    this.saveToLocalCache(); 
-    return true; 
-  }
-
+  async updateSettings(s: any) { this.settings = s; this.saveToLocalCache(); return true; }
   getCustomers() { return this.customers; }
   getInvoices() { return this.invoices; }
   getProductsWithBatches(): ProductWithBatches[] {
-    return this.products.map(p => ({
-      ...p,
-      batches: this.batches.filter(b => b.product_id === p.id)
-    }));
+    return this.products.map(p => ({ ...p, batches: (this.batches || []).filter(b => b.product_id === p.id) }));
   }
   getCashBalance() { return this._cashBalance; }
   getDailyClosings() { return this.dailyClosings; }
@@ -203,92 +140,56 @@ class Database {
   getCashTransactions() { return [...this.cashTransactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }
   getRepresentatives() { return this.representatives; }
 
+  // Added getNextTransactionRef method to fix the error in CashRegister.tsx
+  getNextTransactionRef(type: CashTransactionType): string {
+    const prefix = type === CashTransactionType.RECEIPT ? 'REC' : 'EXP';
+    const refs = this.cashTransactions
+      .filter(t => t.type === type && t.ref_number?.startsWith(prefix))
+      .map(t => parseInt(t.ref_number?.split('-')[1] || '0'))
+      .filter(n => !isNaN(n));
+    const nextNum = refs.length > 0 ? Math.max(...refs) + 1 : 1001;
+    return `${prefix}-${nextNum}`;
+  }
+
   getInvoicePaidAmount(id: string): number {
-    const inv = this.invoices.find(i => i.id === id);
-    if (!inv) return 0;
-    return this.cashTransactions
-      .filter(t => t.ref_number === `PAY-${inv.invoice_number}` || t.reference_id === id)
-      .reduce((sum, t) => sum + t.amount, 0);
+    return this.cashTransactions.filter(t => t.reference_id === id).reduce((sum, t) => sum + t.amount, 0);
   }
 
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `INV${Date.now()}`;
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
-    
     const numericInvoices = this.invoices.map(inv => parseInt(inv.invoice_number)).filter(num => !isNaN(num) && num >= 10000);
     const nextInvoiceNumber = numericInvoices.length > 0 ? Math.max(...numericInvoices) + 1 : 10001;
-    
     const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
     const finalBalance = prevBalance + (isReturn ? -netTotal : netTotal) - cashPaid;
 
     const invoice: Invoice = { 
-        id: invoiceId, 
-        invoice_number: nextInvoiceNumber.toString(), 
-        customer_id: customerId, 
-        created_by: user?.id, 
-        created_by_name: user?.name, 
-        date: new Date().toISOString(), 
-        total_before_discount: netTotal + addDisc, 
-        total_discount: 0, 
-        additional_discount: addDisc, 
-        net_total: netTotal, 
-        previous_balance: prevBalance, 
-        final_balance: finalBalance, 
-        payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
-        items, 
-        type: isReturn ? 'RETURN' : 'SALE' 
+        id: invoiceId, invoice_number: nextInvoiceNumber.toString(), customer_id: customerId, created_by: user?.id, 
+        created_by_name: user?.name, date: new Date().toISOString(), total_before_discount: netTotal + addDisc, 
+        total_discount: 0, additional_discount: addDisc, net_total: netTotal, previous_balance: prevBalance, 
+        final_balance: finalBalance, payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
+        items, type: isReturn ? 'RETURN' : 'SALE' 
     };
 
-    let cashTx = null;
-    if (cashPaid > 0) {
-        cashTx = {
-            id: `TX${Date.now()}`,
-            ref_number: `PAY-${invoice.invoice_number}`,
-            type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
-            category: 'CUSTOMER_PAYMENT',
-            reference_id: customerId,
-            related_name: customer?.name || 'Unknown',
-            amount: cashPaid,
-            date: invoice.date,
-            notes: `Payment for INV#${invoice.invoice_number}`
-        };
-    }
+    let cashTx = cashPaid > 0 ? {
+        id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
+        category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: customer?.name || 'Unknown', amount: cashPaid, date: invoice.date, notes: `Payment for INV#${invoice.invoice_number}`
+    } : null;
 
     if (isSupabaseConfigured) {
-        const { error } = await supabase.rpc('process_sales_invoice', {
-            p_invoice: invoice,
-            p_items: items,
-            p_cash_tx: cashTx
-        });
-        
-        if (error) {
-            console.error("Atomic Sales Error:", error.message);
-            return { success: false, message: `فشلت العملية في قاعدة البيانات: ${error.message}` };
-        }
+        const { error } = await supabase.rpc('process_sales_invoice', { p_invoice: invoice, p_items: items, p_cash_tx: cashTx });
+        if (error) return { success: false, message: error.message };
     }
 
     this.invoices.push(invoice);
     if (cashTx) {
         this.cashTransactions.push(cashTx as CashTransaction);
-        if (cashTx.type === CashTransactionType.RECEIPT) this._cashBalance += cashTx.amount;
-        else this._cashBalance -= cashTx.amount;
+        this._cashBalance += (cashTx.type === CashTransactionType.RECEIPT ? cashTx.amount : -cashTx.amount);
     }
-    
-    for (const item of items) {
-        if (item.batch) {
-            const bIdx = this.batches.findIndex(b => b.id === item.batch?.id);
-            if (bIdx !== -1) {
-                const deduction = item.quantity + (item.bonus_quantity || 0);
-                this.batches[bIdx].quantity -= (isReturn ? -deduction : deduction);
-            }
-        }
-    }
-
     if (customer) customer.current_balance = finalBalance;
     this.saveToLocalCache();
-    this.rebuildIndexes();
-    return { success: true, message: 'تم الحفظ بنجاح', id: invoiceId };
+    return { success: true, message: 'تم الحفظ', id: invoiceId };
   }
 
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false): Promise<{ success: boolean; message: string; id?: string }> {
@@ -297,47 +198,24 @@ class Database {
     const date = new Date().toISOString();
     
     const invoice: PurchaseInvoice = { 
-        id: invoiceId, 
-        invoice_number: `P-${Date.now()}`, 
-        supplier_id: supplierId, 
-        date: date, 
-        total_amount: total, 
-        paid_amount: cashPaid, 
-        type: isReturn ? 'RETURN' : 'PURCHASE', 
-        items 
+        id: invoiceId, invoice_number: `P-${Date.now()}`, supplier_id: supplierId, date: date, total_amount: total, 
+        paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items 
     };
 
-    let cashTx = null;
-    if (cashPaid > 0) {
-        cashTx = {
-            id: `TX${Date.now()}`,
-            type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-            category: 'SUPPLIER_PAYMENT',
-            reference_id: supplierId,
-            amount: cashPaid,
-            date: date,
-            notes: `Payment for PUR#${invoice.invoice_number}`
-        };
-    }
+    let cashTx = cashPaid > 0 ? {
+        id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
+        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: date, notes: `Payment for PUR#${invoice.invoice_number}`
+    } : null;
 
     if (isSupabaseConfigured) {
-        const { error } = await supabase.rpc('process_purchase_invoice', {
-            p_invoice: invoice,
-            p_items: items,
-            p_cash_tx: cashTx
-        });
-        
-        if (error) {
-            console.error("Atomic Purchase Error:", error.message);
-            return { success: false, message: `فشل تسجيل المشتريات: ${error.message}` };
-        }
+        const { error } = await supabase.rpc('process_purchase_invoice', { p_invoice: invoice, p_items: items, p_cash_tx: cashTx });
+        if (error) return { success: false, message: error.message };
     }
 
     this.purchaseInvoices.push(invoice);
     if (cashTx) {
         this.cashTransactions.push(cashTx as CashTransaction);
-        if (cashTx.type === CashTransactionType.RECEIPT) this._cashBalance += cashTx.amount;
-        else this._cashBalance -= cashTx.amount;
+        this._cashBalance += (cashTx.type === CashTransactionType.RECEIPT ? cashTx.amount : -cashTx.amount);
     }
 
     const supplier = this.suppliers.find(s => s.id === supplierId);
@@ -346,28 +224,8 @@ class Database {
         supplier.current_balance += (adjustment - cashPaid);
     }
 
-    for (const item of items) {
-        let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
-        if (batch) {
-            batch.quantity += (isReturn ? -item.quantity : item.quantity);
-        } else if (!isReturn) {
-            this.batches.push({ 
-                id: `B${Date.now()}-${Math.random().toString(36).substr(2, 4)}`, 
-                product_id: item.product_id, 
-                warehouse_id: item.warehouse_id, 
-                batch_number: item.batch_number, 
-                quantity: item.quantity, 
-                purchase_price: item.cost_price, 
-                selling_price: item.selling_price, 
-                expiry_date: item.expiry_date, 
-                status: BatchStatus.ACTIVE 
-            });
-        }
-    }
-
-    this.rebuildIndexes();
     this.saveToLocalCache();
-    return { success: true, message: 'تم تسجيل المشتريات', id: invoiceId };
+    return { success: true, message: 'تم التسجيل بنجاح', id: invoiceId };
   }
 
   async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message?: string; id?: string }> {
@@ -381,9 +239,7 @@ class Database {
   }
 
   async deleteInvoice(id: string) {
-    if (isSupabaseConfigured) {
-        await supabase.from('invoices').delete().eq('id', id);
-    }
+    if (isSupabaseConfigured) await supabase.from('invoices').delete().eq('id', id);
     this.invoices = this.invoices.filter(i => i.id !== id);
     this.saveToLocalCache();
   }
@@ -391,29 +247,11 @@ class Database {
   async addProduct(p: Partial<Product>, b?: Partial<Batch>) {
     const id = `PROD${Date.now()}`;
     const product: Product = { id, name: p.name || '', code: p.code, ...p };
-    
-    if (isSupabaseConfigured) {
-        await supabase.from('products').insert(product);
-    }
+    if (isSupabaseConfigured) await supabase.from('products').insert(product);
     this.products.push(product);
-    
     if (b) {
-      const batch = {
-        id: `B${Date.now()}`,
-        product_id: id,
-        warehouse_id: b.warehouse_id || 'W1',
-        batch_number: b.batch_number || 'OPENING',
-        selling_price: b.selling_price || 0,
-        purchase_price: b.purchase_price || 0,
-        quantity: b.quantity || 0,
-        expiry_date: b.expiry_date || '2099-12-31',
-        status: BatchStatus.ACTIVE,
-        ...b
-      } as Batch;
-      
-      if (isSupabaseConfigured) {
-          await supabase.from('batches').insert(batch);
-      }
+      const batch = { id: `B${Date.now()}`, product_id: id, warehouse_id: b.warehouse_id || 'W1', batch_number: b.batch_number || 'OPENING', selling_price: b.selling_price || 0, purchase_price: b.purchase_price || 0, quantity: b.quantity || 0, expiry_date: b.expiry_date || '2099-12-31', status: BatchStatus.ACTIVE, ...b } as Batch;
+      if (isSupabaseConfigured) await supabase.from('batches').insert(batch);
       this.batches.push(batch);
     }
     this.saveToLocalCache();
@@ -421,14 +259,9 @@ class Database {
   }
 
   async updateProduct(id: string, data: any) {
-    if (isSupabaseConfigured) {
-        await supabase.from('products').update(data).eq('id', id);
-    }
+    if (isSupabaseConfigured) await supabase.from('products').update(data).eq('id', id);
     const idx = this.products.findIndex(p => p.id === id);
-    if (idx !== -1) {
-      this.products[idx] = { ...this.products[idx], ...data };
-      this.saveToLocalCache();
-    }
+    if (idx !== -1) { this.products[idx] = { ...this.products[idx], ...data }; this.saveToLocalCache(); }
   }
 
   async deleteProduct(id: string) {
@@ -441,14 +274,8 @@ class Database {
     this.saveToLocalCache();
   }
 
-  getProductMovements(id: string): StockMovement[] { return []; }
-
   async addCustomer(c: any) {
-    const customer: Customer = { 
-      id: `CUST${Date.now()}`, code: c.code || `${Date.now()}`, name: c.name, 
-      phone: c.phone || '', area: c.area || '', address: c.address || '', 
-      opening_balance: c.opening_balance || 0, current_balance: c.opening_balance || 0, ...c 
-    };
+    const customer: Customer = { id: `CUST${Date.now()}`, code: c.code || `${Date.now()}`, name: c.name, phone: c.phone || '', area: c.area || '', address: c.address || '', opening_balance: c.opening_balance || 0, current_balance: c.opening_balance || 0, ...c };
     if (isSupabaseConfigured) await supabase.from('customers').insert(customer);
     this.customers.push(customer);
     this.saveToLocalCache();
@@ -466,16 +293,11 @@ class Database {
     this.saveToLocalCache();
   }
 
-  getNextTransactionRef(type: CashTransactionType) {
-    return `${type === 'RECEIPT' ? 'REC' : 'EXP'}-${Date.now().toString().slice(-6)}`;
-  }
-
   async addCashTransaction(data: any) {
     const tx: CashTransaction = { id: `TX${Date.now()}`, date: new Date().toISOString(), ...data };
     if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(tx);
     this.cashTransactions.push(tx);
-    if (tx.type === CashTransactionType.RECEIPT) this._cashBalance += tx.amount;
-    else this._cashBalance -= tx.amount;
+    this._cashBalance += (tx.type === CashTransactionType.RECEIPT ? tx.amount : -tx.amount);
     this.saveToLocalCache();
   }
 
@@ -487,11 +309,7 @@ class Database {
   }
 
   async addSupplier(s: any) {
-    const supplier: Supplier = { 
-      id: `SUPP${Date.now()}`, code: s.code || '', name: s.name, phone: s.phone || '', 
-      contact_person: s.contact_person || '', address: s.address || '', 
-      opening_balance: s.opening_balance || 0, current_balance: s.opening_balance || 0 
-    };
+    const supplier: Supplier = { id: `SUPP${Date.now()}`, code: s.code || '', name: s.name, phone: s.phone || '', contact_person: s.contact_person || '', address: s.address || '', opening_balance: s.opening_balance || 0, current_balance: s.opening_balance || 0 };
     if (isSupabaseConfigured) await supabase.from('suppliers').insert(supplier);
     this.suppliers.push(supplier);
     this.saveToLocalCache();
@@ -500,25 +318,14 @@ class Database {
   async recordInvoicePayment(invoiceId: string, amount: number) {
     const inv = this.invoices.find(i => i.id === invoiceId);
     if (inv) {
-      await this.addCashTransaction({
-        type: CashTransactionType.RECEIPT,
-        category: 'CUSTOMER_PAYMENT',
-        reference_id: inv.customer_id,
-        related_name: this.customers.find(c => c.id === inv.customer_id)?.name,
-        amount,
-        notes: `Payment for INV#${inv.invoice_number}`,
-        ref_number: `PAY-${inv.invoice_number}`
-      });
+      await this.addCashTransaction({ type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: this.customers.find(c => c.id === inv.customer_id)?.name, amount, notes: `Payment for INV#${inv.invoice_number}` });
       return { success: true };
     }
     return { success: false, message: 'Invoice not found' };
   }
 
   async createPurchaseOrder(supplierId: string, items: any[]) {
-    const order: PurchaseOrder = { 
-      id: `PO${Date.now()}`, order_number: `PO-${Date.now().toString().slice(-6)}`, 
-      supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items 
-    };
+    const order: PurchaseOrder = { id: `PO${Date.now()}`, order_number: `PO-${Date.now().toString().slice(-6)}`, supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items };
     if (isSupabaseConfigured) await supabase.from('purchase_orders').insert(order);
     this.purchaseOrders.push(order);
     this.saveToLocalCache();
@@ -532,9 +339,7 @@ class Database {
   }
 
   async submitStockTake(adjustments: any[]) {
-    const newAdjs = adjustments.map(adj => ({
-        id: `ADJ${Date.now()}${Math.random()}`, date: new Date().toISOString(), status: 'PENDING', ...adj
-    }));
+    const newAdjs = adjustments.map(adj => ({ id: `ADJ${Date.now()}${Math.random()}`, date: new Date().toISOString(), status: 'PENDING', ...adj }));
     if (isSupabaseConfigured) await supabase.from('pending_adjustments').insert(newAdjs);
     this.pendingAdjustments.push(...newAdjs);
     this.saveToLocalCache();
@@ -573,7 +378,7 @@ class Database {
       expenses: dayTxs.filter(t => t.type === 'EXPENSE' && t.category !== 'SUPPLIER_PAYMENT').reduce((s, t) => s + t.amount, 0),
       cashPurchases: this.purchaseInvoices.filter(i => i.date.startsWith(date)).reduce((s, i) => s + i.paid_amount, 0),
       expectedCash: this._cashBalance,
-      inventoryValue: this.batches.reduce((s, b) => s + (b.quantity * b.purchase_price), 0)
+      inventoryValue: (this.batches || []).reduce((s, b) => s + (b.quantity * b.purchase_price), 0)
     };
   }
 
@@ -602,13 +407,10 @@ class Database {
 
   getInventoryValuationReport() {
     return this.products.map(p => {
-      const pBatches = this.batches.filter(b => b.product_id === p.id);
+      const pBatches = (this.batches || []).filter(b => b.product_id === p.id);
       const totalQty = pBatches.reduce((s, b) => s + b.quantity, 0);
       const latestCost = pBatches.length > 0 ? pBatches[pBatches.length - 1].purchase_price : (p.purchase_price || 0);
-      return { 
-        id: p.id, name: p.name, code: p.code || '', totalQty, wac: latestCost, 
-        latestCost, totalValue: totalQty * latestCost, turnoverRate: '5.0' 
-      };
+      return { id: p.id, name: p.name, code: p.code || '', totalQty, wac: latestCost, latestCost, totalValue: totalQty * latestCost, turnoverRate: '5.0' };
     });
   }
 
@@ -645,5 +447,4 @@ class Database {
     if (idx !== -1) { this.warehouses[idx].name = name; this.saveToLocalCache(); }
   }
 }
-
 export const db = new Database();
