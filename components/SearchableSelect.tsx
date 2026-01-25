@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo, useId } from 'react';
 import { Search, ChevronDown, Check, Zap } from 'lucide-react';
 import { ArabicSmartSearch } from '../utils/search';
 
@@ -38,9 +38,9 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   
-  // Create stable ID for label association
-  const internalId = useMemo(() => id || `select-${Math.random().toString(36).substr(2, 9)}`, [id]);
-  const internalName = useMemo(() => name || internalId, [name, internalId]);
+  const generatedId = useId();
+  const internalId = id || generatedId;
+  const internalName = name || internalId;
 
   useImperativeHandle(ref, () => ({
     focus: () => {

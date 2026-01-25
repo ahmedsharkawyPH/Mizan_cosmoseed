@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
@@ -42,11 +41,9 @@ export default function DailyClosing() {
     });
 
     if (success) {
-      // Fix: added missing toast import to enable success notification
       toast.success("تم حفظ التقفيل بنجاح");
       setActiveTab('HISTORY');
     } else {
-      // Fix: added missing toast import to enable error notification
       toast.error("فشل حفظ التقفيل في السحابة");
     }
     setIsSaving(false);
@@ -85,8 +82,10 @@ export default function DailyClosing() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <Calendar className="w-5 h-5 text-gray-400" />
-                <span className="font-bold text-gray-700">تاريخ التقفيل:</span>
+                <label htmlFor="closing_date_input" className="font-bold text-gray-700">تاريخ التقفيل:</label>
                 <input 
+                  id="closing_date_input"
+                  name="target_date"
                   type="date" 
                   className="border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500" 
                   value={targetDate} 
@@ -140,8 +139,10 @@ export default function DailyClosing() {
               </h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">موجودات الخزينة (كاش)</label>
+                  <label htmlFor="actual_cash_input" className="block text-xs font-bold text-slate-400 uppercase mb-1.5">موجودات الخزينة (كاش)</label>
                   <input 
+                    id="actual_cash_input"
+                    name="actual_cash"
                     type="number" 
                     className="w-full border-2 border-blue-100 p-4 rounded-xl text-3xl font-black text-slate-800 focus:border-blue-600 outline-none transition-all"
                     placeholder="0.00"
@@ -151,14 +152,29 @@ export default function DailyClosing() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">رصيد البنك (اختياري)</label>
+                  <label htmlFor="bank_balance_input" className="block text-xs font-bold text-slate-400 uppercase mb-1.5">رصيد البنك (اختياري)</label>
                   <input 
+                    id="bank_balance_input"
+                    name="bank_balance"
                     type="number" 
                     className="w-full border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none"
                     placeholder="0.00"
                     value={bankBalance || ''}
                     onChange={e => setBankBalance(parseFloat(e.target.value) || 0)}
                   />
+                </div>
+
+                <div>
+                  <label htmlFor="closing_notes_input" className="block text-xs font-bold text-slate-400 uppercase mb-1.5">ملاحظات التقفيل</label>
+                  <textarea 
+                    id="closing_notes_input"
+                    name="closing_notes"
+                    className="w-full border border-slate-200 p-3 rounded-xl font-bold text-slate-700 outline-none text-sm"
+                    rows={2}
+                    placeholder="أي ملاحظات حول العجز أو الزيادة..."
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                  ></textarea>
                 </div>
 
                 <div className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center ${difference === 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : difference > 0 ? 'bg-blue-50 border-blue-100 text-blue-700' : 'bg-red-50 border-red-100 text-red-700'}`}>
@@ -169,6 +185,8 @@ export default function DailyClosing() {
                 </div>
 
                 <button 
+                  id="submit_closing_btn"
+                  name="submit_closing"
                   onClick={handleSave}
                   disabled={isSaving}
                   className="w-full bg-blue-600 text-white py-4 rounded-xl font-black text-lg shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center justify-center gap-2"

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { Supplier } from '../types';
@@ -150,9 +149,9 @@ export default function Suppliers() {
             {t('supp.title')}
         </h1>
         <div className="flex gap-2">
-          <label className="cursor-pointer bg-emerald-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700">
+          <label htmlFor="import_supplier_file" className="cursor-pointer bg-emerald-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-emerald-700">
             <Upload className="w-4 h-4" /> Import
-            <input type="file" className="hidden" onChange={handleImport} />
+            <input id="import_supplier_file" name="import_supplier_file" type="file" className="hidden" onChange={handleImport} />
           </label>
           <button onClick={() => setIsOpen(true)} className="bg-blue-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700">
             <Plus className="w-4 h-4" /> {t('supp.add')}
@@ -168,12 +167,30 @@ export default function Suppliers() {
             </button>
           <h3 className="font-bold text-lg">{t('supp.add')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input placeholder={t('cust.code')} className="border p-2 rounded" value={form.code} onChange={e => setForm({...form, code: e.target.value})} />
-            <input placeholder={t('cust.name')} className="border p-2 rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-            <input placeholder={t('cust.phone')} className="border p-2 rounded" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
-            <input placeholder={t('supp.contact')} className="border p-2 rounded" value={form.contact_person} onChange={e => setForm({...form, contact_person: e.target.value})} />
-            <input placeholder="Address" className="border p-2 rounded" value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
-            <input type="number" placeholder={t('cust.balance')} className="border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} />
+            <div>
+              <label htmlFor="supp_code" className="block text-xs font-bold text-slate-500 mb-1">{t('cust.code')}</label>
+              <input id="supp_code" name="code" placeholder={t('cust.code')} className="w-full border p-2 rounded" value={form.code} onChange={e => setForm({...form, code: e.target.value})} />
+            </div>
+            <div>
+              <label htmlFor="supp_name" className="block text-xs font-bold text-slate-500 mb-1">{t('cust.name')}</label>
+              <input id="supp_name" name="name" placeholder={t('cust.name')} className="w-full border p-2 rounded" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            </div>
+            <div>
+              <label htmlFor="supp_phone" className="block text-xs font-bold text-slate-500 mb-1">{t('cust.phone')}</label>
+              <input id="supp_phone" name="phone" placeholder={t('cust.phone')} className="w-full border p-2 rounded" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+            </div>
+            <div>
+              <label htmlFor="supp_contact" className="block text-xs font-bold text-slate-500 mb-1">{t('supp.contact')}</label>
+              <input id="supp_contact" name="contact_person" placeholder={t('supp.contact')} className="w-full border p-2 rounded" value={form.contact_person} onChange={e => setForm({...form, contact_person: e.target.value})} />
+            </div>
+            <div>
+              <label htmlFor="supp_address" className="block text-xs font-bold text-slate-500 mb-1">Address</label>
+              <input id="supp_address" name="address" placeholder="Address" className="w-full border p-2 rounded" value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
+            </div>
+            <div>
+              <label htmlFor="supp_balance" className="block text-xs font-bold text-slate-500 mb-1">{t('cust.balance')}</label>
+              <input id="supp_balance" name="opening_balance" type="number" placeholder={t('cust.balance')} className="w-full border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} />
+            </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.action')}</button>
@@ -188,6 +205,8 @@ export default function Suppliers() {
           <div className="relative max-w-sm">
             <Search className="absolute top-2.5 left-3 w-4 h-4 text-gray-400 rtl:right-3 rtl:left-auto" />
             <input 
+              id="supplier_main_search"
+              name="supplier_search"
               className="pl-10 pr-4 py-2 border rounded-lg w-full rtl:pr-10 rtl:pl-4" 
               placeholder={t('cust.search')} 
               value={search} onChange={e => setSearch(e.target.value)} 
