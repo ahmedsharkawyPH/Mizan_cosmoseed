@@ -160,8 +160,8 @@ export default function CashRegister() {
             <div className="flex items-center gap-2 text-gray-600 font-medium"><FileText className="w-4 h-4" /> {t('cash.history')}</div>
             <div className="flex items-center gap-2 bg-white border px-3 py-1.5 rounded-xl shadow-inner">
                 <Filter className="w-3 h-3 text-slate-400" />
-                <label className="text-xs font-bold text-slate-500">{t('cash.filter_category')}:</label>
-                <select value={historyFilter} onChange={e => setHistoryFilter(e.target.value)} className="text-xs font-black outline-none bg-transparent">
+                <label htmlFor="history_filter_select" className="text-xs font-bold text-slate-500">{t('cash.filter_category')}:</label>
+                <select id="history_filter_select" name="history_filter" value={historyFilter} onChange={e => setHistoryFilter(e.target.value)} className="text-xs font-black outline-none bg-transparent">
                     <option value="ALL">-- كل البنود --</option>
                     <option value="CUSTOMER_PAYMENT">{t('cat.CUSTOMER_PAYMENT')}</option>
                     <option value="SUPPLIER_PAYMENT">{t('cat.SUPPLIER_PAYMENT')}</option>
@@ -207,17 +207,17 @@ export default function CashRegister() {
                 </div>
                 <div className="p-6 space-y-4 overflow-y-auto">
                     <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-1">{t('cash.category')}</label>
+                        <label htmlFor="category_selector" className="block text-sm font-bold text-gray-700 mb-1">{t('cash.category')}</label>
                         {activeType === CashTransactionType.EXPENSE ? (
                             <div className="flex gap-2">
                                 {isAddingCategory ? (
                                     <div className="flex-1 flex items-center gap-2">
-                                      <input className="w-full border p-2 rounded-lg" placeholder="اسم البند الجديد" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} autoFocus />
+                                      <input id="new_cat_name" name="new_category" className="w-full border p-2 rounded-lg" placeholder="اسم البند الجديد" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} autoFocus />
                                       <button onClick={() => setIsAddingCategory(false)} className="p-2 text-gray-400"><X className="w-4 h-4" /></button>
                                     </div>
                                 ) : (
                                     <>
-                                      <select className="w-full border p-2 rounded-lg font-bold" value={category} onChange={(e) => setCategory(e.target.value)}>
+                                      <select id="category_selector" name="category" className="w-full border p-2 rounded-lg font-bold" value={category} onChange={(e) => setCategory(e.target.value)}>
                                           <option value="SUPPLIER_PAYMENT">{t('cat.SUPPLIER_PAYMENT')}</option>
                                           <option value="CAR">{t('cat.CAR')}</option>
                                           <option value="RENT">{t('cat.RENT')}</option>
@@ -227,12 +227,12 @@ export default function CashRegister() {
                                           <option value="OTHER">{t('cat.OTHER')}</option>
                                           {categories.filter(c => !['SUPPLIER_PAYMENT','CAR','RENT','ELECTRICITY','SALARY','COMMISSION','OTHER'].includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
                                       </select>
-                                      <button onClick={() => setIsAddingCategory(true)} className="bg-slate-100 p-2 rounded-lg border hover:bg-slate-200"><Plus className="w-5 h-5" /></button>
+                                      <button onClick={() => setIsAddingCategory(true)} className="bg-slate-100 p-2 rounded-lg border hover:bg-slate-200" title="إضافة بند جديد"><Plus className="w-5 h-5" /></button>
                                     </>
                                 )}
                             </div>
                         ) : (
-                            <select className="w-full border p-2 rounded-lg font-bold" value={category} onChange={(e) => setCategory(e.target.value)}>
+                            <select id="category_selector" name="category" className="w-full border p-2 rounded-lg font-bold" value={category} onChange={(e) => setCategory(e.target.value)}>
                                 <option value="CUSTOMER_PAYMENT">{t('cat.CUSTOMER_PAYMENT')}</option>
                                 <option value="PARTNER_CONTRIBUTION">{t('cat.PARTNER_CONTRIBUTION')}</option>
                                 <option value="OTHER">{t('cat.OTHER')}</option>
@@ -242,6 +242,8 @@ export default function CashRegister() {
                     
                     {category === 'CUSTOMER_PAYMENT' && (
                       <SearchableSelect 
+                        id="tx_customer_select"
+                        name="related_id"
                         options={customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone }))} 
                         value={relatedId} 
                         onChange={setRelatedId} 
@@ -251,6 +253,8 @@ export default function CashRegister() {
                     
                     {category === 'SUPPLIER_PAYMENT' && (
                       <SearchableSelect 
+                        id="tx_supplier_select"
+                        name="related_id"
                         options={suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
                         value={relatedId} 
                         onChange={setRelatedId} 
@@ -260,19 +264,19 @@ export default function CashRegister() {
                     
                     {!['CUSTOMER_PAYMENT', 'SUPPLIER_PAYMENT'].includes(category) && (
                         <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-1">البيان / المستلم</label>
-                          <input className="w-full border p-2 rounded-lg" placeholder="اسم الجهة أو تفاصيل إضافية" value={relatedName} onChange={e => setRelatedName(e.target.value)} />
+                          <label htmlFor="related_name_input" className="block text-sm font-bold text-gray-700 mb-1">البيان / المستلم</label>
+                          <input id="related_name_input" name="related_name" className="w-full border p-2 rounded-lg" placeholder="اسم الجهة أو تفاصيل إضافية" value={relatedName} onChange={e => setRelatedName(e.target.value)} />
                         </div>
                     )}
                     
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-1">المبلغ ({currency})</label>
-                      <input type="number" className="w-full border p-2 rounded-lg text-lg font-black text-blue-600 bg-blue-50/20" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
+                      <label htmlFor="tx_amount_input" className="block text-sm font-bold text-gray-700 mb-1">المبلغ ({currency})</label>
+                      <input id="tx_amount_input" name="amount" type="number" className="w-full border p-2 rounded-lg text-lg font-black text-blue-600 bg-blue-50/20" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} />
                     </div>
                     
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
-                      <textarea className="w-full border p-2 rounded-lg text-sm" rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+                      <label htmlFor="tx_notes_input" className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
+                      <textarea id="tx_notes_input" name="notes" className="w-full border p-2 rounded-lg text-sm" rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
                     </div>
                     
                     <button 
