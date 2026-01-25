@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -32,6 +31,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const Login = lazy(() => import('./pages/Login'));
 const SalesReturn = lazy(() => import('./pages/SalesReturn'));
 const PurchaseReturn = lazy(() => import('./pages/PurchaseReturn'));
+const Commissions = lazy(() => import('./pages/Commissions')); // New
 
 const PageLoader = () => (
     <div className="h-full w-full flex flex-col items-center justify-center p-20 gap-4">
@@ -107,6 +107,7 @@ function App() {
                   <Route path="daily-closing" element={<DailyClosing />} />
                   
                   <Route path="cash" element={<CashRegister />} />
+                  <Route path="commissions" element={<Commissions />} />
                   <Route path="reports" element={<Reports />} />
                   <Route path="reports/*" element={<Reports />} />
                   
