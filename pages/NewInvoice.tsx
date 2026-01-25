@@ -6,6 +6,8 @@ import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, Ar
 import { useNavigate, useParams } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 interface InvoiceSettings {
     enableManualPrice: boolean;
@@ -159,13 +161,13 @@ export default function NewInvoice() {
 
   const addItemToCart = () => {
     if (!currentProduct) return;
-    const finalPrice = invoiceConfig.enableManualPrice ? manualPrice : currentSellingPrice;
-    const finalDiscount = invoiceConfig.enableDiscount ? discount : 0;
+    const finalPrice = invoiceConfig.enableManualPrice ? Number(manualPrice) : Number(currentSellingPrice);
+    const finalDiscount = invoiceConfig.enableDiscount ? Number(discount) : 0;
     const newItem: CartItem = {
       product: currentProduct,
       batch: availableBatch || undefined,
-      quantity: qty,
-      bonus_quantity: bonus,
+      quantity: Number(qty),
+      bonus_quantity: Number(bonus),
       discount_percentage: finalDiscount,
       unit_price: finalPrice
     };
@@ -210,7 +212,7 @@ export default function NewInvoice() {
 
   const handleCheckout = async (print: boolean = false) => {
     if (!selectedCustomer || cart.length === 0) {
-      setError(t('inv.select_customer'));
+      toast.error(t('inv.select_customer'));
       return;
     }
     setIsSubmitting(true);
@@ -220,9 +222,9 @@ export default function NewInvoice() {
         ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
         : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined);
       if (result.success) navigate('/invoices', result.id ? { state: { autoPrintId: result.id } } : undefined);
-      else setError(result.message);
+      else toast.error(result.message);
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -350,14 +352,14 @@ export default function NewInvoice() {
           </div>
 
           <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden flex-1">
-            <table className="w-full text-sm text-left rtl:text-right">
+            <table className="w-full text-sm text-right">
               <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b">
                 <tr>
                   <th className="px-4 py-3">#</th>
-                  <th className="px-4 py-3">{t('inv.product')}</th>
+                  <th className="px-4 py-3 text-right">{t('inv.product')}</th>
                   <th className="px-4 py-3 text-center">{t('inv.qty')}</th>
                   <th className="px-4 py-3 text-center">{t('inv.price')}</th>
-                  <th className="px-4 py-3 text-right">{t('inv.total')}</th>
+                  <th className="px-4 py-3 text-left">{t('inv.total')}</th>
                   <th className="px-4 py-3 text-center"></th>
                 </tr>
               </thead>
@@ -392,7 +394,7 @@ export default function NewInvoice() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-center text-slate-600">{currency}{price}</td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">{currency}{total.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-left font-bold text-slate-900">{currency}{total.toFixed(2)}</td>
                       <td className="px-4 py-3 text-center"><button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Trash2 className="w-4 h-4" /></button></td>
                     </tr>
                   );

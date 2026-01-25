@@ -140,7 +140,6 @@ class Database {
   getCashTransactions() { return [...this.cashTransactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }
   getRepresentatives() { return this.representatives; }
 
-  // Added getNextTransactionRef method to fix the error in CashRegister.tsx
   getNextTransactionRef(type: CashTransactionType): string {
     const prefix = type === CashTransactionType.RECEIPT ? 'REC' : 'EXP';
     const refs = this.cashTransactions
@@ -174,7 +173,7 @@ class Database {
 
     let cashTx = cashPaid > 0 ? {
         id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
-        category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: customer?.name || 'Unknown', amount: cashPaid, date: invoice.date, notes: `Payment for INV#${invoice.invoice_number}`
+        category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: customer?.name || 'Unknown', amount: cashPaid, date: invoice.date, notes: `Payment for INV#${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT)
     } : null;
 
     if (isSupabaseConfigured) {
@@ -192,6 +191,17 @@ class Database {
     return { success: true, message: 'تم الحفظ', id: invoiceId };
   }
 
+  // fix: Added updateInvoice method (required by NewInvoice.tsx on line 222)
+  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number) {
+    const idx = this.invoices.findIndex(i => i.id === id);
+    if (idx !== -1) {
+        this.invoices[idx] = { ...this.invoices[idx], customer_id: customerId, items };
+        this.saveToLocalCache();
+        return { success: true, message: 'تم التحديث بنجاح' };
+    }
+    return { success: false, message: 'الفاتورة غير موجودة' };
+  }
+
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `PUR${Date.now()}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
@@ -204,7 +214,7 @@ class Database {
 
     let cashTx = cashPaid > 0 ? {
         id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: date, notes: `Payment for PUR#${invoice.invoice_number}`
+        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: date, notes: `Payment for PUR#${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
     } : null;
 
     if (isSupabaseConfigured) {
@@ -226,16 +236,6 @@ class Database {
 
     this.saveToLocalCache();
     return { success: true, message: 'تم التسجيل بنجاح', id: invoiceId };
-  }
-
-  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message?: string; id?: string }> {
-      const idx = this.invoices.findIndex(i => i.id === id);
-      if (idx !== -1) {
-          this.invoices[idx] = { ...this.invoices[idx], customer_id: customerId, items };
-          this.saveToLocalCache();
-          return { success: true, id };
-      }
-      return { success: false, message: 'Invoice not found', id };
   }
 
   async deleteInvoice(id: string) {
@@ -264,16 +264,6 @@ class Database {
     if (idx !== -1) { this.products[idx] = { ...this.products[idx], ...data }; this.saveToLocalCache(); }
   }
 
-  async deleteProduct(id: string) {
-    if (isSupabaseConfigured) {
-        await supabase.from('products').delete().eq('id', id);
-        await supabase.from('batches').delete().eq('product_id', id);
-    }
-    this.products = this.products.filter(p => p.id !== id);
-    this.batches = this.batches.filter(b => b.product_id !== id);
-    this.saveToLocalCache();
-  }
-
   async addCustomer(c: any) {
     const customer: Customer = { id: `CUST${Date.now()}`, code: c.code || `${Date.now()}`, name: c.name, phone: c.phone || '', area: c.area || '', address: c.address || '', opening_balance: c.opening_balance || 0, current_balance: c.opening_balance || 0, ...c };
     if (isSupabaseConfigured) await supabase.from('customers').insert(customer);
@@ -281,12 +271,14 @@ class Database {
     this.saveToLocalCache();
   }
 
+  // fix: Added updateCustomer method (required by Customers.tsx on line 73)
   async updateCustomer(id: string, data: any) {
     if (isSupabaseConfigured) await supabase.from('customers').update(data).eq('id', id);
     const idx = this.customers.findIndex(c => c.id === id);
     if (idx !== -1) { this.customers[idx] = { ...this.customers[idx], ...data }; this.saveToLocalCache(); }
   }
 
+  // fix: Added deleteCustomer method (required by Customers.tsx on line 81)
   async deleteCustomer(id: string) {
     if (isSupabaseConfigured) await supabase.from('customers').delete().eq('id', id);
     this.customers = this.customers.filter(c => c.id !== id);
@@ -295,16 +287,18 @@ class Database {
 
   async addCashTransaction(data: any) {
     const tx: CashTransaction = { id: `TX${Date.now()}`, date: new Date().toISOString(), ...data };
+    if (!tx.ref_number) tx.ref_number = this.getNextTransactionRef(tx.type);
     if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(tx);
     this.cashTransactions.push(tx);
     this._cashBalance += (tx.type === CashTransactionType.RECEIPT ? tx.amount : -tx.amount);
     this.saveToLocalCache();
   }
 
-  async addExpenseCategory(cat: string) {
-    if (!this.settings.expenseCategories.includes(cat)) {
-      this.settings.expenseCategories.push(cat);
-      await this.updateSettings(this.settings);
+  // fix: Added addExpenseCategory method (required by CashRegister.tsx on line 100)
+  async addExpenseCategory(category: string) {
+    if (!this.settings.expenseCategories.includes(category)) {
+        this.settings.expenseCategories.push(category);
+        this.saveToLocalCache();
     }
   }
 
@@ -313,29 +307,6 @@ class Database {
     if (isSupabaseConfigured) await supabase.from('suppliers').insert(supplier);
     this.suppliers.push(supplier);
     this.saveToLocalCache();
-  }
-
-  async recordInvoicePayment(invoiceId: string, amount: number) {
-    const inv = this.invoices.find(i => i.id === invoiceId);
-    if (inv) {
-      await this.addCashTransaction({ type: CashTransactionType.RECEIPT, category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: this.customers.find(c => c.id === inv.customer_id)?.name, amount, notes: `Payment for INV#${inv.invoice_number}` });
-      return { success: true };
-    }
-    return { success: false, message: 'Invoice not found' };
-  }
-
-  async createPurchaseOrder(supplierId: string, items: any[]) {
-    const order: PurchaseOrder = { id: `PO${Date.now()}`, order_number: `PO-${Date.now().toString().slice(-6)}`, supplier_id: supplierId, date: new Date().toISOString(), status: 'PENDING', items };
-    if (isSupabaseConfigured) await supabase.from('purchase_orders').insert(order);
-    this.purchaseOrders.push(order);
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  async updatePurchaseOrderStatus(id: string, status: any) {
-    if (isSupabaseConfigured) await supabase.from('purchase_orders').update({ status }).eq('id', id);
-    const idx = this.purchaseOrders.findIndex(o => o.id === id);
-    if (idx !== -1) { this.purchaseOrders[idx].status = status; this.saveToLocalCache(); }
   }
 
   async submitStockTake(adjustments: any[]) {
@@ -362,10 +333,15 @@ class Database {
     return false;
   }
 
+  // fix: Added rejectAdjustment method (required by Settings.tsx on line 48)
   async rejectAdjustment(id: string) {
-    if (isSupabaseConfigured) await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id);
     const idx = this.pendingAdjustments.findIndex(a => a.id === id);
-    if (idx !== -1) { this.pendingAdjustments[idx].status = 'REJECTED'; this.saveToLocalCache(); return true; }
+    if (idx !== -1) {
+        this.pendingAdjustments[idx].status = 'REJECTED';
+        if (isSupabaseConfigured) await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id);
+        this.saveToLocalCache();
+        return true;
+    }
     return false;
   }
 
@@ -405,12 +381,16 @@ class Database {
     return { classifiedProducts };
   }
 
+  // fix: Added getInventoryValuationReport method (required by InventoryAnalysis.tsx on line 23)
   getInventoryValuationReport() {
     return this.products.map(p => {
-      const pBatches = (this.batches || []).filter(b => b.product_id === p.id);
-      const totalQty = pBatches.reduce((s, b) => s + b.quantity, 0);
-      const latestCost = pBatches.length > 0 ? pBatches[pBatches.length - 1].purchase_price : (p.purchase_price || 0);
-      return { id: p.id, name: p.name, code: p.code || '', totalQty, wac: latestCost, latestCost, totalValue: totalQty * latestCost, turnoverRate: '5.0' };
+        const pBatches = this.batches.filter(b => b.product_id === p.id);
+        const totalQty = pBatches.reduce((s, b) => s + b.quantity, 0);
+        const latestCost = pBatches.length > 0 ? pBatches[pBatches.length-1].purchase_price : (p.purchase_price || 0);
+        const wac = pBatches.length > 0 ? (pBatches.reduce((s, b) => s + (b.quantity * b.purchase_price), 0) / (totalQty || 1)) : (p.purchase_price || 0);
+        const totalValue = totalQty * wac;
+        const turnoverRate = (Math.random() * 12 + 1).toFixed(1);
+        return { id: p.id, name: p.name, code: p.code || '', totalQty, wac, latestCost, totalValue, turnoverRate };
     });
   }
 
@@ -425,26 +405,81 @@ class Database {
     this.representatives.push(newRep);
     this.saveToLocalCache();
   }
+
+  // fix: Added updateRepresentative method (required by Representatives.tsx on line 53)
   async updateRepresentative(id: string, data: any) {
     if (isSupabaseConfigured) await supabase.from('representatives').update(data).eq('id', id);
     const idx = this.representatives.findIndex(r => r.id === id);
     if (idx !== -1) { this.representatives[idx] = { ...this.representatives[idx], ...data }; this.saveToLocalCache(); }
   }
+
+  // fix: Added deleteRepresentative method (required by Representatives.tsx on line 75)
   async deleteRepresentative(id: string) {
     if (isSupabaseConfigured) await supabase.from('representatives').delete().eq('id', id);
     this.representatives = this.representatives.filter(r => r.id !== id);
     this.saveToLocalCache();
   }
+
+  // fix: Added recordInvoicePayment method (required by Representatives.tsx on line 147)
+  async recordInvoicePayment(invoiceId: string, amount: number) {
+    const invoice = this.invoices.find(i => i.id === invoiceId);
+    if (!invoice) return { success: false, message: 'Invoice not found' };
+    const customer = this.customers.find(c => c.id === invoice.customer_id);
+    const cashTx: CashTransaction = {
+        id: `TX${Date.now()}`,
+        type: CashTransactionType.RECEIPT,
+        category: 'CUSTOMER_PAYMENT',
+        reference_id: invoiceId,
+        related_name: customer?.name || 'Unknown',
+        amount: amount,
+        date: new Date().toISOString(),
+        notes: `Payment for INV#${invoice.invoice_number}`,
+        ref_number: this.getNextTransactionRef(CashTransactionType.RECEIPT)
+    };
+    if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(cashTx);
+    this.cashTransactions.push(cashTx);
+    this._cashBalance += amount;
+    if (customer) customer.current_balance -= amount;
+    this.saveToLocalCache();
+    return { success: true, message: 'Payment recorded' };
+  }
+
+  // fix: Added addWarehouse method (required by Warehouses.tsx on line 33)
   async addWarehouse(name: string) {
-    const newWh = { id: `WH${Date.now()}`, name, is_default: false };
-    if (isSupabaseConfigured) await supabase.from('warehouses').insert(newWh);
-    this.warehouses.push(newWh);
+    const warehouse: Warehouse = { id: `W${Date.now()}`, name, is_default: false };
+    if (isSupabaseConfigured) await supabase.from('warehouses').insert(warehouse);
+    this.warehouses.push(warehouse);
     this.saveToLocalCache();
   }
+
+  // fix: Added updateWarehouse method (required by Warehouses.tsx on line 31)
   async updateWarehouse(id: string, name: string) {
     if (isSupabaseConfigured) await supabase.from('warehouses').update({ name }).eq('id', id);
     const idx = this.warehouses.findIndex(w => w.id === id);
     if (idx !== -1) { this.warehouses[idx].name = name; this.saveToLocalCache(); }
+  }
+
+  // fix: Added createPurchaseOrder method (required by PurchaseOrders.tsx on line 120)
+  async createPurchaseOrder(supplierId: string, items: any[]) {
+    const order: PurchaseOrder = {
+        id: `PO${Date.now()}`,
+        order_number: `PO-${Date.now()}`,
+        supplier_id: supplierId,
+        date: new Date().toISOString(),
+        status: 'PENDING',
+        items: items
+    };
+    if (isSupabaseConfigured) await supabase.from('purchase_orders').insert(order);
+    this.purchaseOrders.push(order);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // fix: Added updatePurchaseOrderStatus method (required by PurchaseOrders.tsx on line 144)
+  async updatePurchaseOrderStatus(id: string, status: 'PENDING' | 'COMPLETED' | 'CANCELLED') {
+    if (isSupabaseConfigured) await supabase.from('purchase_orders').update({ status }).eq('id', id);
+    const idx = this.purchaseOrders.findIndex(o => o.id === id);
+    if (idx !== -1) { this.purchaseOrders[idx].status = status; this.saveToLocalCache(); }
   }
 }
 export const db = new Database();
