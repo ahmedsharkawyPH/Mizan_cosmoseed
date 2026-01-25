@@ -38,8 +38,9 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   
-  const uniqueId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
-  const inputName = name || uniqueId;
+  // Create stable ID for label association
+  const internalId = useMemo(() => id || `select-${Math.random().toString(36).substr(2, 9)}`, [id]);
+  const internalName = useMemo(() => name || internalId, [name, internalId]);
 
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -56,9 +57,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       code: opt.subLabel || ''
     }));
 
-    // نستخدم محرك البحث الذكي المطور
     const results = ArabicSmartSearch.smartSearch(searchableItems, searchTerm);
-    // نرفع الحد لضمان ظهور كافة النتائج
     return results.slice(0, 1000); 
   }, [options, searchTerm, isOpen]);
 
@@ -139,17 +138,18 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   return (
     <div className={`relative ${className} ${disabled ? 'opacity-60 grayscale-[0.5]' : ''}`} ref={containerRef}>
       {label && (
-        <label htmlFor={uniqueId} className={`block text-sm font-bold mb-1 ${disabled ? 'text-slate-400' : 'text-slate-700'}`}>
+        <label htmlFor={internalId} className={`block text-sm font-bold mb-1 ${disabled ? 'text-slate-400' : 'text-slate-700'}`}>
           {label}
         </label>
       )}
       <div className="relative">
         <input
-          id={uniqueId}
-          name={inputName}
+          id={internalId}
+          name={internalName}
           ref={inputRef}
           type="text"
           autoComplete="off"
+          aria-label={label || placeholder}
           disabled={disabled}
           className="w-full border-slate-200 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border p-2.5 pr-10 font-bold bg-slate-50 focus:bg-white transition-all disabled:cursor-not-allowed"
           placeholder={disabled ? "يرجى اختيار العميل أولاً..." : placeholder}
@@ -177,11 +177,14 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
           {filteredOptions.length > 0 && (
             <ul 
               ref={listRef}
+              role="listbox"
               className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in slide-in-from-top-1"
             >
               {filteredOptions.map((opt: any, idx) => (
                 <li
                   key={opt.value}
+                  role="option"
+                  aria-selected={idx === highlightedIndex}
                   className={`px-4 py-3 cursor-pointer flex justify-between items-center text-sm border-b border-slate-50 last:border-0
                     ${opt.disabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''}
                     ${idx === highlightedIndex ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'}

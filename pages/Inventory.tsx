@@ -18,7 +18,6 @@ const Inventory: React.FC = () => {
   const [dbFullLoaded, setDbFullLoaded] = useState(db.isFullyLoaded);
   const [isOffline, setIsOffline] = useState(db.isOffline);
   
-  // Advanced Filtering
   const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState('ALL');
   const [hideZeroStock, setHideZeroStock] = useState(false);
 
@@ -77,12 +76,10 @@ const Inventory: React.FC = () => {
     if (!products) return [];
     let results = [...products];
 
-    // 1. Warehouse Filter
     if (selectedWarehouseFilter !== 'ALL') {
         results = results.filter(p => p.batches?.some((b: any) => b.warehouse_id === selectedWarehouseFilter));
     }
 
-    // 2. Hide Zero Stock
     if (hideZeroStock) {
         results = results.filter(p => {
             const qty = selectedWarehouseFilter === 'ALL' 
@@ -92,12 +89,10 @@ const Inventory: React.FC = () => {
         });
     }
 
-    // 3. Search Query
     if (searchQuery.trim()) {
         results = ArabicSmartSearch.smartSearch(results, searchQuery);
     }
 
-    // 4. Quick Filters
     if (showLowStock) {
         const threshold = settings.lowStockThreshold || 10;
         results = results.filter(p => {
@@ -143,12 +138,14 @@ const Inventory: React.FC = () => {
 
         <div className="bg-white p-6 rounded-3xl shadow-soft border border-slate-100">
           <div className="relative group mb-4">
+              <label htmlFor="inventory_main_search" className="sr-only">بحث في المخزون</label>
               <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none"><Search className="h-6 w-6 text-slate-400" /></div>
               <input 
                 id="inventory_main_search" 
                 name="inventory_search" 
                 ref={searchInputRef} 
                 type="text" 
+                autoComplete="off"
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
                 placeholder="🔍 ابحث في كامل المخزون..." 
@@ -180,8 +177,22 @@ const Inventory: React.FC = () => {
                     {hideZeroStock ? <EyeOff className="w-4 h-4" /> : <Package className="w-4 h-4" />}
                     {t('stock.only_available')}
                 </button>
-                <button onClick={() => setShowLowStock(!showLowStock)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showLowStock ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-500 border-slate-200'}`}>نواقص المخزون</button>
-                <button onClick={() => setShowOutOfStock(!showOutOfStock)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showOutOfStock ? 'bg-red-500 text-white border-red-600' : 'bg-white text-slate-500 border-slate-200'}`}>منتهي (رصيد 0)</button>
+                <button 
+                   id="toggle_low_stock"
+                   name="toggle_low_stock"
+                   onClick={() => setShowLowStock(!showLowStock)} 
+                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showLowStock ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                >
+                  نواقص المخزون
+                </button>
+                <button 
+                   id="toggle_out_stock"
+                   name="toggle_out_stock"
+                   onClick={() => setShowOutOfStock(!showOutOfStock)} 
+                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showOutOfStock ? 'bg-red-50 text-red-600' : 'bg-white text-slate-500 border-slate-200'}`}
+                >
+                  منتهي (رصيد 0)
+                </button>
           </div>
         </div>
         
@@ -212,7 +223,14 @@ const Inventory: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-center">
                         <div className="flex justify-center gap-2">
-                            <button onClick={() => { setSelectedCardProduct(product); setIsCardModalOpen(true); }} className="p-2 text-slate-400 hover:text-indigo-600"><FileText className="w-4 h-4" /></button>
+                            <button 
+                               id={`view_card_${product.id}`}
+                               name={`view_card_${product.id}`}
+                               onClick={() => { setSelectedCardProduct(product); setIsCardModalOpen(true); }} 
+                               className="p-2 text-slate-400 hover:text-indigo-600"
+                            >
+                               <FileText className="w-4 h-4" />
+                            </button>
                         </div>
                     </td>
                   </tr>
@@ -253,7 +271,7 @@ const Inventory: React.FC = () => {
                           <input id="prod_sell" name="selling_price" type="number" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-emerald-600" value={quickAddForm.selling_price} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
                       </div>
                       <div className="col-span-2 pt-4">
-                          <button onClick={handleSaveProduct} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">حفظ البيانات</button>
+                          <button id="submit_save_prod" name="submit_save_prod" onClick={handleSaveProduct} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">حفظ البيانات</button>
                       </div>
                   </div>
               </div>
