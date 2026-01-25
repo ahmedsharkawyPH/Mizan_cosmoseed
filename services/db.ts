@@ -1,4 +1,3 @@
-
 import { 
   Customer, Product, ProductWithBatches, CartItem, Invoice, 
   PurchaseInvoice, PurchaseItem, CashTransaction, CashTransactionType, 
@@ -191,13 +190,13 @@ class Database {
     return { success: true, message: 'تم الحفظ', id: invoiceId };
   }
 
-  // fix: Added updateInvoice method (required by NewInvoice.tsx on line 222)
-  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number) {
+  // fix: Added id to return type to match createInvoice and fix TS errors in NewInvoice.tsx
+  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message: string; id?: string }> {
     const idx = this.invoices.findIndex(i => i.id === id);
     if (idx !== -1) {
         this.invoices[idx] = { ...this.invoices[idx], customer_id: customerId, items };
         this.saveToLocalCache();
-        return { success: true, message: 'تم التحديث بنجاح' };
+        return { success: true, message: 'تم التحديث بنجاح', id: id };
     }
     return { success: false, message: 'الفاتورة غير موجودة' };
   }
@@ -271,14 +270,12 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // fix: Added updateCustomer method (required by Customers.tsx on line 73)
   async updateCustomer(id: string, data: any) {
     if (isSupabaseConfigured) await supabase.from('customers').update(data).eq('id', id);
     const idx = this.customers.findIndex(c => c.id === id);
     if (idx !== -1) { this.customers[idx] = { ...this.customers[idx], ...data }; this.saveToLocalCache(); }
   }
 
-  // fix: Added deleteCustomer method (required by Customers.tsx on line 81)
   async deleteCustomer(id: string) {
     if (isSupabaseConfigured) await supabase.from('customers').delete().eq('id', id);
     this.customers = this.customers.filter(c => c.id !== id);
@@ -294,7 +291,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // fix: Added addExpenseCategory method (required by CashRegister.tsx on line 100)
   async addExpenseCategory(category: string) {
     if (!this.settings.expenseCategories.includes(category)) {
         this.settings.expenseCategories.push(category);
@@ -333,7 +329,6 @@ class Database {
     return false;
   }
 
-  // fix: Added rejectAdjustment method (required by Settings.tsx on line 48)
   async rejectAdjustment(id: string) {
     const idx = this.pendingAdjustments.findIndex(a => a.id === id);
     if (idx !== -1) {
@@ -381,7 +376,6 @@ class Database {
     return { classifiedProducts };
   }
 
-  // fix: Added getInventoryValuationReport method (required by InventoryAnalysis.tsx on line 23)
   getInventoryValuationReport() {
     return this.products.map(p => {
         const pBatches = this.batches.filter(b => b.product_id === p.id);
@@ -406,21 +400,18 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // fix: Added updateRepresentative method (required by Representatives.tsx on line 53)
   async updateRepresentative(id: string, data: any) {
     if (isSupabaseConfigured) await supabase.from('representatives').update(data).eq('id', id);
     const idx = this.representatives.findIndex(r => r.id === id);
     if (idx !== -1) { this.representatives[idx] = { ...this.representatives[idx], ...data }; this.saveToLocalCache(); }
   }
 
-  // fix: Added deleteRepresentative method (required by Representatives.tsx on line 75)
   async deleteRepresentative(id: string) {
     if (isSupabaseConfigured) await supabase.from('representatives').delete().eq('id', id);
     this.representatives = this.representatives.filter(r => r.id !== id);
     this.saveToLocalCache();
   }
 
-  // fix: Added recordInvoicePayment method (required by Representatives.tsx on line 147)
   async recordInvoicePayment(invoiceId: string, amount: number) {
     const invoice = this.invoices.find(i => i.id === invoiceId);
     if (!invoice) return { success: false, message: 'Invoice not found' };
@@ -444,7 +435,6 @@ class Database {
     return { success: true, message: 'Payment recorded' };
   }
 
-  // fix: Added addWarehouse method (required by Warehouses.tsx on line 33)
   async addWarehouse(name: string) {
     const warehouse: Warehouse = { id: `W${Date.now()}`, name, is_default: false };
     if (isSupabaseConfigured) await supabase.from('warehouses').insert(warehouse);
@@ -452,14 +442,12 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // fix: Added updateWarehouse method (required by Warehouses.tsx on line 31)
   async updateWarehouse(id: string, name: string) {
     if (isSupabaseConfigured) await supabase.from('warehouses').update({ name }).eq('id', id);
     const idx = this.warehouses.findIndex(w => w.id === id);
     if (idx !== -1) { this.warehouses[idx].name = name; this.saveToLocalCache(); }
   }
 
-  // fix: Added createPurchaseOrder method (required by PurchaseOrders.tsx on line 120)
   async createPurchaseOrder(supplierId: string, items: any[]) {
     const order: PurchaseOrder = {
         id: `PO${Date.now()}`,
@@ -475,7 +463,6 @@ class Database {
     return { success: true };
   }
 
-  // fix: Added updatePurchaseOrderStatus method (required by PurchaseOrders.tsx on line 144)
   async updatePurchaseOrderStatus(id: string, status: 'PENDING' | 'COMPLETED' | 'CANCELLED') {
     if (isSupabaseConfigured) await supabase.from('purchase_orders').update({ status }).eq('id', id);
     const idx = this.purchaseOrders.findIndex(o => o.id === id);
