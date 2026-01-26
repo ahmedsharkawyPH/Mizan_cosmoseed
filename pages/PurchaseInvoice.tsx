@@ -46,7 +46,6 @@ export default function PurchaseInvoice({ type }: Props) {
     if(def) setSelectedWarehouse(def.id);
   }, [warehouses]);
 
-  // Logic: Cost Change
   const handleCostChange = (val: number) => {
     setCost(val);
     if (val > 0 && margin > 0) {
@@ -58,7 +57,6 @@ export default function PurchaseInvoice({ type }: Props) {
     }
   };
 
-  // Logic: Margin Change (Updates Sell)
   const handleMarginChange = (val: number) => {
     setMargin(val);
     if (cost > 0) {
@@ -67,7 +65,6 @@ export default function PurchaseInvoice({ type }: Props) {
     }
   };
 
-  // Logic: Sell Price Change (Updates Margin)
   const handleSellChange = (val: number) => {
     setSell(val);
     if (cost > 0 && val > 0) {
@@ -121,8 +118,6 @@ export default function PurchaseInvoice({ type }: Props) {
     };
     
     setCart(prev => [...prev, newItem]);
-
-    // Reset fields
     setSelProd('');
     setQty(1);
     setCost(0);
@@ -157,7 +152,7 @@ export default function PurchaseInvoice({ type }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/inventory')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft className="w-5 h-5" /></button>
+        <button id="btn_back_inventory" name="btn_back_inventory" onClick={() => navigate('/inventory')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft className="w-5 h-5" /></button>
         <h1 className={`text-2xl font-bold ${isReturn ? 'text-red-600' : 'text-blue-600'}`}>
             {isReturn ? t('pur.return_title') : t('pur.title')}
         </h1>
@@ -168,7 +163,7 @@ export default function PurchaseInvoice({ type }: Props) {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
             <SearchableSelect 
                 id="pur_supplier_select"
-                name="pur_supplier"
+                name="supplier_id"
                 label={t('pur.select_supplier')} 
                 placeholder="ابحث عن المورد..." 
                 options={suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
@@ -183,10 +178,10 @@ export default function PurchaseInvoice({ type }: Props) {
                     <TrendingUp className="w-4 h-4 text-blue-500" /> تفاصيل الصنف المشتراة
                 </h3>
                 <div className="flex items-center gap-3">
-                    <button onClick={() => setIsAddModalOpen(true)} className="text-blue-600 hover:text-blue-700 text-sm font-bold flex items-center gap-1 px-3 py-1 bg-blue-50 rounded-lg transition-colors border border-blue-100">
+                    <button id="btn_quick_new_product" name="btn_quick_new_product" onClick={() => setIsAddModalOpen(true)} className="text-blue-600 hover:text-blue-700 text-sm font-bold flex items-center gap-1 px-3 py-1 bg-blue-50 rounded-lg transition-colors border border-blue-100">
                         <PackagePlus className="w-4 h-4" /> صنف جديد
                     </button>
-                    <select id="pur_warehouse_select" name="pur_warehouse" className="text-sm border p-1 rounded font-bold text-slate-600 outline-none focus:ring-1 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                    <select id="pur_warehouse_selector" name="warehouse_id" className="text-sm border p-1 rounded font-bold text-slate-600 outline-none focus:ring-1 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                 </div>
@@ -195,8 +190,8 @@ export default function PurchaseInvoice({ type }: Props) {
             <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <div className="md:col-span-6">
                     <SearchableSelect 
-                        id="pur_product_select"
-                        name="pur_product"
+                        id="pur_product_selector"
+                        name="product_id"
                         ref={productRef} 
                         label={t('inv.product')} 
                         placeholder="ابحث عن الصنف..." 
@@ -207,22 +202,22 @@ export default function PurchaseInvoice({ type }: Props) {
                 </div>
                 <div>
                     <label htmlFor="pur_cost_input" className="text-[10px] font-bold text-gray-500 uppercase">{t('pur.cost')}</label>
-                    <input id="pur_cost_input" name="pur_cost" ref={costRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} />
+                    <input id="pur_cost_input" name="cost_price" ref={costRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} />
                 </div>
                 <div>
                     <label htmlFor="pur_margin_input" className="text-[10px] font-bold text-blue-500 uppercase">{t('pur.profit_margin')} %</label>
-                    <input id="pur_margin_input" name="pur_margin" ref={marginRef} type="number" className="w-full border border-blue-200 p-2 rounded font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
+                    <input id="pur_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border border-blue-200 p-2 rounded font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
                 </div>
                 <div>
                     <label htmlFor="pur_qty_input" className="text-[10px] font-bold text-gray-500 uppercase">{t('stock.qty')}</label>
-                    <input id="pur_qty_input" name="pur_qty" ref={qtyRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} />
+                    <input id="pur_qty_input" name="quantity" ref={qtyRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} />
                 </div>
                 <div className="md:col-span-2">
                     <label htmlFor="pur_sell_input" className="text-[10px] font-bold text-emerald-600 uppercase">{t('pur.sell')} (البيع النهائي)</label>
-                    <input id="pur_sell_input" name="pur_sell" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2 rounded font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} />
+                    <input id="pur_sell_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2 rounded font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} />
                 </div>
                 <div className="flex items-end">
-                    <button id="add_pur_item_btn" name="add_pur_item" onClick={addItem} type="button" className="w-full bg-blue-600 text-white h-[42px] rounded-lg font-bold hover:bg-blue-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <button id="btn_add_purchase_item" name="btn_add_purchase_item" onClick={addItem} type="button" className="w-full bg-blue-600 text-white h-[42px] rounded-lg font-bold hover:bg-blue-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
                         <Plus className="w-4 h-4" /> {t('inv.add_btn')}
                     </button>
                 </div>
@@ -244,7 +239,7 @@ export default function PurchaseInvoice({ type }: Props) {
                                 <span className="font-bold text-slate-800">{products.find(x => x.id === item.product_id)?.name}</span>
                                 <span className="text-[10px] text-slate-400">الكمية: {item.quantity} | البيع: {currency}{item.selling_price}</span>
                             </div>
-                            <button onClick={() => setCart(cart.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 p-1.5"><Trash2 className="w-4 h-4" /></button>
+                            <button id={`btn_remove_pur_${i}`} name={`btn_remove_pur_${i}`} onClick={() => setCart(cart.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 p-1.5"><Trash2 className="w-4 h-4" /></button>
                         </div>
                     ))
                 )}
@@ -254,10 +249,10 @@ export default function PurchaseInvoice({ type }: Props) {
                 <div className="text-3xl font-black text-blue-700">{currency}{totalAmount.toLocaleString()}</div>
             </div>
             <div>
-                <label htmlFor="pur_cash_paid" className="block text-xs font-bold text-gray-500 uppercase mb-1">{isReturn ? 'المبلغ المستلم' : 'المبلغ المدفوع كاش'}</label>
-                <input id="pur_cash_paid" name="pur_cash_paid" type="number" className="w-full border p-2.5 rounded-xl font-black text-xl text-emerald-600 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 outline-none" value={cashPaid || ''} onChange={e => setCashPaid(Number(e.target.value))} placeholder="0.00" />
+                <label htmlFor="pur_cash_paid_input" className="block text-xs font-bold text-gray-500 uppercase mb-1">{isReturn ? 'المبلغ المستلم' : 'المبلغ المدفوع كاش'}</label>
+                <input id="pur_cash_paid_input" name="cash_paid" type="number" className="w-full border p-2.5 rounded-xl font-black text-xl text-emerald-600 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 outline-none" value={cashPaid || ''} onChange={e => setCashPaid(Number(e.target.value))} placeholder="0.00" />
             </div>
-            <button id="submit_pur_btn" name="submit_pur" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50">
+            <button id="btn_submit_purchase" name="btn_submit_purchase" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50">
                 {t('pur.submit')}
             </button>
         </div>

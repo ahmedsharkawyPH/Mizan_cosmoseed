@@ -53,7 +53,7 @@ export default function DailyClosing() {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
             <ClipboardCheck className="w-8 h-8 text-blue-600" />
             تقفيل الخزينة اليومي
           </h1>
@@ -62,12 +62,16 @@ export default function DailyClosing() {
 
         <div className="flex bg-gray-100 p-1 rounded-xl">
           <button 
+            id="tab_new_closing"
+            name="tab_new_closing"
             onClick={() => setActiveTab('NEW')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'NEW' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}
           >
             تقفيل جديد
           </button>
           <button 
+            id="tab_history_closing"
+            name="tab_history_closing"
             onClick={() => setActiveTab('HISTORY')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'HISTORY' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}
           >

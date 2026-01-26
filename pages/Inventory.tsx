@@ -131,8 +131,8 @@ const Inventory: React.FC = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
            <div><h1 className="text-3xl font-black text-slate-800 flex items-center gap-3"><Package className="w-8 h-8 text-blue-600" /> {t('stock.title')}</h1></div>
            <div className="flex flex-wrap gap-2">
-             <button onClick={() => setIsIEOpen(true)} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all"><FileSpreadsheet className="w-5 h-5" /> استيراد وتصدير</button>
-             <button onClick={() => { setEditingProduct(null); setIsAddModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><PlusCircle className="w-5 h-5" /> {t('stock.new')}</button>
+             <button id="btn_import_export" name="btn_import_export" onClick={() => setIsIEOpen(true)} className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all"><FileSpreadsheet className="w-5 h-5" /> استيراد وتصدير</button>
+             <button id="btn_new_product" name="btn_new_product" onClick={() => { setEditingProduct(null); setIsAddModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><PlusCircle className="w-5 h-5" /> {t('stock.new')}</button>
            </div>
         </div>
 
@@ -169,8 +169,8 @@ const Inventory: React.FC = () => {
                 </div>
                 <div className="h-6 w-[1px] bg-slate-200 mx-2 hidden md:block"></div>
                 <button 
-                  id="toggle_zero_stock"
-                  name="toggle_zero_stock"
+                  id="btn_toggle_zero_stock"
+                  name="btn_toggle_zero_stock"
                   onClick={() => setHideZeroStock(!hideZeroStock)} 
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${hideZeroStock ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-slate-500 border-slate-200'}`}
                 >
@@ -178,16 +178,16 @@ const Inventory: React.FC = () => {
                     {t('stock.only_available')}
                 </button>
                 <button 
-                   id="toggle_low_stock"
-                   name="toggle_low_stock"
+                   id="btn_toggle_low_stock"
+                   name="btn_toggle_low_stock"
                    onClick={() => setShowLowStock(!showLowStock)} 
                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showLowStock ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-500 border-slate-200'}`}
                 >
                   نواقص المخزون
                 </button>
                 <button 
-                   id="toggle_out_stock"
-                   name="toggle_out_stock"
+                   id="btn_toggle_out_of_stock"
+                   name="btn_toggle_out_of_stock"
                    onClick={() => setShowOutOfStock(!showOutOfStock)} 
                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${showOutOfStock ? 'bg-red-50 text-red-600' : 'bg-white text-slate-500 border-slate-200'}`}
                 >
@@ -224,8 +224,8 @@ const Inventory: React.FC = () => {
                     <td className="px-6 py-4 text-center">
                         <div className="flex justify-center gap-2">
                             <button 
-                               id={`view_card_${product.id}`}
-                               name={`view_card_${product.id}`}
+                               id={`btn_view_card_${product.id}`}
+                               name={`btn_view_card_${product.id}`}
                                onClick={() => { setSelectedCardProduct(product); setIsCardModalOpen(true); }} 
                                className="p-2 text-slate-400 hover:text-indigo-600"
                             >
@@ -247,31 +247,31 @@ const Inventory: React.FC = () => {
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
                   <div className="bg-slate-50 p-6 border-b flex justify-between items-center">
                       <h3 className="text-xl font-black text-slate-800 flex items-center gap-2"><PlusCircle className="w-6 h-6 text-blue-600" /> إضافة صنف جديد</h3>
-                      <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+                      <button id="btn_close_add_modal" name="btn_close_add_modal" onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
                   </div>
                   <div className="p-8 grid grid-cols-2 gap-4">
                       <div className="col-span-2">
-                          <label htmlFor="prod_name" className="block text-sm font-bold text-slate-700 mb-1">اسم الصنف *</label>
-                          <input id="prod_name" name="name" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={quickAddForm.name} onChange={e => setQuickAddForm({...quickAddForm, name: e.target.value})} autoFocus />
+                          <label htmlFor="prod_name_input" className="block text-sm font-bold text-slate-700 mb-1">اسم الصنف *</label>
+                          <input id="prod_name_input" name="name" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold" value={quickAddForm.name} onChange={e => setQuickAddForm({...quickAddForm, name: e.target.value})} autoFocus />
                       </div>
                       <div>
-                          <label htmlFor="prod_code" className="block text-sm font-bold text-slate-700 mb-1">الكود</label>
-                          <input id="prod_code" name="code" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-mono" value={quickAddForm.code} onChange={e => setQuickAddForm({...quickAddForm, code: e.target.value})} />
+                          <label htmlFor="prod_code_input" className="block text-sm font-bold text-slate-700 mb-1">الكود</label>
+                          <input id="prod_code_input" name="code" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-mono" value={quickAddForm.code} onChange={e => setQuickAddForm({...quickAddForm, code: e.target.value})} />
                       </div>
                       <div>
-                          <label htmlFor="prod_qty" className="block text-sm font-bold text-slate-700 mb-1">الرصيد الافتتاحي</label>
-                          <input id="prod_qty" name="initial_qty" type="number" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={quickAddForm.initial_qty} onChange={e => setQuickAddForm({...quickAddForm, initial_qty: parseInt(e.target.value) || 0})} />
+                          <label htmlFor="prod_qty_input" className="block text-sm font-bold text-slate-700 mb-1">الرصيد الافتتاحي</label>
+                          <input id="prod_qty_input" name="initial_qty" type="number" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={quickAddForm.initial_qty} onChange={e => setQuickAddForm({...quickAddForm, initial_qty: parseInt(e.target.value) || 0})} />
                       </div>
                       <div>
-                          <label htmlFor="prod_cost" className="block text-sm font-bold text-slate-700 mb-1">سعر الشراء</label>
-                          <input id="prod_cost" name="purchase_price" type="number" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-red-600" value={quickAddForm.purchase_price} onChange={e => setQuickAddForm({...quickAddForm, purchase_price: parseFloat(e.target.value) || 0})} />
+                          <label htmlFor="prod_purchase_price_input" className="block text-sm font-bold text-slate-700 mb-1">سعر الشراء</label>
+                          <input id="prod_purchase_price_input" name="purchase_price" type="number" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-red-600" value={quickAddForm.purchase_price} onChange={e => setQuickAddForm({...quickAddForm, purchase_price: parseFloat(e.target.value) || 0})} />
                       </div>
                       <div>
-                          <label htmlFor="prod_sell" className="block text-sm font-bold text-slate-700 mb-1">سعر البيع</label>
-                          <input id="prod_sell" name="selling_price" type="number" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-emerald-600" value={quickAddForm.selling_price} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
+                          <label htmlFor="prod_selling_price_input" className="block text-sm font-bold text-slate-700 mb-1">سعر البيع</label>
+                          <input id="prod_selling_price_input" name="selling_price" type="number" className="w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-emerald-600" value={quickAddForm.selling_price} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
                       </div>
                       <div className="col-span-2 pt-4">
-                          <button id="submit_save_prod" name="submit_save_prod" onClick={handleSaveProduct} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">حفظ البيانات</button>
+                          <button id="btn_submit_save_prod" name="btn_submit_save_prod" onClick={handleSaveProduct} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">حفظ البيانات</button>
                       </div>
                   </div>
               </div>
