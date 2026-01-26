@@ -375,7 +375,7 @@ export default function NewInvoice() {
                         {editingIdx === idx ? (
                           <input 
                             id={`inv_editing_qty_${idx}`}
-                            name={`inv_editing_qty_${idx}`}
+                            name={`editing_qty_${idx}`}
                             autoFocus
                             type="number"
                             className="w-20 border-2 border-blue-500 rounded p-1 text-center font-bold"
@@ -445,7 +445,7 @@ export default function NewInvoice() {
 
       {showSettings && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-sm overflow-hidden">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
                   <div className="bg-slate-50 p-5 border-b flex justify-between items-center"><h3 className="font-black text-slate-800">{t('inv.settings')}</h3><button id="btn_close_settings" name="btn_close_settings" onClick={() => setShowSettings(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><X className="w-5 h-5 text-slate-500" /></button></div>
                   <div className="p-6 space-y-4">
                       <div className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
