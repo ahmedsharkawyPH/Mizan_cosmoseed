@@ -39,7 +39,8 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const listRef = useRef<HTMLUListElement>(null);
   
   const generatedId = useId();
-  const internalId = id || generatedId;
+  // Ensure we use the passed id or the generated one for BOTH label and input
+  const internalId = id || `searchable-${generatedId}`;
   const internalName = name || internalId;
 
   useImperativeHandle(ref, () => ({
