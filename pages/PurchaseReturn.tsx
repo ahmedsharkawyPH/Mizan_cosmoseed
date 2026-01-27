@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { Supplier, PurchaseInvoice, PurchaseItem } from '../types';
-import { Search, RotateCcw, Truck, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle, Loader2 } from 'lucide-react';
+import { Search, RotateCcw, Truck, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle, Loader2, Filter } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 import { t } from '../utils/t';
 // @ts-ignore
@@ -16,6 +16,7 @@ export default function PurchaseReturn() {
   const [returnItems, setReturnItems] = useState<PurchaseItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cashRefund, setCashRefund] = useState(0);
+  const [invoiceSearch, setInvoiceSearch] = useState(''); // حالة البحث الجديدة
 
   const currency = db.getSettings().currency;
 
@@ -29,12 +30,30 @@ export default function PurchaseReturn() {
       setSupplierInvoices(invoices);
       setSelectedInvoice(null);
       setReturnItems([]);
+      setInvoiceSearch(''); // تصفية البحث عند تغيير المورد
     }
   }, [selectedSupplier]);
 
   const supplierOptions = useMemo(() => 
     suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone })), 
   [suppliers]);
+
+  // منطق تصفية فواتير المشتريات بناءً على رقم الفاتورة أو صنف بداخلها
+  const filteredInvoices = useMemo(() => {
+    if (!invoiceSearch.trim()) return supplierInvoices;
+    
+    const query = invoiceSearch.toLowerCase();
+    return supplierInvoices.filter(inv => {
+      // 1. البحث برقم الفاتورة
+      if (inv.invoice_number.includes(query)) return true;
+      
+      // 2. البحث باسم أو كود منتج داخل الفاتورة
+      return inv.items.some(item => {
+        const prod = db.getProductsWithBatches().find(p => p.id === item.product_id);
+        return prod?.name.toLowerCase().includes(query) || prod?.code?.toLowerCase().includes(query);
+      });
+    });
+  }, [supplierInvoices, invoiceSearch]);
 
   const handleSelectInvoice = (inv: PurchaseInvoice) => {
     setSelectedInvoice(inv);
@@ -71,18 +90,15 @@ export default function PurchaseReturn() {
     setIsSubmitting(true);
 
     try {
-      // Logic: Create a new purchase invoice of type 'RETURN'
-      // db.createPurchaseInvoice handles stock deduction and liability reduction when isReturn = true
       const result = await db.createPurchaseInvoice(
         selectedSupplier,
         itemsToReturn,
-        cashRefund, // If we receive cash back from supplier, it records a receipt
-        true // isReturn = true
+        cashRefund,
+        true
       );
 
       if (result.success) {
         toast.success("تم تسجيل مرتجع المشتريات بنجاح");
-        // Reset
         setSelectedSupplier('');
         setSelectedInvoice(null);
         setReturnItems([]);
@@ -133,13 +149,26 @@ export default function PurchaseReturn() {
           </div>
 
           {selectedSupplier && (
-            <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100 animate-in slide-in-from-top-4">
+            <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100 animate-in slide-in-from-top-4 flex flex-col min-h-[500px]">
               <label className="block text-sm font-black text-slate-500 uppercase mb-3 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-red-500" /> الخطوة 2: اختر فاتورة الشراء
               </label>
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                {supplierInvoices.length > 0 ? (
-                  supplierInvoices.map(inv => (
+
+              {/* حقل البحث داخل فواتير المورد */}
+              <div className="relative mb-4">
+                <Search className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text"
+                  placeholder="بحث برقم الفاتورة أو اسم المنتج..."
+                  className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                  value={invoiceSearch}
+                  onChange={(e) => setInvoiceSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                {filteredInvoices.length > 0 ? (
+                  filteredInvoices.map(inv => (
                     <button 
                       key={inv.id}
                       onClick={() => handleSelectInvoice(inv)}
@@ -156,9 +185,18 @@ export default function PurchaseReturn() {
                     </button>
                   ))
                 ) : (
-                  <div className="py-10 text-center text-slate-400">
-                    <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                    <p className="text-xs font-bold">لا توجد فواتير مشتريات سابقة لهذا المورد</p>
+                  <div className="py-20 text-center text-slate-400">
+                    {invoiceSearch ? (
+                      <>
+                        <Filter className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs font-bold">لا توجد نتائج تطابق بحثك</p>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs font-bold">لا توجد فواتير مشتريات سابقة لهذا المورد</p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
