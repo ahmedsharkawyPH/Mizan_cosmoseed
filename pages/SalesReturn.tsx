@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, Invoice, CartItem } from '../types';
-import { Search, RotateCcw, User, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle } from 'lucide-react';
+import { Search, RotateCcw, User, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle, Filter } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 import { t } from '../utils/t';
 // @ts-ignore
@@ -17,6 +17,7 @@ export default function SalesReturn() {
   const [returnItems, setReturnItems] = useState<CartItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cashRefund, setCashRefund] = useState(0);
+  const [invoiceSearch, setInvoiceSearch] = useState(''); // حالة البحث الجديد
 
   const currency = db.getSettings().currency;
 
@@ -30,6 +31,7 @@ export default function SalesReturn() {
       setCustomerInvoices(invoices);
       setSelectedInvoice(null);
       setReturnItems([]);
+      setInvoiceSearch(''); // تصفية البحث عند تغيير العميل
     }
   }, [selectedCustomer]);
 
@@ -37,13 +39,30 @@ export default function SalesReturn() {
     customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })), 
   [customers]);
 
+  // منطق تصفية الفواتير بناءً على رقم الفاتورة أو المنتج
+  const filteredInvoices = useMemo(() => {
+    if (!invoiceSearch.trim()) return customerInvoices;
+    
+    const query = invoiceSearch.toLowerCase();
+    return customerInvoices.filter(inv => {
+      // 1. البحث برقم الفاتورة
+      if (inv.invoice_number.includes(query)) return true;
+      
+      // 2. البحث باسم أو كود منتج داخل الفاتورة
+      return inv.items.some(item => 
+        item.product.name.toLowerCase().includes(query) || 
+        item.product.code?.toLowerCase().includes(query)
+      );
+    });
+  }, [customerInvoices, invoiceSearch]);
+
   const handleSelectInvoice = (inv: Invoice) => {
     setSelectedInvoice(inv);
     // Initialize return items with 0 quantity initially
     const items = inv.items.map(item => ({
       ...item,
       quantity: 0,
-      bonus_quantity: 0 // We don't usually return bonuses, but we keep the structure
+      bonus_quantity: 0 
     }));
     setReturnItems(items);
   };
@@ -75,20 +94,17 @@ export default function SalesReturn() {
     const user = authService.getCurrentUser();
 
     try {
-      // Logic: Create a new invoice of type 'RETURN'
-      // db.createInvoice handles stock addition and balance reduction when isReturn = true
       const result = await db.createInvoice(
         selectedCustomer,
         itemsToReturn,
-        cashRefund, // If we give cash back, it records an expense
-        true, // isReturn = true
-        0, // additional discount doesn't apply to return usually
+        cashRefund,
+        true,
+        0,
         user ? { id: user.id, name: user.name } : undefined
       );
 
       if (result.success) {
         toast.success("تم تسجيل المرتجع بنجاح");
-        // Reset
         setSelectedCustomer('');
         setSelectedInvoice(null);
         setReturnItems([]);
@@ -135,13 +151,26 @@ export default function SalesReturn() {
           </div>
 
           {selectedCustomer && (
-            <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100 animate-in slide-in-from-top-4">
+            <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100 animate-in slide-in-from-top-4 flex flex-col min-h-[500px]">
               <label className="block text-sm font-black text-slate-500 uppercase mb-3 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-orange-500" /> الخطوة 2: اختر الفاتورة
               </label>
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                {customerInvoices.length > 0 ? (
-                  customerInvoices.map(inv => (
+              
+              {/* حقل البحث الجديد عن الفاتورة */}
+              <div className="relative mb-4">
+                <Search className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text"
+                  placeholder="بحث برقم الفاتورة أو اسم المنتج..."
+                  className="w-full pr-10 pl-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none transition-all"
+                  value={invoiceSearch}
+                  onChange={(e) => setInvoiceSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2 flex-1 overflow-y-auto pr-1 custom-scrollbar">
+                {filteredInvoices.length > 0 ? (
+                  filteredInvoices.map(inv => (
                     <button 
                       key={inv.id}
                       onClick={() => handleSelectInvoice(inv)}
@@ -158,9 +187,18 @@ export default function SalesReturn() {
                     </button>
                   ))
                 ) : (
-                  <div className="py-10 text-center text-slate-400">
-                    <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                    <p className="text-xs font-bold">لا توجد فواتير مبيعات سابقة لهذا العميل</p>
+                  <div className="py-20 text-center text-slate-400">
+                    {invoiceSearch ? (
+                      <>
+                        <Filter className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs font-bold">لا توجد نتائج تطابق بحثك</p>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                        <p className="text-xs font-bold">لا توجد فواتير مبيعات سابقة لهذا العميل</p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -264,7 +302,7 @@ export default function SalesReturn() {
                       disabled={isSubmitting || returnTotal <= 0}
                       className="bg-orange-500 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-lg hover:bg-orange-600 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                      {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+                      {isSubmitting ? <span className="loader"></span> : <Save className="w-6 h-6" />}
                       تأكيد المرتجع وحفظ البيانات
                     </button>
                 </div>
@@ -281,8 +319,3 @@ export default function SalesReturn() {
     </div>
   );
 }
-
-// Simple loader helper if not global
-const Loader2 = ({ className }: { className?: string }) => (
-    <div className={`animate-spin rounded-full border-4 border-white/20 border-t-white ${className}`} style={{ width: '24px', height: '24px' }}></div>
-);
