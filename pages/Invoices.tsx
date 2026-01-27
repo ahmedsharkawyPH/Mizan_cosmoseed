@@ -56,6 +56,7 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
     const totalDiscount = (invoice.total_discount || 0) + (invoice.additional_discount || 0);
     const paidCash = db.getInvoicePaidAmount(invoice.id);
     const finalBalance = invoice.net_total + (invoice.previous_balance || 0) - paidCash;
+    const invoiceDate = new Date(invoice.date);
 
     return (
         <div className="invoice-half-container">
@@ -84,7 +85,8 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
                     {customer?.address && <div style={{ fontSize: '9px', color: '#475569', fontWeight: '500' }}>ع: {customer.address}</div>}
                 </div>
                 <div style={{textAlign: 'left', alignSelf: 'start'}}>
-                    <div style={{ fontWeight: 'bold' }}>التاريخ: {new Date(invoice.date).toLocaleDateString('en-GB')}</div>
+                    <div style={{ fontWeight: 'bold' }}>التاريخ: {invoiceDate.toLocaleDateString('en-GB')}</div>
+                    <div style={{ fontSize: '10px', color: '#475569', marginTop: '1px' }}>الوقت: {invoiceDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>
                     {invoice.created_by_name && <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>البائع: {invoice.created_by_name}</div>}
                 </div>
             </div>
