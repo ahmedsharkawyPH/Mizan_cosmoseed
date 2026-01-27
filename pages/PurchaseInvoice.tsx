@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseItem } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2 } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 // @ts-ignore
@@ -23,12 +23,12 @@ export default function PurchaseInvoice({ type }: Props) {
   const [warehouses] = useState(db.getWarehouses());
   
   const [selectedSupplier, setSelectedSupplier] = useState('');
-  const [manualInvoiceNo, setManualInvoiceNo] = useState('');
+  const [documentNo, setDocumentNo] = useState(''); // رقم المستند (فاتورة المورد)
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [cart, setCart] = useState<PurchaseItem[]>([]);
   const [cashPaid, setCashPaid] = useState<number>(0);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null); // حالة التعديل
+  const [editingIndex, setEditingIndex] = useState<number | null>(null); 
   
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
@@ -36,8 +36,6 @@ export default function PurchaseInvoice({ type }: Props) {
   const [cost, setCost] = useState(0);
   const [margin, setMargin] = useState(0); 
   const [sell, setSell] = useState(0);
-
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   const productRef = useRef<SearchableSelectRef>(null);
   const costRef = useRef<HTMLInputElement>(null);
@@ -152,7 +150,6 @@ export default function PurchaseInvoice({ type }: Props) {
           setMargin(parseFloat((((item.selling_price / item.cost_price) - 1) * 100).toFixed(1)));
       }
       setSelectedWarehouse(item.warehouse_id);
-      // Fixed: react-hot-toast doesn't have .info, using generic toast
       toast("تم تحميل بيانات الصنف للتعديل");
   };
 
@@ -175,7 +172,8 @@ export default function PurchaseInvoice({ type }: Props) {
         return;
     }
     
-    const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn, manualInvoiceNo, manualDate);
+    // Now passing documentNo instead of manualInvoiceNo
+    const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn, documentNo, manualDate);
     if (res.success) {
         toast.success("تم حفظ الفاتورة بنجاح");
         navigate('/purchases/list');
@@ -189,7 +187,7 @@ export default function PurchaseInvoice({ type }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/purchases/list')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft className="w-5 h-5" /></button>
+        <button onClick={() => navigate('/purchases/list')} className="p-2 hover:bg-gray-100 rounded-full transition-all"><ArrowLeft className="w-5 h-5" /></button>
         <h1 className={`text-2xl font-black ${isReturn ? 'text-red-600' : 'text-blue-600'}`}>
             {isReturn ? t('pur.return_title') : t('pur.title')}
         </h1>
@@ -200,12 +198,12 @@ export default function PurchaseInvoice({ type }: Props) {
           {/* Header Info */}
           <div className="bg-white p-6 rounded-2xl shadow-card border border-slate-100">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
-                <div className="md:col-span-6">
+                <div className="md:col-span-5">
                     <SearchableSelect 
                         id="pur_supplier_select"
                         name="supplier_id"
                         label={t('pur.select_supplier')} 
-                        placeholder="ابحث عن المورد بالاسم أو الكود..." 
+                        placeholder="ابحث عن المورد..." 
                         options={suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
                         value={selectedSupplier} 
                         onChange={setSelectedSupplier} 
@@ -213,19 +211,27 @@ export default function PurchaseInvoice({ type }: Props) {
                 </div>
                 {selectedSupplier && (
                     <>
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-black text-slate-400 mb-1 flex items-center gap-2">
+                                <Hash className="w-3 h-3" /> رقم الفاتورة التلقائي
+                            </label>
+                            <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-slate-500 font-black text-center">
+                                سيتم التوليد تلقائياً
+                            </div>
+                        </div>
                         <div className="md:col-span-3">
                             <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-slate-400" /> رقم فاتورة المورد
+                                <FileText className="w-4 h-4 text-orange-400" /> رقم المستند (فاتورة المورد)
                             </label>
                             <input 
                                 type="text"
-                                className="w-full border p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
-                                placeholder="رقم الفاتورة الورقية"
-                                value={manualInvoiceNo}
-                                onChange={e => setManualInvoiceNo(e.target.value)}
+                                className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-orange-500 bg-orange-50/20 focus:bg-white"
+                                placeholder="الرقم الورقي للفاتورة"
+                                value={documentNo}
+                                onChange={e => setDocumentNo(e.target.value)}
                             />
                         </div>
-                        <div className="md:col-span-3">
+                        <div className="md:col-span-2">
                             <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
                                 <Calendar className="w-4 h-4 text-slate-400" /> تاريخ الشراء
                             </label>

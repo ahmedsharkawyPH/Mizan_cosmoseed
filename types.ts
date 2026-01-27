@@ -110,6 +110,7 @@ export interface Invoice {
 export interface PurchaseInvoice {
   id: string;
   invoice_number: string;
+  document_number?: string; // New field for supplier invoice number
   supplier_id: string;
   date: string;
   total_amount: number;

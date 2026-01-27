@@ -68,11 +68,11 @@ class Database {
   private async syncFromCloud() {
     try {
         this.isOffline = false;
-        const [cust, prod, bat, inv, pur, cash, wh, reps, closings, adjs, orders] = await Promise.all([
+        const [cust, prod, bat, inv, pur, cash, wh, reps, closings, adjs, orders, supp] = await Promise.all([
             this.fetchAllFromTable('customers'), this.fetchAllFromTable('products'), this.fetchAllFromTable('batches'),
             this.fetchAllFromTable('invoices'), this.fetchAllFromTable('purchase_invoices'), this.fetchAllFromTable('cash_transactions'),
             this.fetchAllFromTable('warehouses'), this.fetchAllFromTable('representatives'), this.fetchAllFromTable('daily_closings'),
-            this.fetchAllFromTable('pending_adjustments'), this.fetchAllFromTable('purchase_orders')
+            this.fetchAllFromTable('pending_adjustments'), this.fetchAllFromTable('purchase_orders'), this.fetchAllFromTable('suppliers')
         ]);
 
         if (cust) this.customers = cust;
@@ -86,6 +86,7 @@ class Database {
         if (closings) this.dailyClosings = closings;
         if (adjs) this.pendingAdjustments = adjs;
         if (orders) this.purchaseOrders = orders;
+        if (supp) this.suppliers = supp;
 
         this._cashBalance = this.cashTransactions.reduce((sum, tx) => tx.type === CashTransactionType.RECEIPT ? sum + tx.amount : sum - tx.amount, 0);
         this.isFullyLoaded = true;
@@ -203,40 +204,73 @@ class Database {
     return { success: true, message: 'تم الحفظ', id: invoiceId };
   }
 
+  // FIX: Added updateInvoice method to fix the error in NewInvoice.tsx and support invoice modifications
   async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message: string; id?: string }> {
     const idx = this.invoices.findIndex(i => i.id === id);
-    if (idx !== -1) {
-        this.invoices[idx] = { ...this.invoices[idx], customer_id: customerId, items };
-        this.saveToLocalCache();
-        return { success: true, message: 'تم التحديث بنجاح', id: id };
+    if (idx === -1) return { success: false, message: 'Invoice not found' };
+    
+    const invoice = this.invoices[idx];
+    const isReturn = invoice.type === 'RETURN';
+    
+    const totalBefore = items.reduce((s, i) => s + (i.quantity * (i.unit_price || 0)), 0);
+    const totalDisc = items.reduce((s, i) => s + ((i.quantity * (i.unit_price || 0)) * (i.discount_percentage / 100)), 0);
+    const netTotal = (totalBefore - totalDisc) - (invoice.additional_discount || 0);
+
+    const customer = this.customers.find(c => c.id === customerId);
+    if (customer) {
+        // Simplified balance adjustment for update
+        const oldPaid = this.getInvoicePaidAmount(id);
+        customer.current_balance -= (isReturn ? -invoice.net_total : invoice.net_total) - oldPaid;
+        customer.current_balance += (isReturn ? -netTotal : netTotal) - cashPaid;
     }
-    return { success: false, message: 'الفاتورة غير موجودة' };
+
+    this.invoices[idx] = {
+        ...invoice,
+        customer_id: customerId,
+        items,
+        total_before_discount: totalBefore,
+        total_discount: totalDisc,
+        net_total: netTotal,
+        payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID),
+    };
+
+    if (isSupabaseConfigured) {
+        await supabase.from('invoices').update(this.invoices[idx]).eq('id', id);
+    }
+
+    this.saveToLocalCache();
+    return { success: true, message: 'تم التحديث بنجاح', id };
   }
 
-  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false, manualInvoiceNumber?: string, manualDate?: string): Promise<{ success: boolean; message: string; id?: string }> {
+  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false, documentNumber?: string, manualDate?: string): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `PUR${Date.now()}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const finalDate = manualDate || new Date().toISOString();
     
-    let invoiceNumber = manualInvoiceNumber;
-    if (!invoiceNumber) {
-        const prefix = isReturn ? 'PR' : 'P';
-        const existingPurchases = this.purchaseInvoices
-            .filter(inv => inv.invoice_number.startsWith(prefix))
-            .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
-            .filter(n => !isNaN(n));
-        const nextNum = existingPurchases.length > 0 ? Math.max(...existingPurchases) + 1 : 1;
-        invoiceNumber = `${prefix}${nextNum}`;
-    }
+    // Always generate automatic number (P1, P2...)
+    const prefix = isReturn ? 'PR' : 'P';
+    const existingPurchases = this.purchaseInvoices
+        .filter(inv => inv.invoice_number.startsWith(prefix))
+        .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
+        .filter(n => !isNaN(n));
+    const nextNum = existingPurchases.length > 0 ? Math.max(...existingPurchases) + 1 : 1;
+    const invoiceNumber = `${prefix}${nextNum}`;
 
     const invoice: PurchaseInvoice = { 
-        id: invoiceId, invoice_number: invoiceNumber, supplier_id: supplierId, date: finalDate, total_amount: total, 
-        paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items 
+        id: invoiceId, 
+        invoice_number: invoiceNumber, 
+        document_number: documentNumber, // User manual input
+        supplier_id: supplierId, 
+        date: finalDate, 
+        total_amount: total, 
+        paid_amount: cashPaid, 
+        type: isReturn ? 'RETURN' : 'PURCHASE', 
+        items 
     };
 
     let cashTx = cashPaid > 0 ? {
         id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: finalDate, notes: `Payment for PUR#${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
+        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: finalDate, notes: `Payment for PUR#${invoice.invoice_number} (Doc: ${documentNumber || '-'})`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
     } : null;
 
     if (isSupabaseConfigured) {

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { PurchaseInvoice } from '../types';
 import { t } from '../utils/t';
-import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter } from 'lucide-react';
+import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function PurchaseList() {
@@ -24,6 +24,7 @@ export default function PurchaseList() {
 
   const filtered = invoices.filter(inv => {
       const matchSearch = inv.invoice_number.includes(search) || 
+                          (inv.document_number && inv.document_number.includes(search)) ||
                           suppliers.find(s => s.id === inv.supplier_id)?.name.toLowerCase().includes(search.toLowerCase());
       const matchType = filterType === 'ALL' || inv.type === filterType;
       return matchSearch && matchType;
@@ -45,7 +46,7 @@ export default function PurchaseList() {
                 <Search className="absolute right-3 top-3 h-5 w-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                 <input 
                     type="text" 
-                    placeholder="بحث برقم الفاتورة أو المورد..." 
+                    placeholder="رقم الفاتورة أو المستند..." 
                     className="pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64 outline-none shadow-sm transition-shadow font-bold"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
@@ -88,20 +89,23 @@ export default function PurchaseList() {
             <table className="w-full text-sm text-right min-w-[800px]">
                 <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-100 font-black">
                     <tr>
-                        <th className="px-6 py-4">رقم الفاتورة</th>
+                        <th className="px-6 py-4">رقم الفاتورة (النظام)</th>
+                        <th className="px-6 py-4">رقم المستند (المورد)</th>
                         <th className="px-6 py-4 text-center">التاريخ</th>
                         <th className="px-6 py-4">المورد</th>
                         <th className="px-6 py-4 text-center">النوع</th>
                         <th className="px-6 py-4 text-left">قيمة الفاتورة</th>
-                        <th className="px-6 py-4 text-left">المبلغ المدفوع</th>
                         <th className="px-6 py-4 text-center">الإجراء</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 font-bold">
                     {filtered.map(inv => (
                         <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="px-6 py-4 font-mono text-slate-600">
+                            <td className="px-6 py-4 font-mono text-blue-600">
                                 {inv.invoice_number}
+                            </td>
+                            <td className="px-6 py-4 font-mono text-slate-500">
+                                {inv.document_number || <span className="text-slate-300 italic">-</span>}
                             </td>
                             <td className="px-6 py-4 text-center text-slate-500">
                                 {new Date(inv.date).toLocaleDateString('ar-EG')}
@@ -117,9 +121,6 @@ export default function PurchaseList() {
                             <td className="px-6 py-4 text-left font-black text-slate-900">
                                 {currency}{inv.total_amount.toLocaleString()}
                             </td>
-                            <td className="px-6 py-4 text-left font-black text-emerald-600">
-                                {currency}{inv.paid_amount.toLocaleString()}
-                            </td>
                             <td className="px-6 py-4 text-center">
                                 <button 
                                     onClick={() => setSelectedInvoice(inv)}
@@ -131,22 +132,12 @@ export default function PurchaseList() {
                             </td>
                         </tr>
                     ))}
-                    {filtered.length === 0 && (
-                        <tr>
-                            <td colSpan={7} className="p-20 text-center text-slate-400">
-                                <div className="flex flex-col items-center gap-2">
-                                    <Filter className="w-12 h-12 opacity-10" />
-                                    <p className="font-black">لا توجد فواتير مطابقة للبحث حالياً</p>
-                                </div>
-                            </td>
-                        </tr>
-                    )}
                 </tbody>
             </table>
         </div>
       </div>
 
-      {/* Detail Modal - Fully Arabic */}
+      {/* Detail Modal */}
       {selectedInvoice && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
@@ -154,11 +145,18 @@ export default function PurchaseList() {
                       <div>
                           <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
                               {selectedInvoice.type === 'PURCHASE' ? 'تفاصيل فاتورة شراء' : 'تفاصيل مرتجع مشتريات'}
-                              <span className="text-xs font-mono bg-white border px-3 py-1 rounded-lg shadow-sm">#{selectedInvoice.invoice_number}</span>
+                              <span className="text-xs font-mono bg-blue-600 text-white px-3 py-1 rounded-lg shadow-sm">{selectedInvoice.invoice_number}</span>
                           </h3>
-                          <p className="text-xs text-slate-500 font-bold mt-2">
-                            {new Date(selectedInvoice.date).toLocaleString('ar-EG')} • المورد: <span className="text-blue-600">{getSupplierName(selectedInvoice.supplier_id)}</span>
-                          </p>
+                          <div className="flex items-center gap-4 mt-2">
+                              <p className="text-xs text-slate-500 font-bold">
+                                {new Date(selectedInvoice.date).toLocaleString('ar-EG')} • المورد: <span className="text-blue-600">{getSupplierName(selectedInvoice.supplier_id)}</span>
+                              </p>
+                              {selectedInvoice.document_number && (
+                                  <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-black border border-orange-200">
+                                      رقم المستند: {selectedInvoice.document_number}
+                                  </span>
+                              )}
+                          </div>
                       </div>
                       <div className="flex gap-2">
                           <button onClick={() => window.print()} className="p-3 hover:bg-white rounded-xl text-slate-500 border border-transparent hover:border-slate-200 transition-all shadow-sm">
