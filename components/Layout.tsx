@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { NAV_ITEMS, APP_NAME } from '../constants';
@@ -52,25 +53,6 @@ export default function Layout() {
   }, [location.pathname, closingsVersion, db.isFullyLoaded]);
 
   const isPreviousDayUnclosed = missingClosings.length > 0;
-
-  useEffect(() => {
-    if (isPreviousDayUnclosed) {
-      toast.custom((t_toast: any) => (
-        <div className={`${t_toast.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black ring-opacity-5 border-r-4 border-red-500`}>
-          <div className="flex-1 w-0 p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0 pt-0.5"><AlertCircle className="h-10 w-10 text-red-500" /></div>
-              <div className="ml-3 rtl:mr-3 flex-1">
-                <p className="text-sm font-black text-gray-900">تنبيه تقفيل الخزينة</p>
-                <p className="mt-1 text-xs text-gray-500 leading-relaxed">يوجد <span className="text-red-600 font-bold">{missingClosings.length}</span> أيام لم يتم تقفيلها.</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex border-l border-gray-200"><button onClick={() => { toast.dismiss(t_toast.id); navigate('/daily-closing'); }} className="w-full border border-transparent rounded-none rounded-l-2xl p-4 flex items-center justify-center text-xs font-black text-blue-600 hover:text-blue-700 bg-blue-50/50">توجه للتقفيل</button></div>
-        </div>
-      ), { duration: 5000, id: 'closing-alert' });
-    }
-  }, [location.pathname, isPreviousDayUnclosed, missingClosings]);
 
   const sidebarItems = [
     { label: t('nav.dashboard'), path: '/', icon: NAV_ITEMS[0].icon, perm: 'VIEW_DASHBOARD', roles: ['ADMIN', 'TELESALES'] },
