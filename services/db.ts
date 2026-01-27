@@ -159,7 +159,6 @@ class Database {
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
     
-    // منطق الترقيم الجديد للمبيعات S والمرتجع SR
     const prefix = isReturn ? 'SR' : 'S';
     const existingInvoices = this.invoices
         .filter(inv => inv.invoice_number.startsWith(prefix))
@@ -214,28 +213,30 @@ class Database {
     return { success: false, message: 'الفاتورة غير موجودة' };
   }
 
-  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false): Promise<{ success: boolean; message: string; id?: string }> {
+  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false, manualInvoiceNumber?: string, manualDate?: string): Promise<{ success: boolean; message: string; id?: string }> {
     const invoiceId = `PUR${Date.now()}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
-    const date = new Date().toISOString();
+    const finalDate = manualDate || new Date().toISOString();
     
-    // منطق الترقيم الجديد للمشتريات P والمرتجع PR
-    const prefix = isReturn ? 'PR' : 'P';
-    const existingPurchases = this.purchaseInvoices
-        .filter(inv => inv.invoice_number.startsWith(prefix))
-        .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
-        .filter(n => !isNaN(n));
-    const nextNum = existingPurchases.length > 0 ? Math.max(...existingPurchases) + 1 : 1;
-    const invoiceNumber = `${prefix}${nextNum}`;
+    let invoiceNumber = manualInvoiceNumber;
+    if (!invoiceNumber) {
+        const prefix = isReturn ? 'PR' : 'P';
+        const existingPurchases = this.purchaseInvoices
+            .filter(inv => inv.invoice_number.startsWith(prefix))
+            .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
+            .filter(n => !isNaN(n));
+        const nextNum = existingPurchases.length > 0 ? Math.max(...existingPurchases) + 1 : 1;
+        invoiceNumber = `${prefix}${nextNum}`;
+    }
 
     const invoice: PurchaseInvoice = { 
-        id: invoiceId, invoice_number: invoiceNumber, supplier_id: supplierId, date: date, total_amount: total, 
+        id: invoiceId, invoice_number: invoiceNumber, supplier_id: supplierId, date: finalDate, total_amount: total, 
         paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items 
     };
 
     let cashTx = cashPaid > 0 ? {
         id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: date, notes: `Payment for PUR#${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
+        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: finalDate, notes: `Payment for PUR#${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
     } : null;
 
     if (isSupabaseConfigured) {

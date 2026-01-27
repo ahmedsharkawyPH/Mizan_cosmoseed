@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseItem } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, Percent, PackagePlus, X, TrendingUp, AlertCircle } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, Percent, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 // @ts-ignore
@@ -22,6 +23,9 @@ export default function PurchaseInvoice({ type }: Props) {
   const [warehouses] = useState(db.getWarehouses());
   
   const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [manualInvoiceNo, setManualInvoiceNo] = useState(''); // حقل رقم فاتورة المورد
+  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]); // حقل تاريخ الفاتورة
+  
   const [cart, setCart] = useState<PurchaseItem[]>([]);
   const [cashPaid, setCashPaid] = useState<number>(0);
   
@@ -138,7 +142,7 @@ export default function PurchaseInvoice({ type }: Props) {
         return;
     }
     
-    const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn);
+    const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn, manualInvoiceNo, manualDate);
     if (res.success) {
         toast.success("تم حفظ الفاتورة بنجاح");
         navigate('/purchases/list');
@@ -161,15 +165,50 @@ export default function PurchaseInvoice({ type }: Props) {
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1 space-y-6">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-            <SearchableSelect 
-                id="pur_supplier_select"
-                name="supplier_id"
-                label={t('pur.select_supplier')} 
-                placeholder="ابحث عن المورد..." 
-                options={suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
-                value={selectedSupplier} 
-                onChange={setSelectedSupplier} 
-            />
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
+                <div className="md:col-span-6">
+                    <SearchableSelect 
+                        id="pur_supplier_select"
+                        name="supplier_id"
+                        label={t('pur.select_supplier')} 
+                        placeholder="ابحث عن المورد..." 
+                        options={suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
+                        value={selectedSupplier} 
+                        onChange={setSelectedSupplier} 
+                    />
+                </div>
+                
+                {/* حقول رقم الفاتورة والتاريخ التي تظهر بعد اختيار المورد */}
+                {selectedSupplier && (
+                    <>
+                        <div className="md:col-span-3">
+                            <label htmlFor="manual_invoice_no" className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-slate-400" /> رقم فاتورة المورد
+                            </label>
+                            <input 
+                                id="manual_invoice_no"
+                                type="text"
+                                className="w-full border p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
+                                placeholder="اختياري (سجل رقم فاتورة المورد)"
+                                value={manualInvoiceNo}
+                                onChange={e => setManualInvoiceNo(e.target.value)}
+                            />
+                        </div>
+                        <div className="md:col-span-3">
+                            <label htmlFor="manual_date" className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+                                <Calendar className="w-4 h-4 text-slate-400" /> تاريخ الشراء
+                            </label>
+                            <input 
+                                id="manual_date"
+                                type="date"
+                                className="w-full border p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
+                                value={manualDate}
+                                onChange={e => setManualDate(e.target.value)}
+                            />
+                        </div>
+                    </>
+                )}
+            </div>
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 space-y-4">
@@ -198,26 +237,27 @@ export default function PurchaseInvoice({ type }: Props) {
                         options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} 
                         value={selProd} 
                         onChange={setSelProd} 
+                        disabled={!selectedSupplier}
                     />
                 </div>
                 <div>
                     <label htmlFor="pur_cost_input" className="text-[10px] font-bold text-gray-500 uppercase">{t('pur.cost')}</label>
-                    <input id="pur_cost_input" name="cost_price" ref={costRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} />
+                    <input id="pur_cost_input" name="cost_price" ref={costRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} />
                 </div>
                 <div>
                     <label htmlFor="pur_margin_input" className="text-[10px] font-bold text-blue-500 uppercase">{t('pur.profit_margin')} %</label>
-                    <input id="pur_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border border-blue-200 p-2 rounded font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} />
+                    <input id="pur_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border border-blue-200 p-2 rounded font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} disabled={!selProd} />
                 </div>
                 <div>
                     <label htmlFor="pur_qty_input" className="text-[10px] font-bold text-gray-500 uppercase">{t('stock.qty')}</label>
-                    <input id="pur_qty_input" name="quantity" ref={qtyRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} />
+                    <input id="pur_qty_input" name="quantity" ref={qtyRef} type="number" className="w-full border p-2 rounded font-bold outline-none focus:ring-2 focus:ring-blue-500" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} />
                 </div>
                 <div className="md:col-span-2">
                     <label htmlFor="pur_sell_input" className="text-[10px] font-bold text-emerald-600 uppercase">{t('pur.sell')} (البيع النهائي)</label>
-                    <input id="pur_sell_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2 rounded font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} />
+                    <input id="pur_sell_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2 rounded font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} />
                 </div>
                 <div className="flex items-end">
-                    <button id="btn_add_purchase_item" name="btn_add_purchase_item" onClick={addItem} type="button" className="w-full bg-blue-600 text-white h-[42px] rounded-lg font-bold hover:bg-blue-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <button id="btn_add_purchase_item" name="btn_add_purchase_item" onClick={addItem} type="button" className="w-full bg-blue-600 text-white h-[42px] rounded-lg font-bold hover:bg-blue-700 shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50" disabled={!selProd}>
                         <Plus className="w-4 h-4" /> {t('inv.add_btn')}
                     </button>
                 </div>
@@ -250,9 +290,9 @@ export default function PurchaseInvoice({ type }: Props) {
             </div>
             <div>
                 <label htmlFor="pur_cash_paid_input" className="block text-xs font-bold text-gray-500 uppercase mb-1">{isReturn ? 'المبلغ المستلم' : 'المبلغ المدفوع كاش'}</label>
-                <input id="pur_cash_paid_input" name="cash_paid" type="number" className="w-full border p-2.5 rounded-xl font-black text-xl text-emerald-600 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 outline-none" value={cashPaid || ''} onChange={e => setCashPaid(Number(e.target.value))} placeholder="0.00" />
+                <input id="pur_cash_paid_input" name="cash_paid" type="number" className="w-full border p-2.5 rounded-xl font-black text-xl text-emerald-600 bg-emerald-50/20 focus:ring-2 focus:ring-emerald-500 outline-none" value={cashPaid || ''} onChange={e => setCashPaid(Number(e.target.value))} placeholder="0.00" disabled={!selectedSupplier} />
             </div>
-            <button id="btn_submit_purchase" name="btn_submit_purchase" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50">
+            <button id="btn_submit_purchase" name="btn_submit_purchase" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98] disabled:opacity-50">
                 {t('pur.submit')}
             </button>
         </div>
