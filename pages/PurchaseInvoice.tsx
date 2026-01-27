@@ -152,7 +152,8 @@ export default function PurchaseInvoice({ type }: Props) {
           setMargin(parseFloat((((item.selling_price / item.cost_price) - 1) * 100).toFixed(1)));
       }
       setSelectedWarehouse(item.warehouse_id);
-      toast.info("تم تحميل بيانات الصنف للتعديل");
+      // Fixed: react-hot-toast doesn't have .info, using generic toast
+      toast("تم تحميل بيانات الصنف للتعديل");
   };
 
   const cancelEdit = () => {
