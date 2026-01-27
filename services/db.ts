@@ -146,6 +146,7 @@ class Database {
       .filter(t => t.type === type && t.ref_number?.startsWith(prefix))
       .map(t => parseInt(t.ref_number?.split('-')[1] || '0'))
       .filter(n => !isNaN(n));
+    // Fix: replaced 'requested_entity_was_not_found' with 'refs'
     const nextNum = refs.length > 0 ? Math.max(...refs) + 1 : 1001;
     return `${prefix}-${nextNum}`;
   }
@@ -191,7 +192,6 @@ class Database {
     return { success: true, message: 'تم الحفظ', id: invoiceId };
   }
 
-  // fix: Added id to return type to match createInvoice and fix TS errors in NewInvoice.tsx
   async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message: string; id?: string }> {
     const idx = this.invoices.findIndex(i => i.id === id);
     if (idx !== -1) {

@@ -49,6 +49,23 @@ const translations: Record<string, Record<string, string>> = {
     'inv.manual_price': 'تفعيل تعديل السعر يدوياً',
     'inv.discount': 'تفعيل الخصم على الصنف',
     'inv.return_mode': 'وضع المرتجع',
+    
+    // Purchases Area
+    'pur.title': 'فاتورة مشتريات جديدة',
+    'pur.return_title': 'مرتجع مشتريات جديد',
+    'pur.list_title': 'سجل المشتريات والمرتجعات',
+    'pur.select_supplier': 'اختر المورد',
+    'pur.add_item': 'إضافة أصناف للفاتورة',
+    'pur.cost': 'سعر التكلفة',
+    'pur.sell': 'سعر البيع',
+    'pur.profit_margin': 'هامش الربح',
+    'pur.invoice_no': 'رقم الفاتورة',
+    'pur.type': 'النوع',
+    'pur.total_amount': 'القيمة الإجمالية',
+    'pur.paid_amount': 'المسدد',
+    'pur.submit': 'حفظ الفاتورة',
+    'pur.new_order': 'طلب شراء جديد',
+    'pur.order_summary': 'ملخص الطلب',
 
     // Settings & Admin Translations
     'set.page_title': 'إدارة النظام والمدير',
@@ -144,7 +161,13 @@ const translations: Record<string, Record<string, string>> = {
     'common.credit': 'دائن',
     'common.balance': 'الرصيد',
     'common.statement': 'كشف حساب',
-    'common.opening': 'رصيد افتتاحي'
+    'common.opening': 'رصيد افتتاحي',
+    
+    // Invoices list
+    'list.title': 'سجل المبيعات والمرتجع',
+    'list.search': 'بحث...',
+    'list.status': 'الحالة',
+    'list.no_data': 'لا توجد بيانات متاحة'
   }
 };
 
