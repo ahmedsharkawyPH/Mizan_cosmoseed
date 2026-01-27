@@ -144,7 +144,7 @@ class Database {
     const prefix = type === CashTransactionType.RECEIPT ? 'REC' : 'EXP';
     const refs = this.cashTransactions
       .filter(t => t.type === type && t.ref_number?.startsWith(prefix))
-      .map(t => parseInt(t.ref_number?.split('-')[1] || '0'))
+      .map(t => parseInt(t.ref_number?.replace(prefix + '-', '') || '0'))
       .filter(n => !isNaN(n));
     const nextNum = refs.length > 0 ? Math.max(...refs) + 1 : 1001;
     return `${prefix}-${nextNum}`;
@@ -158,15 +158,28 @@ class Database {
     const invoiceId = `INV${Date.now()}`;
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
-    const numericInvoices = this.invoices.map(inv => parseInt(inv.invoice_number)).filter(num => !isNaN(num) && num >= 10000);
-    const nextInvoiceNumber = numericInvoices.length > 0 ? Math.max(...numericInvoices) + 1 : 10001;
-    const netTotal = items.reduce((sum, item) => sum + (item.quantity * (item.unit_price || 0)), 0) - addDisc;
+    
+    // منطق الترقيم الجديد للمبيعات S والمرتجع SR
+    const prefix = isReturn ? 'SR' : 'S';
+    const existingInvoices = this.invoices
+        .filter(inv => inv.invoice_number.startsWith(prefix))
+        .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
+        .filter(n => !isNaN(n));
+    const nextNum = existingInvoices.length > 0 ? Math.max(...existingInvoices) + 1 : 1;
+    const invoiceNumber = `${prefix}${nextNum}`;
+
+    const netTotal = items.reduce((sum, item) => {
+        const price = item.unit_price || 0;
+        return sum + (item.quantity * price * (1 - (item.discount_percentage / 100)));
+    }, 0) - addDisc;
+    
     const finalBalance = prevBalance + (isReturn ? -netTotal : netTotal) - cashPaid;
 
     const invoice: Invoice = { 
-        id: invoiceId, invoice_number: nextInvoiceNumber.toString(), customer_id: customerId, created_by: user?.id, 
-        created_by_name: user?.name, date: new Date().toISOString(), total_before_discount: netTotal + addDisc, 
-        total_discount: 0, additional_discount: addDisc, net_total: netTotal, previous_balance: prevBalance, 
+        id: invoiceId, invoice_number: invoiceNumber, customer_id: customerId, created_by: user?.id, 
+        created_by_name: user?.name, date: new Date().toISOString(), total_before_discount: items.reduce((s, i) => s + (i.quantity * (i.unit_price || 0)), 0), 
+        total_discount: items.reduce((s, i) => s + ((i.quantity * (i.unit_price || 0)) * (i.discount_percentage / 100)), 0), 
+        additional_discount: addDisc, net_total: netTotal, previous_balance: prevBalance, 
         final_balance: finalBalance, payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
         items, type: isReturn ? 'RETURN' : 'SALE' 
     };
@@ -206,8 +219,17 @@ class Database {
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const date = new Date().toISOString();
     
+    // منطق الترقيم الجديد للمشتريات P والمرتجع PR
+    const prefix = isReturn ? 'PR' : 'P';
+    const existingPurchases = this.purchaseInvoices
+        .filter(inv => inv.invoice_number.startsWith(prefix))
+        .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
+        .filter(n => !isNaN(n));
+    const nextNum = existingPurchases.length > 0 ? Math.max(...existingPurchases) + 1 : 1;
+    const invoiceNumber = `${prefix}${nextNum}`;
+
     const invoice: PurchaseInvoice = { 
-        id: invoiceId, invoice_number: `P-${Date.now()}`, supplier_id: supplierId, date: date, total_amount: total, 
+        id: invoiceId, invoice_number: invoiceNumber, supplier_id: supplierId, date: date, total_amount: total, 
         paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items 
     };
 
