@@ -21,12 +21,12 @@ const INVOICE_STYLES = `
     .company-name { font-size: 18px; font-weight: 900; color: #000; line-height: 1.2; }
     .invoice-type-badge { font-size: 12px; font-weight: bold; border: 2px solid #000; padding: 2px 10px; border-radius: 6px; background: #f0f0f0; display: inline-block; }
     .meta-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 4px; font-size: 11px; margin-bottom: 8px; background: #f8fafc; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0; }
-    .table-container { flex-grow: 1; min-height: 380px; }
+    .table-container { flex-grow: 1; display: flex; flex-direction: column; }
     .invoice-half-container .invoice-table { width: 100%; border-collapse: collapse; font-size: 10px; }
     .invoice-half-container .invoice-table th { background-color: #1e293b !important; color: white !important; border: 1px solid #334155; padding: 4px; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; }
     .invoice-half-container .invoice-table td { border: 1px solid #cbd5e1; padding: 3px 5px; text-align: center; color: #0f172a; }
     .col-item { text-align: right !important; }
-    .totals-area-ultra-compact { margin-top: 5px; border-top: 2.5px solid #000; padding-top: 5px; }
+    .totals-area-ultra-compact { margin-top: auto; border-top: 2.5px solid #000; padding-top: 5px; }
     .compact-line-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 3px; font-size: 11px; }
     .cell-box { display: flex; justify-content: space-between; padding: 2px 5px; border-bottom: 1px dashed #ddd; }
     .final-bold-text-line { margin-top: 4px; padding: 4px 8px; border: 1.5px solid #000; font-size: 13px; font-weight: 900; display: flex; justify-content: space-between; background: #fcfcfc; }
@@ -110,9 +110,6 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
                                 </tr>
                             );
                         })}
-                        {items.length < ITEMS_PER_PAGE && Array.from({ length: ITEMS_PER_PAGE - items.length }).map((_, i) => (
-                            <tr key={`empty-${i}`}><td style={{color:'transparent'}}>.</td><td></td><td></td><td></td><td></td></tr>
-                        ))}
                     </tbody>
                 </table>
             </div>
@@ -140,7 +137,7 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
                         </div>
                     </>
                 ) : (
-                    <div style={{textAlign:'center', fontSize:'10px', color:'#64748b'}}>تكملة الأصناف في الصفحة التالية...</div>
+                    <div style={{textAlign:'center', fontSize:'10px', color:'#64748b', padding: '10px 0'}}>تكملة الأصناف في الصفحة التالية...</div>
                 )}
                 <div className="footer-signatures">
                     <span>توقيع المستلم: ..........................</span>
