@@ -1,3 +1,4 @@
+
 import { 
   Customer, Product, ProductWithBatches, CartItem, Invoice, 
   PurchaseInvoice, PurchaseItem, CashTransaction, CashTransactionType, 
@@ -21,7 +22,7 @@ class Database {
   private _cashBalance: number = 0;
   private settings: any = {
       companyName: 'Mizan Online',
-      currency: '$',
+      currency: 'LE',
       language: 'ar',
       lowStockThreshold: 10,
       expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'OTHER'],

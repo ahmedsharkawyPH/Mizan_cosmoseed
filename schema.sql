@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS system_settings (
     id TEXT PRIMARY KEY DEFAULT 'global_settings',
     company_name TEXT DEFAULT 'Mizan Online',
-    currency TEXT DEFAULT '$',
+    currency TEXT DEFAULT 'LE',
     expense_categories JSONB DEFAULT '["SALARY", "ELECTRICITY", "CAR", "RENT", "COMMISSION", "OTHER"]'::jsonb,
     company_logo TEXT,
     company_address TEXT,

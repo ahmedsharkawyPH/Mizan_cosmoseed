@@ -1,7 +1,8 @@
+
 import { LucideIcon, LayoutDashboard, ShoppingCart, Package, Users, FileText, Settings, CreditCard } from 'lucide-react';
 
 export const APP_NAME = "Mizan Online";
-export const CURRENCY = "$";
+export const CURRENCY = "LE";
 
 export interface NavItem {
   label: string;
