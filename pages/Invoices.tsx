@@ -20,7 +20,7 @@ const INVOICE_STYLES = `
     .header-section { border-bottom: 2px solid #333; padding-bottom: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
     .company-name { font-size: 18px; font-weight: 900; color: #000; line-height: 1.2; }
     .invoice-type-badge { font-size: 12px; font-weight: bold; border: 2px solid #000; padding: 2px 10px; border-radius: 6px; background: #f0f0f0; display: inline-block; }
-    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; margin-bottom: 8px; background: #f8fafc; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0; }
+    .meta-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 4px; font-size: 11px; margin-bottom: 8px; background: #f8fafc; padding: 6px; border-radius: 6px; border: 1px solid #e2e8f0; }
     .table-container { flex-grow: 1; min-height: 380px; }
     .invoice-half-container .invoice-table { width: 100%; border-collapse: collapse; font-size: 10px; }
     .invoice-half-container .invoice-table th { background-color: #1e293b !important; color: white !important; border: 1px solid #334155; padding: 4px; font-weight: bold; text-align: center; -webkit-print-color-adjust: exact; }
@@ -78,8 +78,15 @@ const InvoiceHalf = ({ items, pageNumber, totalPages, invoice, customer, setting
             </div>
 
             <div className="meta-grid">
-                <div><span style={{color:'#64748b'}}>العميل:</span> <b>{customer?.name}</b></div>
-                <div style={{textAlign: 'left'}}><span>التاريخ: {new Date(invoice.date).toLocaleDateString('en-GB')}</span></div>
+                <div>
+                    <div style={{ marginBottom: '2px' }}><span style={{color:'#64748b'}}>العميل:</span> <b>{customer?.name}</b></div>
+                    {customer?.phone && <div style={{ fontSize: '9px', color: '#475569', fontWeight: '500' }}>ت: {customer.phone}</div>}
+                    {customer?.address && <div style={{ fontSize: '9px', color: '#475569', fontWeight: '500' }}>ع: {customer.address}</div>}
+                </div>
+                <div style={{textAlign: 'left', alignSelf: 'start'}}>
+                    <div style={{ fontWeight: 'bold' }}>التاريخ: {new Date(invoice.date).toLocaleDateString('en-GB')}</div>
+                    {invoice.created_by_name && <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>البائع: {invoice.created_by_name}</div>}
+                </div>
             </div>
 
             <div className="table-container">
@@ -147,7 +154,7 @@ const Invoices: React.FC = () => {
   const location = useLocation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'SALE' | 'RETURN'>('ALL'); // حالة الفلتر الجديد
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'SALE' | 'RETURN'>('ALL'); 
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const settings = db.getSettings();
@@ -230,7 +237,6 @@ const Invoices: React.FC = () => {
         </div>
         
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {/* أزرار التصفية الجديدة */}
             <div className="flex bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
                 <button 
                     onClick={() => setTypeFilter('ALL')}
