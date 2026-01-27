@@ -204,7 +204,6 @@ class Database {
     return { success: true, message: 'تم الحفظ', id: invoiceId };
   }
 
-  // FIX: Added updateInvoice method to fix the error in NewInvoice.tsx and support invoice modifications
   async updateInvoice(id: string, customerId: string, items: CartItem[], cashPaid: number): Promise<{ success: boolean; message: string; id?: string }> {
     const idx = this.invoices.findIndex(i => i.id === id);
     if (idx === -1) return { success: false, message: 'Invoice not found' };
@@ -218,7 +217,6 @@ class Database {
 
     const customer = this.customers.find(c => c.id === customerId);
     if (customer) {
-        // Simplified balance adjustment for update
         const oldPaid = this.getInvoicePaidAmount(id);
         customer.current_balance -= (isReturn ? -invoice.net_total : invoice.net_total) - oldPaid;
         customer.current_balance += (isReturn ? -netTotal : netTotal) - cashPaid;
@@ -247,19 +245,24 @@ class Database {
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const finalDate = manualDate || new Date().toISOString();
     
-    // Always generate automatic number (P1, P2...)
+    // Generate automatic number based on logic: Filter by prefix and extract number
     const prefix = isReturn ? 'PR' : 'P';
     const existingPurchases = this.purchaseInvoices
-        .filter(inv => inv.invoice_number.startsWith(prefix))
-        .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
-        .filter(n => !isNaN(n));
+        .filter(inv => inv.invoice_number && inv.invoice_number.startsWith(prefix))
+        .map(inv => {
+            const numPart = inv.invoice_number.replace(prefix, '');
+            const parsed = parseInt(numPart);
+            return isNaN(parsed) ? 0 : parsed;
+        })
+        .filter(n => n > 0);
+    
     const nextNum = existingPurchases.length > 0 ? Math.max(...existingPurchases) + 1 : 1;
-    const invoiceNumber = `${prefix}${nextNum}`;
+    const autoInvoiceNumber = `${prefix}${nextNum}`;
 
     const invoice: PurchaseInvoice = { 
         id: invoiceId, 
-        invoice_number: invoiceNumber, 
-        document_number: documentNumber, // User manual input
+        invoice_number: autoInvoiceNumber, // SYSTEM AUTO NUMBER
+        document_number: documentNumber || '', // MANUAL SUPPLIER NUMBER
         supplier_id: supplierId, 
         date: finalDate, 
         total_amount: total, 
@@ -269,11 +272,18 @@ class Database {
     };
 
     let cashTx = cashPaid > 0 ? {
-        id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-        category: 'SUPPLIER_PAYMENT', reference_id: invoiceId, amount: cashPaid, date: finalDate, notes: `Payment for PUR#${invoice.invoice_number} (Doc: ${documentNumber || '-'})`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
+        id: `TX${Date.now()}`, 
+        type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
+        category: 'SUPPLIER_PAYMENT', 
+        reference_id: invoiceId, 
+        amount: cashPaid, 
+        date: finalDate, 
+        notes: `Payment for PUR#${invoice.invoice_number} (Doc: ${documentNumber || '-'})`, 
+        ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
     } : null;
 
     if (isSupabaseConfigured) {
+        // CRITICAL: We pass the 'invoice' object which now strictly separates invoice_number and document_number
         const { error } = await supabase.rpc('process_purchase_invoice', { p_invoice: invoice, p_items: items, p_cash_tx: cashTx });
         if (error) return { success: false, message: error.message };
     }
