@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseOrder, PurchaseItem } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus, Info, Tag, Award, BarChart4, ChevronRight, Eye, RefreshCcw, Calendar, Hash, Edit3, Wallet, AlertTriangle } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus, Info, Tag, Award, BarChart4, ChevronRight, Eye, RefreshCcw, Calendar, Hash, Edit3, Wallet, AlertTriangle, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
 // @ts-ignore
@@ -161,7 +161,7 @@ export default function PurchaseOrders() {
     setConvItems(convItems.filter((_, i) => i !== idx));
   };
 
-  const executeConversion = async () => {
+  const executeConversion = async (retry: boolean = true) => {
     if (!convOrder) return;
     if (!convDocNo) return toast.error("يرجى إدخال رقم المستند (فاتورة المورد)");
     
@@ -184,13 +184,13 @@ export default function PurchaseOrders() {
         setOrders(db.getPurchaseOrders());
         setIsConvModalOpen(false);
     } else {
-        if (res.message === 'CONFLICT_DETECTED') {
-            toast.error("حدث تعارض في رقم الفاتورة المولد تلقائياً (409 Conflict). جاري تحديث البيانات، يرجى المحاولة مرة أخرى.");
-            // Force re-sync to get latest invoice numbers
+        if (res.message === 'CONFLICT_DETECTED' && retry) {
+            toast("حدث تعارض في رقم التسلسل، جاري التحديث التلقائي...");
+            // Force Sync and Retry once
             await db.syncFromCloud();
-            setOrders(db.getPurchaseOrders());
+            executeConversion(false); // Second attempt with fresh sync
         } else {
-            toast.error(res.message);
+            toast.error(res.message === 'CONFLICT_DETECTED' ? "فشل الحفظ بسبب تعارض الرقم التسلسلي، يرجى المحاولة لاحقاً." : res.message);
         }
     }
     setIsSubmittingConv(false);
@@ -559,11 +559,11 @@ export default function PurchaseOrders() {
                             </div>
 
                             <button 
-                                onClick={executeConversion}
+                                onClick={() => executeConversion()}
                                 disabled={isSubmittingConv || convItems.length === 0}
                                 className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:bg-slate-200 disabled:shadow-none"
                             >
-                                {isSubmittingConv ? <span className="loader"></span> : <Save className="w-6 h-6 text-white" />}
+                                {isSubmittingConv ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6 text-white" />}
                                 اعتماد تحويل الفاتورة
                             </button>
                         </div>

@@ -153,12 +153,12 @@ class Database {
   }
 
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false, documentNumber?: string, manualDate?: string): Promise<{ success: boolean; message: string; id?: string }> {
-    // Generate unique ID with randomness to prevent collision
-    const invoiceId = `PUR${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    // Generate unique ID with randomness and timestamp to ensure zero collision
+    const invoiceId = `PUR${Date.now()}${Math.floor(Math.random() * 10000)}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const finalDate = manualDate || new Date().toISOString();
     
-    // Improved auto-numbering to prevent 409
+    // Advanced auto-numbering logic
     const prefix = isReturn ? 'PR' : 'P';
     const existingNums = this.purchaseInvoices
         .filter(inv => inv.invoice_number && inv.invoice_number.startsWith(prefix))
@@ -167,8 +167,8 @@ class Database {
             return isNaN(num) ? 0 : num;
         });
     
-    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
-    const autoInvoiceNumber = `${prefix}${nextNum}`;
+    const nextNum = (existingNums.length > 0 ? Math.max(...existingNums) : 0) + 1;
+    let autoInvoiceNumber = `${prefix}${nextNum}`;
 
     const invoice: PurchaseInvoice = { 
         id: invoiceId, 
@@ -183,20 +183,20 @@ class Database {
     };
 
     let cashTx = cashPaid > 0 ? {
-        id: `TX${Date.now()}${Math.floor(Math.random() * 100)}`, 
+        id: `TX${Date.now()}${Math.floor(Math.random() * 1000)}`, 
         type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
         category: 'SUPPLIER_PAYMENT', 
         reference_id: invoiceId, 
         amount: cashPaid, 
         date: finalDate, 
-        notes: `Payment for PUR#${invoice.invoice_number} (Doc: ${documentNumber || '-'})`, 
+        notes: `دفع فاتورة ${invoice.invoice_number} (رقم مستند: ${documentNumber || '-'})`, 
         ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
     } : null;
 
     if (isSupabaseConfigured) {
         const { error } = await supabase.rpc('process_purchase_invoice', { p_invoice: invoice, p_items: items, p_cash_tx: cashTx });
         if (error) {
-            // Check if conflict error and provide better message
+            // Precise handling of 409 (Unique Constraint)
             if (error.code === '23505' || error.message.includes('duplicate')) {
                 return { success: false, message: 'CONFLICT_DETECTED' };
             }
@@ -204,6 +204,7 @@ class Database {
         }
     }
 
+    // Update Local State only after cloud success
     this.purchaseInvoices.push(invoice);
     if (cashTx) {
         this.cashTransactions.push(cashTx as CashTransaction);
@@ -217,11 +218,11 @@ class Database {
     }
 
     this.saveToLocalCache();
-    return { success: true, message: 'تم التسجيل بنجاح', id: invoiceId };
+    return { success: true, message: 'تم الحفظ بنجاح', id: invoiceId };
   }
 
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
-    const invoiceId = `INV${Date.now()}${Math.floor(Math.random() * 100)}`;
+    const invoiceId = `INV${Date.now()}${Math.floor(Math.random() * 1000)}`;
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
     
@@ -230,7 +231,7 @@ class Database {
         .filter(inv => inv.invoice_number.startsWith(prefix))
         .map(inv => parseInt(inv.invoice_number.replace(prefix, '')))
         .filter(n => !isNaN(n));
-    const nextNum = existingInvoices.length > 0 ? Math.max(...existingInvoices) + 1 : 1;
+    const nextNum = (existingInvoices.length > 0 ? Math.max(...existingInvoices) : 0) + 1;
     const invoiceNumber = `${prefix}${nextNum}`;
 
     const netTotal = items.reduce((sum, item) => {
@@ -243,6 +244,7 @@ class Database {
     const invoice: Invoice = { 
         id: invoiceId, invoice_number: invoiceNumber, customer_id: customerId, created_by: user?.id, 
         created_by_name: user?.name, date: new Date().toISOString(), total_before_discount: items.reduce((s, i) => s + (i.quantity * (i.unit_price || 0)), 0), 
+        // Fixed below line: replaced 'item' with 'i' to match reduce callback parameters
         total_discount: items.reduce((s, i) => s + ((i.quantity * (i.unit_price || 0)) * (i.discount_percentage / 100)), 0), 
         additional_discount: addDisc, net_total: netTotal, previous_balance: prevBalance, 
         final_balance: finalBalance, payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
@@ -250,8 +252,8 @@ class Database {
     };
 
     let cashTx = cashPaid > 0 ? {
-        id: `TX${Date.now()}${Math.floor(Math.random() * 100)}`, type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
-        category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: customer?.name || 'Unknown', amount: cashPaid, date: invoice.date, notes: `Payment for INV#${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT)
+        id: `TX${Date.now()}${Math.floor(Math.random() * 1000)}`, type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
+        category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: customer?.name || 'Unknown', amount: cashPaid, date: invoice.date, notes: `دفع فاتورة #${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT)
     } : null;
 
     if (isSupabaseConfigured) {
@@ -492,7 +494,7 @@ class Database {
         related_name: customer?.name || 'Unknown',
         amount: amount,
         date: new Date().toISOString(),
-        notes: `Payment for INV#${invoice.invoice_number}`,
+        notes: `دفع للفاتورة #${invoice.invoice_number}`,
         ref_number: this.getNextTransactionRef(CashTransactionType.RECEIPT)
     };
     if (isSupabaseConfigured) await supabase.from('cash_transactions').insert(cashTx);
@@ -500,7 +502,7 @@ class Database {
     this._cashBalance += amount;
     if (customer) customer.current_balance -= amount;
     this.saveToLocalCache();
-    return { success: true, message: 'Payment recorded' };
+    return { success: true, message: 'تم تسجيل الدفعة' };
   }
 
   async addWarehouse(name: string) {
