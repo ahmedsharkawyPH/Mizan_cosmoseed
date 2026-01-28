@@ -182,7 +182,6 @@ export default function Settings() {
       }
   };
 
-  // --- دوال المسح الجديدة ---
   const handleClearSales = async () => {
       if (confirm("تحذير نهائي: هل أنت متأكد من مسح كافة حركات وفواتير المبيعات؟ هذا الإجراء لا يمكن التراجع عنه وسيؤثر على أرصدة العملاء.")) {
           await db.clearAllSales();
@@ -522,7 +521,7 @@ export default function Settings() {
                                         <div className="flex justify-center gap-3">
                                             <button onClick={() => handleOpenUserModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 className="w-4 h-4" /></button>
                                             {u.username !== 'admin' && (
-                                                <button onClick={() => handleDeleteUser(id)} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
                                             )}
                                         </div>
                                     </td>
@@ -576,7 +575,7 @@ export default function Settings() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {/* مسح المبيعات */}
+                    {/* 1. مسح المبيعات */}
                     <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
                         <div className="mb-6">
                             <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><ShoppingCart className="w-6 h-6" /></div>
@@ -588,7 +587,7 @@ export default function Settings() {
                         </button>
                     </div>
 
-                    {/* مسح المشتريات */}
+                    {/* 2. مسح المشتريات */}
                     <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
                         <div className="mb-6">
                             <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><ShoppingBag className="w-6 h-6" /></div>
@@ -600,7 +599,7 @@ export default function Settings() {
                         </button>
                     </div>
 
-                    {/* مسح الطلبات */}
+                    {/* 3. مسح الطلبات */}
                     <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
                         <div className="mb-6">
                             <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><FileText className="w-6 h-6" /></div>
@@ -612,13 +611,9 @@ export default function Settings() {
                         </button>
                     </div>
 
-                    {/* تصفير الخزينة */}
+                    {/* 4. تصفير الخزينة */}
                     <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
                         <div className="mb-6">
-                            {/* 
-                                Fix: Error in file pages/Settings.tsx on line 618: Cannot find name 'Wallet'.
-                                Added Wallet to lucide-react imports above.
-                            */}
                             <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Wallet className="w-6 h-6" /></div>
                             <h4 className="font-black text-slate-800 text-base mb-2">تصفير سجل الخزينة</h4>
                             <p className="text-[10px] text-slate-400 font-bold leading-relaxed">مسح كافة حركات الصرف والقبض وإرجاع الرصيد لصفر.</p>
@@ -628,12 +623,12 @@ export default function Settings() {
                         </button>
                     </div>
 
-                    {/* مسح مخزن محدد */}
+                    {/* 5. مسح منتجات مخزن محدد */}
                     <div className="p-6 rounded-3xl border-2 border-slate-100 bg-slate-50/50 hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm col-span-1 md:col-span-2">
                         <div className="mb-6">
                             <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Store className="w-6 h-6" /></div>
                             <h4 className="font-black text-slate-800 text-base mb-2">تصفير أرصدة مخزن محدد</h4>
-                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed mb-4">اختر مخزناً لمسح كافة الأصناف الموجودة داخله (إزالة الـ Batches).</p>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed mb-4">اختر مخزناً لمسح كافة الأصناف (الأرصدة) الموجودة بداخلة.</p>
                             
                             <div className="flex gap-2">
                                 <select 
@@ -644,21 +639,21 @@ export default function Settings() {
                                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                 </select>
                                 <button onClick={handleClearWarehouseStock} className="px-6 py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 shadow-md">
-                                    تصفير المخزن المختار
+                                    تصفير المخزن
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    {/* المزامنة اليدوية (إضافية) */}
+                    {/* المزامنة اليدوية */}
                     <div className="p-6 rounded-3xl border-2 border-blue-50 bg-blue-50/30 group flex flex-col justify-between shadow-sm">
                         <div className="mb-6">
                             <div className="w-12 h-12 bg-blue-600 text-white rounded-xl flex items-center justify-center mb-4 group-hover:rotate-12 transition-transform"><RefreshCcw className="w-6 h-6" /></div>
-                            <h4 className="font-black text-slate-800 text-base mb-2">تحديث الأرصدة</h4>
-                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">إعادة حساب كافة أرصدة العملاء والموردين من السحابة.</p>
+                            <h4 className="font-black text-slate-800 text-base mb-2">تحديث السحابة</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">إعادة مزامنة وحساب كافة أرصدة النظام الحالية.</p>
                         </div>
                         <button onClick={() => db.recalculateAllBalances()} className="w-full py-3 bg-blue-600 text-white rounded-xl font-black text-xs hover:bg-blue-700 transition-all">
-                            تحديث السحابة
+                            تحديث الآن
                         </button>
                     </div>
 
@@ -667,10 +662,10 @@ export default function Settings() {
                         <div className="mb-6">
                             <div className="w-12 h-12 bg-red-600 text-white rounded-xl flex items-center justify-center mb-4 animate-pulse"><AlertTriangle className="w-6 h-6" /></div>
                             <h4 className="font-black text-red-900 text-base mb-2">إعادة ضبط المصنع</h4>
-                            <p className="text-[10px] text-red-700 font-bold leading-relaxed">مسح شامل وشامل لكافة البيانات (الأصناف، العملاء، الموردين، الحركات) والعودة للنظام فارغاً.</p>
+                            <p className="text-[10px] text-red-700 font-bold leading-relaxed">مسح شامل لكافة البيانات والعودة للوضع الافتراضي.</p>
                         </div>
                         <button onClick={() => db.resetDatabase()} className="w-full py-4 bg-red-700 text-white rounded-xl font-black text-sm hover:bg-black transition-all shadow-lg">
-                            ضبط المصنع (حذف شامل)
+                            ضبط المصنع الشامل
                         </button>
                     </div>
                 </div>
@@ -678,7 +673,7 @@ export default function Settings() {
         )}
       </div>
 
-      {/* User Modal - Fully Arabic */}
+      {/* User Modal */}
       {isUserModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-300">
             <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 relative flex flex-col max-h-[90vh] border border-slate-100">
