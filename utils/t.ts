@@ -10,7 +10,7 @@ const translations: Record<string, Record<string, string>> = {
     'nav.products': 'الأصناف والمخزون',
     'nav.all_items': 'كافة الأصناف',
     'nav.inventory_analysis': 'تحليل المخزون',
-    'nav.shortages': 'النواقص',
+    'nav.shortages': 'النواقص والتقارير',
     'nav.purchases': 'المشتريات',
     'nav.cash': 'الخزينة والحسابات',
     'nav.reports': 'التقارير والتحليل',
@@ -49,6 +49,17 @@ const translations: Record<string, Record<string, string>> = {
     'inv.manual_price': 'تفعيل تعديل السعر يدوياً',
     'inv.discount': 'تفعيل الخصم على الصنف',
     'inv.return_mode': 'وضع المرتجع',
+    
+    // Shortages
+    'rep.short.daily': 'نواقص مبيعات اليوم',
+    'rep.short.general': 'النواقص العامة',
+    'rep.short.stagnant': 'الأصناف الراكدة',
+    'rep.short.sold_today_list': 'مبيعات اليوم',
+    'rep.short.best_selling': 'الأكثر مبيعاً',
+    'rep.last_cost_1': 'آخر تكلفة',
+    'rep.monthly_avg': 'سحب (30 يوم)',
+    'rep.short.current': 'الرصيد',
+    'rep.short.status': 'الحالة',
     
     // Commissions
     'comm.title': 'نظام حساب العمولات',
