@@ -2,11 +2,38 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { ArrowUpRight, ArrowDownLeft, X, FileText, Filter, Plus, Wallet, ChevronRight, ChevronLeft, Search, Hash, Calendar } from 'lucide-react';
-import { CashTransactionType, CashTransaction } from '../types';
+import { ArrowUpRight, ArrowDownLeft, X, FileText, Filter, Plus, Wallet, ChevronRight, ChevronLeft, Search, Hash, Calendar, Printer, CheckCircle2 } from 'lucide-react';
+import { CashTransactionType, CashTransaction, Customer } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 const ITEMS_PER_PAGE = 15;
+
+const PRINT_STYLES = `
+  @media print {
+    @page { size: 58mm auto; margin: 0; }
+    body * { visibility: hidden; }
+    #thermal-receipt, #thermal-receipt * { visibility: visible; }
+    #thermal-receipt {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 58mm;
+      padding: 2mm;
+      font-family: 'Cairo', sans-serif;
+      direction: rtl;
+      background: white;
+    }
+    .no-print { display: none !important; }
+  }
+  .receipt-container { width: 54mm; font-size: 11px; line-height: 1.4; color: black; }
+  .receipt-header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
+  .receipt-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .receipt-divider { border-top: 1px dashed #000; margin: 5px 0; }
+  .receipt-amount { font-size: 16px; font-weight: 900; text-align: center; margin: 5px 0; border: 1px solid #000; padding: 2px; }
+  .receipt-footer { text-align: center; font-size: 9px; margin-top: 10px; }
+`;
 
 interface DraftTransaction extends Omit<CashTransaction, 'id'> {
     isDraft: boolean;
@@ -20,8 +47,6 @@ export default function CashRegister() {
   
   const [historyFilter, setHistoryFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
 
   const stats = useMemo(() => {
@@ -34,7 +59,7 @@ export default function CashRegister() {
   const [isOpen, setIsOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [activeType, setActiveType] = useState<CashTransactionType>(CashTransactionType.RECEIPT);
-  const [printTx, setPrintTx] = useState<DraftTransaction | null>(null);
+  const [printTx, setPrintTx] = useState<any>(null);
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<string>('OTHER');
   const [relatedId, setRelatedId] = useState('');
@@ -50,34 +75,24 @@ export default function CashRegister() {
   useEffect(() => {
     const s = db.getSettings();
     setCategories(s.expenseCategories || []);
+    if (activeType === CashTransactionType.RECEIPT) setCategory('CUSTOMER_PAYMENT');
+    else setCategory('SUPPLIER_PAYMENT');
     
-    if (activeType === CashTransactionType.RECEIPT) {
-      setCategory('CUSTOMER_PAYMENT');
-    } else {
-      setCategory('SUPPLIER_PAYMENT');
-    }
-    
-    setRelatedId(''); 
-    setRelatedName(''); 
-    setIsAddingCategory(false); 
-    setNewCategoryName(''); 
-    setAmount(''); 
-    setNotes('');
-    
-    if (isOpen) {
-      setRefNumber(db.getNextTransactionRef(activeType));
-    }
+    setRelatedId(''); setRelatedName(''); setIsAddingCategory(false); setNewCategoryName(''); setAmount(''); setNotes('');
+    if (isOpen) setRefNumber(db.getNextTransactionRef(activeType));
   }, [activeType, isOpen]);
 
   const handlePreview = () => {
     const val = parseFloat(amount);
-    if (!amount || isNaN(val) || val <= 0) {
-      alert('يرجى إدخال مبلغ صحيح');
-      return;
-    }
+    if (!amount || isNaN(val) || val <= 0) return toast.error('يرجى إدخال مبلغ صحيح');
 
     let finalName = relatedName;
-    if (category === 'CUSTOMER_PAYMENT') finalName = customers.find(c => c.id === relatedId)?.name || '';
+    let balanceBefore = 0;
+    if (category === 'CUSTOMER_PAYMENT') {
+        const cust = customers.find(c => c.id === relatedId);
+        finalName = cust?.name || '';
+        balanceBefore = cust?.current_balance || 0;
+    }
     if (category === 'SUPPLIER_PAYMENT') finalName = suppliers.find(s => s.id === relatedId)?.name || '';
 
     let finalCategory = category;
@@ -85,7 +100,7 @@ export default function CashRegister() {
         finalCategory = newCategoryName.trim().toUpperCase().replace(/\s+/g, '_');
     }
 
-    const draft: DraftTransaction = { 
+    const draft = { 
       isDraft: true, 
       type: activeType, 
       category: finalCategory, 
@@ -94,14 +109,16 @@ export default function CashRegister() {
       amount: val, 
       date: new Date().toISOString(), 
       notes: notes, 
-      ref_number: refNumber || 'DRAFT' 
+      ref_number: refNumber || 'DRAFT',
+      balanceBefore,
+      balanceAfter: balanceBefore - val
     };
 
     setPrintTx(draft); 
     setShowPreview(true);
   };
 
-  const handleExecute = () => {
+  const handleExecute = (shouldPrint: boolean = false) => {
       if (!printTx) return;
       if (activeType === CashTransactionType.EXPENSE && isAddingCategory && newCategoryName.trim()) {
         db.addExpenseCategory(printTx.category);
@@ -113,17 +130,32 @@ export default function CashRegister() {
         reference_id: printTx.reference_id, 
         related_name: printTx.related_name, 
         amount: printTx.amount, 
-        date: new Date().toISOString(), 
+        date: printTx.date, 
         notes: printTx.notes, 
         ref_number: refNumber 
       });
       
       setTxs(db.getCashTransactions());
+      if (shouldPrint) {
+          setTimeout(() => window.print(), 100);
+      }
       setIsOpen(false); 
       setShowPreview(false);
+      toast.success("تم حفظ السند بنجاح");
   };
 
-  // تصفية السجل ومنطق الصفحات
+  const handleReprint = (tx: CashTransaction) => {
+      let balanceBefore = 0;
+      let balanceAfter = 0;
+      if (tx.category === 'CUSTOMER_PAYMENT') {
+          const cust = customers.find(c => c.id === tx.reference_id);
+          balanceAfter = cust?.current_balance || 0;
+          balanceBefore = balanceAfter + tx.amount;
+      }
+      setPrintTx({ ...tx, balanceBefore, balanceAfter });
+      setTimeout(() => window.print(), 100);
+  };
+
   const filteredTxs = useMemo(() => {
     return txs.filter(t => {
         const matchCategory = historyFilter === 'ALL' || t.category === historyFilter;
@@ -141,9 +173,7 @@ export default function CashRegister() {
       return filteredTxs.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredTxs, currentPage]);
 
-  useEffect(() => {
-      setCurrentPage(1); // إعادة الترقيم عند التغيير في الفلاتر
-  }, [historyFilter, searchTerm]);
+  useEffect(() => { setCurrentPage(1); }, [historyFilter, searchTerm]);
 
   const getCategoryName = (cat: string) => {
       const map: any = {
@@ -162,28 +192,55 @@ export default function CashRegister() {
 
   return (
     <div className="space-y-6 relative pb-20 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+      <style>{PRINT_STYLES}</style>
+      
+      {/* Hidden Thermal Receipt for Print */}
+      {printTx && (
+          <div id="thermal-receipt" className="hidden print:block">
+              <div className="receipt-container">
+                  <div className="receipt-header">
+                      <div style={{fontWeight: 900, fontSize: '14px'}}>{settings.companyName}</div>
+                      <div>{printTx.type === 'RECEIPT' ? 'سند قبض نقدية' : 'سند صرف نقدية'}</div>
+                  </div>
+                  <div className="receipt-row"><span>رقم السند:</span><span style={{fontFamily: 'monospace'}}>{printTx.ref_number}</span></div>
+                  <div className="receipt-row"><span>التاريخ:</span><span>{new Date(printTx.date).toLocaleDateString('ar-EG')}</span></div>
+                  <div className="receipt-row"><span>الوقت:</span><span>{new Date(printTx.date).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</span></div>
+                  <div className="receipt-divider"></div>
+                  <div className="receipt-row"><span>الجهة:</span><span style={{fontWeight: 'bold'}}>{printTx.related_name}</span></div>
+                  <div className="receipt-row"><span>البيان:</span><span>{printTx.notes || '-'}</span></div>
+                  
+                  <div className="receipt-amount">
+                      {currency} {printTx.amount.toLocaleString()}
+                  </div>
+
+                  {printTx.category === 'CUSTOMER_PAYMENT' && (
+                      <div className="receipt-divider">
+                          <div className="receipt-row"><span>مديونية قبل السداد:</span><span>{currency} {printTx.balanceBefore.toLocaleString()}</span></div>
+                          <div className="receipt-row" style={{fontWeight: 'bold'}}><span>مديونية بعد السداد:</span><span>{currency} {printTx.balanceAfter.toLocaleString()}</span></div>
+                      </div>
+                  )}
+
+                  <div className="receipt-footer">
+                      <div className="receipt-divider"></div>
+                      <p>شكراً لتعاملكم معنا</p>
+                      <p>Mizan Online Pro</p>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div>
             <h1 className="text-2xl font-black text-slate-800">الخزينة والحسابات</h1>
             <p className="text-sm text-slate-400 font-bold mt-1">إدارة السيولة النقدية وسندات القبض والصرف</p>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
-          <button 
-            onClick={() => { setActiveType(CashTransactionType.RECEIPT); setIsOpen(true); }} 
-            className="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 font-black transition-all active:scale-95"
-          >
-            <ArrowDownLeft className="w-5 h-5" /> إنشاء سند قبض
-          </button>
-          <button 
-            onClick={() => { setActiveType(CashTransactionType.EXPENSE); setIsOpen(true); }} 
-            className="flex-1 md:flex-none bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-100 font-black transition-all active:scale-95"
-          >
-            <ArrowUpRight className="w-5 h-5" /> إنشاء سند صرف
-          </button>
+          <button onClick={() => { setActiveType(CashTransactionType.RECEIPT); setIsOpen(true); }} className="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 font-black transition-all active:scale-95"><ArrowDownLeft className="w-5 h-5" /> إنشاء سند قبض</button>
+          <button onClick={() => { setActiveType(CashTransactionType.EXPENSE); setIsOpen(true); }} className="flex-1 md:flex-none bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-100 font-black transition-all active:scale-95"><ArrowUpRight className="w-5 h-5" /> إنشاء سند صرف</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 no-print">
           <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100 relative overflow-hidden group">
                <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><ArrowDownLeft className="w-16 h-16 text-emerald-600" /></div>
                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">إجمالي المقبوضات</p>
@@ -201,26 +258,18 @@ export default function CashRegister() {
           </div>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-card border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-card border border-slate-100 overflow-hidden no-print">
         <div className="p-6 border-b bg-slate-50/50 flex flex-col xl:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-3 text-slate-800 font-black">
-                <FileText className="w-6 h-6 text-blue-600" /> 
-                سجل حركات الخزينة
+                <FileText className="w-6 h-6 text-blue-600" /> سجل حركات الخزينة
                 <span className="text-[10px] bg-white px-2 py-1 rounded-lg border text-slate-400">{filteredTxs.length} حركة</span>
             </div>
             
             <div className="flex flex-col md:flex-row items-center gap-3 w-full xl:w-auto">
                 <div className="relative w-full md:w-64 group">
                     <Search className="absolute right-3 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-                    <input 
-                        type="text" 
-                        placeholder="بحث في السجل..." 
-                        className="w-full pr-10 pl-4 py-2 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                    />
+                    <input type="text" placeholder="بحث في السجل..." className="w-full pr-10 pl-4 py-2 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-
                 <div className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm w-full md:w-auto">
                     <Filter className="w-4 h-4 text-slate-400" />
                     <label htmlFor="history_filter_select" className="text-xs font-black text-slate-500 whitespace-nowrap">تصفية حسب البند:</label>
@@ -246,6 +295,7 @@ export default function CashRegister() {
                   <th className="px-6 py-4">البند</th>
                   <th className="px-6 py-4">الجهة / البيان</th>
                   <th className="px-6 py-4 text-left">القيمة</th>
+                  <th className="px-6 py-4 text-center">الإجراء</th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 font-bold">
@@ -254,9 +304,7 @@ export default function CashRegister() {
                     <td className="px-6 py-4 text-slate-500 text-xs">{new Date(tx.date).toLocaleDateString('ar-EG')}</td>
                     <td className="px-6 py-4 font-mono text-[11px] text-blue-600">{tx.ref_number || '-'}</td>
                     <td className="px-6 py-4">
-                        <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-lg text-[10px] font-black uppercase">
-                            {getCategoryName(tx.category)}
-                        </span>
+                        <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-lg text-[10px] font-black uppercase">{getCategoryName(tx.category)}</span>
                     </td>
                     <td className="px-6 py-4 text-slate-800">
                         {tx.related_name || '-'}
@@ -265,64 +313,27 @@ export default function CashRegister() {
                     <td className={`px-6 py-4 text-left font-black text-base ${tx.type === 'RECEIPT' ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {tx.type === 'RECEIPT' ? '+' : '-'}{currency}{tx.amount.toLocaleString()}
                     </td>
+                    <td className="px-6 py-4 text-center">
+                        <button onClick={() => handleReprint(tx)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all border border-transparent hover:border-slate-100 shadow-sm" title="طباعة الإيصال">
+                           <Printer className="w-4 h-4" />
+                        </button>
+                    </td>
                 </tr>
                 ))}
-                {filteredTxs.length === 0 && (
-                    <tr>
-                        <td colSpan={5} className="p-20 text-center text-slate-300 font-black">
-                            <Wallet className="w-12 h-12 mx-auto mb-4 opacity-10" />
-                            لا توجد حركات مطابقة للبحث
-                        </td>
-                    </tr>
-                )}
             </tbody>
             </table>
         </div>
-
-        {/* أدوات التحكم في الصفحات */}
         {totalPages > 1 && (
             <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-center gap-4">
-                <button 
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(prev => prev - 1)}
-                    className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-blue-600 disabled:opacity-30 transition-all shadow-sm"
-                >
-                    <ChevronRight className="w-5 h-5" />
-                </button>
-                
-                <div className="flex gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                        let pageNum = currentPage;
-                        if (currentPage <= 3) pageNum = i + 1;
-                        else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
-                        else pageNum = currentPage - 2 + i;
-                        if (pageNum <= 0 || pageNum > totalPages) return null;
-                        return (
-                            <button
-                                key={pageNum}
-                                onClick={() => setCurrentPage(pageNum)}
-                                className={`w-10 h-10 rounded-xl font-black text-sm transition-all ${currentPage === pageNum ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'}`}
-                            >
-                                {pageNum}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                <button 
-                    disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage(prev => prev + 1)}
-                    className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-blue-600 disabled:opacity-30 transition-all shadow-sm"
-                >
-                    <ChevronLeft className="w-5 h-5" />
-                </button>
+                <button disabled={currentPage === 1} onClick={() => setCurrentPage(prev => prev - 1)} className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-blue-600 disabled:opacity-30 transition-all shadow-sm"><ChevronRight className="w-5 h-5" /></button>
+                <div className="flex gap-1">{Array.from({ length: Math.min(5, totalPages) }, (_, i) => { let pageNum = currentPage <= 3 ? i + 1 : (currentPage >= totalPages - 2 ? totalPages - 4 + i : currentPage - 2 + i); if (pageNum <= 0 || pageNum > totalPages) return null; return ( <button key={pageNum} onClick={() => setCurrentPage(pageNum)} className={`w-10 h-10 rounded-xl font-black text-sm transition-all ${currentPage === pageNum ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'}`}>{pageNum}</button> ); })}</div>
+                <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => prev + 1)} className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-blue-600 disabled:opacity-30 transition-all shadow-sm"><ChevronLeft className="w-5 h-5" /></button>
             </div>
         )}
       </div>
 
-      {/* مودال إنشاء حركة جديدة */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300 no-print">
             <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] border border-slate-100">
                 <div className={`px-8 py-6 border-b flex justify-between items-center ${activeType === CashTransactionType.RECEIPT ? 'bg-emerald-50' : 'bg-rose-50'}`}>
                     <h3 className={`font-black text-lg flex items-center gap-3 ${activeType === CashTransactionType.RECEIPT ? 'text-emerald-800' : 'text-rose-800'}`}>
@@ -356,9 +367,8 @@ export default function CashRegister() {
                                           <option value="SALARY">رواتب وأجور</option>
                                           <option value="COMMISSION">صرف عمولات</option>
                                           <option value="OTHER">أخرى / متنوعة</option>
-                                          {categories.filter(c => !['SUPPLIER_PAYMENT','CAR','RENT','ELECTRICITY','SALARY','COMMISSION','OTHER'].includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
                                       </select>
-                                      <button onClick={() => setIsAddingCategory(true)} className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-200 text-slate-600 transition-all" title="إضافة بند جديد"><Plus className="w-6 h-6" /></button>
+                                      <button onClick={() => setIsAddingCategory(true)} className="bg-slate-100 p-2.5 rounded-xl border border-slate-200 hover:bg-slate-200 text-slate-600 transition-all"><Plus className="w-6 h-6" /></button>
                                     </>
                                 )}
                             </div>
@@ -371,25 +381,14 @@ export default function CashRegister() {
                         )}
                     </div>
                     
-                    {category === 'CUSTOMER_PAYMENT' && (
+                    {(category === 'CUSTOMER_PAYMENT' || category === 'SUPPLIER_PAYMENT') && (
                       <SearchableSelect 
-                        id="tx_customer_select"
+                        id="tx_entity_select"
                         name="related_id"
-                        options={customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone }))} 
+                        options={category === 'CUSTOMER_PAYMENT' ? customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })) : suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
                         value={relatedId} 
                         onChange={setRelatedId} 
-                        label="البحث عن العميل المستهدف" 
-                      />
-                    )}
-                    
-                    {category === 'SUPPLIER_PAYMENT' && (
-                      <SearchableSelect 
-                        id="tx_supplier_select"
-                        name="related_id"
-                        options={suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone }))} 
-                        value={relatedId} 
-                        onChange={setRelatedId} 
-                        label="البحث عن المورد المستهدف" 
+                        label={category === 'CUSTOMER_PAYMENT' ? "البحث عن العميل" : "البحث عن المورد"} 
                       />
                     )}
                     
@@ -410,48 +409,37 @@ export default function CashRegister() {
                       <textarea id="tx_notes_input" name="notes" className="w-full border-2 border-slate-100 p-3 rounded-2xl text-sm font-bold focus:border-blue-500 outline-none" rows={2} placeholder="اكتب تفاصيل إضافية هنا..." value={notes} onChange={e => setNotes(e.target.value)} />
                     </div>
                     
-                    <button 
-                      onClick={handlePreview} 
-                      className={`w-full py-5 text-white rounded-2xl font-black text-lg shadow-xl transition-all active:scale-95 ${activeType === CashTransactionType.RECEIPT ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-100'}`}
-                    >
-                      مراجعة وحفظ السند
-                    </button>
+                    <button onClick={handlePreview} className={`w-full py-5 text-white rounded-2xl font-black text-lg shadow-xl transition-all active:scale-95 ${activeType === CashTransactionType.RECEIPT ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-100'}`}>مراجعة وحفظ السند</button>
                 </div>
             </div>
         </div>
       )}
 
       {showPreview && printTx && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 no-print">
               <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-sm p-8 text-center animate-in zoom-in duration-200 border border-slate-100">
-                  <div className={`w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center ${printTx.type === 'RECEIPT' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
-                      <Wallet className="w-10 h-10" />
-                  </div>
+                  <div className={`w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center ${printTx.type === 'RECEIPT' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}><Wallet className="w-10 h-10" /></div>
                   <h3 className="text-2xl font-black mb-2 text-slate-800">تأكيد العملية</h3>
-                  <p className="text-sm text-slate-400 font-bold mb-6 italic">يرجى مراجعة البيانات قبل الحفظ النهائي في السجل</p>
                   
                   <div className="bg-slate-50 p-6 rounded-[1.5rem] mb-8 text-right space-y-4 shadow-inner border border-slate-100">
-                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                        <span className="text-slate-400 font-black text-[10px] uppercase">نوع السند</span>
-                        <span className={`font-black ${printTx.type === 'RECEIPT' ? 'text-emerald-600' : 'text-rose-600'}`}>{printTx.type === 'RECEIPT' ? 'سند قبض' : 'سند صرف'}</span>
-                      </div>
-                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                        <span className="text-slate-400 font-black text-[10px] uppercase">البند</span>
-                        <span className="font-black text-blue-600">{getCategoryName(printTx.category)}</span>
-                      </div>
-                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                        <span className="text-slate-400 font-black text-[10px] uppercase">الجهة</span>
-                        <span className="font-black text-slate-700 truncate max-w-[150px]">{printTx.related_name || '-'}</span>
-                      </div>
-                      <div className="flex justify-between items-center pt-2">
-                        <span className="text-slate-400 font-black text-[10px] uppercase">المبلغ</span>
-                        <span className="text-3xl font-black text-slate-900">{currency}{printTx.amount.toLocaleString()}</span>
-                      </div>
+                      <div className="flex justify-between items-center border-b pb-2"><span className="text-slate-400 font-black text-[10px] uppercase">الجهة</span><span className="font-black text-slate-700 truncate max-w-[150px]">{printTx.related_name || '-'}</span></div>
+                      <div className="flex justify-between items-center border-b pb-2"><span className="text-slate-400 font-black text-[10px] uppercase">المبلغ</span><span className="text-xl font-black text-slate-900">{currency}{printTx.amount.toLocaleString()}</span></div>
+                      {printTx.category === 'CUSTOMER_PAYMENT' && (
+                          <>
+                            <div className="flex justify-between items-center border-b pb-2 text-red-500"><span className="text-[10px] font-black uppercase">المديونية قبل</span><span className="font-black">{currency}{printTx.balanceBefore.toLocaleString()}</span></div>
+                            <div className="flex justify-between items-center border-b pb-2 text-emerald-600"><span className="text-[10px] font-black uppercase">المديونية بعد</span><span className="font-black">{currency}{printTx.balanceAfter.toLocaleString()}</span></div>
+                          </>
+                      )}
                   </div>
                   
-                  <div className="flex gap-4">
-                    <button onClick={() => setShowPreview(false)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black hover:bg-slate-200 transition-all">تراجع</button>
-                    <button onClick={handleExecute} className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black hover:bg-blue-600 transition-all shadow-xl shadow-slate-200">تأكيد وحفظ</button>
+                  <div className="space-y-3">
+                    <div className="flex gap-4">
+                        <button onClick={() => setShowPreview(false)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black hover:bg-slate-200 transition-all">تراجع</button>
+                        <button onClick={() => handleExecute(false)} className="flex-[2] py-4 bg-slate-900 text-white rounded-2xl font-black hover:bg-blue-600 transition-all shadow-xl">حفظ فقط</button>
+                    </div>
+                    <button onClick={() => handleExecute(true)} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-700 shadow-lg active:scale-95 transition-all">
+                        <Printer className="w-5 h-5" /> حفظ وطباعة إيصال
+                    </button>
                   </div>
               </div>
           </div>
