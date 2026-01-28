@@ -153,11 +153,8 @@ class Database {
 
   async resetCustomerAccounts() {
     if (isSupabaseConfigured) {
-        // Delete all sales invoices
         await supabase.from('invoices').delete().neq('id', 'placeholder');
-        // Delete all customer payments
         await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
-        // Reset balances
         await supabase.from('customers').update({ current_balance: 0 }).neq('id', 'placeholder');
         await this.syncFromCloud();
     } else {
@@ -289,6 +286,49 @@ class Database {
 
     this.saveToLocalCache();
     return { success: true, message: 'تم الحفظ بنجاح', id: invoiceId };
+  }
+
+  async deletePurchaseInvoice(id: string) {
+    const invoice = this.purchaseInvoices.find(inv => inv.id === id);
+    if (!invoice) return;
+
+    // 1. عكس مديونية المورد
+    const supplier = this.suppliers.find(s => s.id === invoice.supplier_id);
+    if (supplier) {
+        const total = invoice.total_amount;
+        const paid = invoice.paid_amount;
+        const isReturn = invoice.type === 'RETURN';
+        const adjustment = isReturn ? -total : total;
+        supplier.current_balance -= (adjustment - paid);
+    }
+
+    // 2. عكس المخزون
+    if (isSupabaseConfigured) {
+        // في السحاب نستخدم RPC أو تريجر لعكس الحركة، هنا سنقوم بالمسح المباشر للفاتورة
+        // والاعتماد على مزامنة السحاب لاحقاً لضمان دقة الكميات
+        await supabase.from('purchase_invoices').delete().eq('id', id);
+    } else {
+        invoice.items.forEach(item => {
+            const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
+            if (batch) {
+                batch.quantity -= item.quantity; // حذف المشتريات يقلل الكمية
+                if (batch.quantity < 0) batch.quantity = 0;
+            }
+        });
+    }
+
+    // 3. مسح حركات الخزينة المرتبطة
+    const associatedTxs = this.cashTransactions.filter(tx => tx.reference_id === id);
+    associatedTxs.forEach(tx => {
+        this._cashBalance -= (tx.type === CashTransactionType.RECEIPT ? tx.amount : -tx.amount);
+    });
+    this.cashTransactions = this.cashTransactions.filter(tx => tx.reference_id !== id);
+    if (isSupabaseConfigured) await supabase.from('cash_transactions').delete().eq('reference_id', id);
+
+    // 4. حذف الفاتورة من السجل
+    this.purchaseInvoices = this.purchaseInvoices.filter(inv => inv.id !== id);
+    this.saveToLocalCache();
+    return true;
   }
 
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {

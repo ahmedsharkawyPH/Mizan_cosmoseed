@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -93,6 +94,7 @@ function App() {
                   <Route path="shortages" element={<Shortages />} />
                   
                   <Route path="purchases/new" element={<PurchaseInvoice type="PURCHASE" />} />
+                  <Route path="purchases/edit/:id" element={<PurchaseInvoice type="PURCHASE" />} />
                   <Route path="purchases/return" element={<PurchaseInvoice type="RETURN" />} />
                   <Route path="purchases/return-from-invoice" element={<PurchaseReturn />} />
                   <Route path="purchases/list" element={<PurchaseList />} />

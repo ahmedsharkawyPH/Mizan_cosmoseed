@@ -2,9 +2,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { PurchaseItem } from '../types';
+import { PurchaseItem, PurchaseInvoice as IPurchaseInvoice } from '../types';
 import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 // @ts-ignore
 import toast from 'react-hot-toast';
@@ -15,6 +15,7 @@ interface Props {
 
 export default function PurchaseInvoice({ type }: Props) {
   const navigate = useNavigate();
+  const { id } = useParams();
   const currency = db.getSettings().currency;
   const isReturn = type === 'RETURN';
   
@@ -23,12 +24,13 @@ export default function PurchaseInvoice({ type }: Props) {
   const [warehouses] = useState(db.getWarehouses());
   
   const [selectedSupplier, setSelectedSupplier] = useState('');
-  const [documentNo, setDocumentNo] = useState(''); // رقم المستند (فاتورة المورد)
+  const [documentNo, setDocumentNo] = useState('');
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [cart, setCart] = useState<PurchaseItem[]>([]);
   const [cashPaid, setCashPaid] = useState<number>(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null); 
+  const [isLoadingInvoice, setIsLoadingInvoice] = useState(false);
   
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
@@ -46,7 +48,21 @@ export default function PurchaseInvoice({ type }: Props) {
   useEffect(() => {
     const def = warehouses.find(w => w.is_default);
     if(def) setSelectedWarehouse(def.id);
-  }, [warehouses]);
+
+    // التحميل في حالة التعديل
+    if (id) {
+        const inv = db.getPurchaseInvoices().find(i => i.id === id);
+        if (inv) {
+            setIsLoadingInvoice(true);
+            setSelectedSupplier(inv.supplier_id);
+            setDocumentNo(inv.document_number || '');
+            setManualDate(inv.date.split('T')[0]);
+            setCart(inv.items);
+            setCashPaid(inv.paid_amount);
+            setIsLoadingInvoice(false);
+        }
+    }
+  }, [id, warehouses]);
 
   const handleCostChange = (val: number) => {
     setCost(val);
@@ -172,9 +188,15 @@ export default function PurchaseInvoice({ type }: Props) {
         return;
     }
     
+    if (id) {
+        // في حالة التعديل نقوم بحذف القديم أولاً ثم إنشاء الجديد
+        // لضمان إعادة ضبط المخازن والأرصدة بشكل صحيح
+        await db.deletePurchaseInvoice(id);
+    }
+    
     const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn, documentNo, manualDate);
     if (res.success) {
-        toast.success("تم حفظ الفاتورة بنجاح");
+        toast.success(id ? "تم تحديث الفاتورة بنجاح" : "تم حفظ الفاتورة بنجاح");
         navigate('/purchases/list');
     } else {
         toast.error(res.message);
@@ -183,12 +205,14 @@ export default function PurchaseInvoice({ type }: Props) {
 
   const totalAmount = cart.reduce((acc, item) => acc + (item.quantity * item.cost_price), 0);
 
+  if (isLoadingInvoice) return <div className="p-20 text-center font-bold">جاري تحميل بيانات الفاتورة...</div>;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <button onClick={() => navigate('/purchases/list')} className="p-2 hover:bg-gray-100 rounded-full transition-all"><ArrowLeft className="w-5 h-5" /></button>
         <h1 className={`text-2xl font-black ${isReturn ? 'text-red-600' : 'text-blue-600'}`}>
-            {isReturn ? t('pur.return_title') : t('pur.title')}
+            {id ? 'تعديل فاتورة مشتريات' : (isReturn ? t('pur.return_title') : t('pur.title'))}
         </h1>
       </div>
 
@@ -215,7 +239,7 @@ export default function PurchaseInvoice({ type }: Props) {
                                 <Hash className="w-3 h-3" /> رقم الفاتورة التلقائي
                             </label>
                             <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-slate-500 font-black text-center">
-                                سيتم التوليد تلقائياً
+                                {id ? db.getPurchaseInvoices().find(i => i.id === id)?.invoice_number : 'تلقائي'}
                             </div>
                         </div>
                         <div className="md:col-span-3">
@@ -269,7 +293,6 @@ export default function PurchaseInvoice({ type }: Props) {
             </div>
             
             <div className="space-y-5">
-              {/* Row 1: Product Search Only */}
               <div className="w-full">
                   <SearchableSelect 
                       ref={productRef} 
@@ -283,7 +306,6 @@ export default function PurchaseInvoice({ type }: Props) {
                   />
               </div>
 
-              {/* Row 2: Financial Inputs & Action */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                   <div className="md:col-span-3 lg:col-span-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('pur.cost')}</label>
@@ -394,7 +416,7 @@ export default function PurchaseInvoice({ type }: Props) {
                 <div className="pt-4">
                     <button onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
                         <Save className="w-6 h-6" />
-                        حفظ الفاتورة النهائية
+                        {id ? 'حفظ التعديلات النهائية' : 'حفظ الفاتورة النهائية'}
                     </button>
                     <p className="text-[10px] text-center text-slate-400 font-bold mt-4">سيتم تحديث أرصدة المخازن وحساب المورد فور الحفظ</p>
                 </div>

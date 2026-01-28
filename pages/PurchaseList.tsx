@@ -3,8 +3,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { PurchaseInvoice } from '../types';
 import { t } from '../utils/t';
-import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash } from 'lucide-react';
+import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -24,8 +26,12 @@ export default function PurchaseList() {
   // Detail Modal
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
 
-  useEffect(() => {
+  const loadInvoices = () => {
     setInvoices(db.getPurchaseInvoices());
+  };
+
+  useEffect(() => {
+    loadInvoices();
   }, []);
 
   const filtered = useMemo(() => {
@@ -42,7 +48,6 @@ export default function PurchaseList() {
       return results;
   }, [invoices, search, filterType, suppliers]);
 
-  // منطق الصفحات
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
   const paginatedInvoices = useMemo(() => {
       const start = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -50,7 +55,7 @@ export default function PurchaseList() {
   }, [filtered, currentPage]);
 
   useEffect(() => {
-      setCurrentPage(1); // العودة للصفحة الأولى عند تغيير البحث
+      setCurrentPage(1);
   }, [search, filterType]);
 
   const handleJumpPage = (e: React.FormEvent) => {
@@ -60,6 +65,14 @@ export default function PurchaseList() {
           setCurrentPage(p);
           setJumpPage('');
       }
+  };
+
+  const handleDeleteInvoice = async (id: string) => {
+    if (window.confirm("تحذير: هل أنت متأكد من حذف هذه الفاتورة؟ سيتم سحب الكميات من المخازن وتعديل رصيد المورد والخزينة تلقائياً.")) {
+        await db.deletePurchaseInvoice(id);
+        toast.success("تم حذف الفاتورة وعكس حركاتها بنجاح");
+        loadInvoices();
+    }
   };
 
   const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || 'غير معروف';
@@ -126,7 +139,11 @@ export default function PurchaseList() {
                             </td>
                             <td className="px-6 py-4 text-left font-black text-slate-900">{currency}{inv.total_amount.toLocaleString()}</td>
                             <td className="px-6 py-4 text-center">
-                                <button onClick={() => setSelectedInvoice(inv)} className="p-2 hover:bg-white text-slate-500 hover:text-blue-600 rounded-lg transition-all shadow-sm"><Eye className="w-5 h-5" /></button>
+                                <div className="flex justify-center gap-2">
+                                    <button onClick={() => setSelectedInvoice(inv)} className="p-2 border border-slate-100 rounded-lg hover:bg-white text-slate-500 hover:text-blue-600 shadow-sm transition-all" title="معاينة"><Eye className="w-4 h-4" /></button>
+                                    <button onClick={() => navigate(`/purchases/edit/${inv.id}`)} className="p-2 border border-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white shadow-sm transition-all" title="تعديل"><Edit className="w-4 h-4" /></button>
+                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-2 border border-slate-100 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 shadow-sm transition-all" title="حذف"><Trash2 className="w-4 h-4" /></button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -134,7 +151,6 @@ export default function PurchaseList() {
             </table>
         </div>
 
-        {/* أدوات التحكم في الصفحات */}
         {totalPages > 1 && (
             <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="flex items-center gap-2">
