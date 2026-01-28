@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
@@ -121,9 +122,13 @@ export default function NewInvoice() {
     return products.find(p => p.id === selectedProduct);
   }, [selectedProduct, products]);
 
+  // تحسين: جلب أحدث تشغيلة (Batch) لضمان الحصول على أحدث سعر مشتريات
   const availableBatch = useMemo(() => {
     if (!currentProduct || !selectedWarehouse) return null;
-    return currentProduct.batches.find(b => b.warehouse_id === selectedWarehouse) || null;
+    const warehouseBatches = currentProduct.batches.filter(b => b.warehouse_id === selectedWarehouse);
+    if (warehouseBatches.length === 0) return null;
+    // ترتيب تنازلي حسب التاريخ لضمان أن أول عنصر هو الأحدث
+    return warehouseBatches.sort((a, b) => b.id.localeCompare(a.id))[0];
   }, [currentProduct, selectedWarehouse]);
 
   const currentSellingPrice = useMemo(() => {
@@ -134,6 +139,10 @@ export default function NewInvoice() {
 
   const lastPurchasePrice = useMemo(() => {
     if (!selectedProduct) return 0;
+    // محاولة جلب أحدث تكلفة من تشغيلات المنتج
+    if (availableBatch) return availableBatch.purchase_price;
+    if (currentProduct?.purchase_price) return currentProduct.purchase_price;
+    
     const history = db.getPurchaseInvoices();
     let latestCost = 0;
     for (const inv of history) {
@@ -145,7 +154,7 @@ export default function NewInvoice() {
             }
         }
     }
-    return latestCost || (availableBatch?.purchase_price || currentProduct?.purchase_price || 0);
+    return latestCost;
   }, [selectedProduct, availableBatch, currentProduct]);
 
   useEffect(() => {

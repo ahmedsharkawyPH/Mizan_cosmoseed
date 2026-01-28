@@ -278,6 +278,17 @@ class Database {
         this._cashBalance += (cashTx.type === CashTransactionType.RECEIPT ? cashTx.amount : -cashTx.amount);
     }
 
+    // تحديث أسعار المنتجات محلياً بناءً على آخر فاتورة مشتريات
+    if (!isReturn) {
+        items.forEach(item => {
+            const prod = this.products.find(p => p.id === item.product_id);
+            if (prod) {
+                prod.purchase_price = item.cost_price;
+                prod.selling_price = item.selling_price;
+            }
+        });
+    }
+
     const supplier = this.suppliers.find(s => s.id === supplierId);
     if (supplier) {
         const adjustment = isReturn ? -total : total;
@@ -304,14 +315,12 @@ class Database {
 
     // 2. عكس المخزون
     if (isSupabaseConfigured) {
-        // في السحاب نستخدم RPC أو تريجر لعكس الحركة، هنا سنقوم بالمسح المباشر للفاتورة
-        // والاعتماد على مزامنة السحاب لاحقاً لضمان دقة الكميات
         await supabase.from('purchase_invoices').delete().eq('id', id);
     } else {
         invoice.items.forEach(item => {
             const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
             if (batch) {
-                batch.quantity -= item.quantity; // حذف المشتريات يقلل الكمية
+                batch.quantity -= item.quantity;
                 if (batch.quantity < 0) batch.quantity = 0;
             }
         });
