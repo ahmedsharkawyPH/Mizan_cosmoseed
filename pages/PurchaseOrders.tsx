@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseOrder, PurchaseItem } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus, Info, Tag, Award, BarChart4, ChevronRight, Eye, RefreshCcw } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus, Info, Tag, Award, BarChart4, ChevronRight, Eye, RefreshCcw, Calendar, Hash, Edit3, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
 // @ts-ignore
@@ -34,16 +34,21 @@ export default function PurchaseOrders() {
       bestPrice: {price: number, supplier: string} | null
   } | null>(null);
 
-  const [isAddProdModalOpen, setIsAddProdModalOpen] = useState(false);
-  const [newProdForm, setNewProdForm] = useState({ code: '', name: '' });
-  const [reviewOrder, setReviewOrder] = useState<PurchaseOrder | null>(null);
-  const [reviewItems, setReviewItems] = useState<PurchaseItem[]>([]);
-  const [defaultWarehouseId, setDefaultWarehouseId] = useState('');
+  // Conversion States
+  const [isConvModalOpen, setIsConvModalOpen] = useState(false);
+  const [convOrder, setConvOrder] = useState<PurchaseOrder | null>(null);
+  const [convItems, setConvItems] = useState<any[]>([]);
+  const [convDocNo, setConvDocNo] = useState('');
+  const [convDate, setConvDate] = useState(new Date().toISOString().split('T')[0]);
+  const [convWarehouse, setConvWarehouse] = useState('');
+  const [convCashPaid, setConvCashPaid] = useState(0);
+  const [isSubmittingConv, setIsSubmittingConv] = useState(false);
 
   useEffect(() => {
     setOrders(db.getPurchaseOrders());
     const def = warehouses.find(w => w.is_default);
-    setDefaultWarehouseId(def ? def.id : warehouses[0]?.id || '');
+    const initialWh = def ? def.id : warehouses[0]?.id || '';
+    setConvWarehouse(initialWh);
   }, [warehouses, activeTab]);
 
   const getPriceIntelligence = (prodId: string) => {
@@ -131,28 +136,59 @@ export default function PurchaseOrders() {
       }
   };
 
-  const handleConvertOrderToInvoice = async (order: PurchaseOrder) => {
-      if (!confirm("هل تريد تحويل هذا الطلب إلى فاتورة مشتريات فعلية الآن؟ سيتم إضافة الأصناف للمخزن.")) return;
-      
-      const pItems: PurchaseItem[] = order.items.map(item => ({
-          product_id: item.product_id,
-          warehouse_id: defaultWarehouseId,
-          batch_number: `BATCH-${Date.now().toString().slice(-4)}`,
-          quantity: item.quantity,
-          cost_price: item.cost_price,
-          selling_price: item.selling_price || 0,
-          expiry_date: '2099-12-31'
-      }));
-
-      const res = await db.createPurchaseInvoice(order.supplier_id, pItems, 0, false);
-      if (res.success) {
-          await db.updatePurchaseOrderStatus(order.id, 'COMPLETED');
-          toast.success("تم تحويل الطلب لفاتورة بنجاح");
-          setOrders(db.getPurchaseOrders());
-      } else {
-          toast.error(res.message);
-      }
+  // --- Conversion Logic ---
+  const handleOpenConversion = (order: PurchaseOrder) => {
+    setConvOrder(order);
+    const mappedItems = order.items.map(item => ({
+        ...item,
+        productName: products.find(p => p.id === item.product_id)?.name || 'صنف غير معروف'
+    }));
+    setConvItems(mappedItems);
+    setConvDocNo('');
+    setConvDate(new Date().toISOString().split('T')[0]);
+    setConvCashPaid(0);
+    setIsConvModalOpen(true);
   };
+
+  const updateConvItem = (idx: number, field: string, val: number) => {
+    const updated = [...convItems];
+    updated[idx] = { ...updated[idx], [field]: val };
+    setConvItems(updated);
+  };
+
+  const removeConvItem = (idx: number) => {
+    if (convItems.length <= 1) return toast.error("لا يمكن إفراغ الفاتورة تماماً، يرجى إلغاء العملية بدلاً من ذلك.");
+    setConvItems(convItems.filter((_, i) => i !== idx));
+  };
+
+  const executeConversion = async () => {
+    if (!convOrder) return;
+    if (!convDocNo) return toast.error("يرجى إدخال رقم المستند (فاتورة المورد)");
+    
+    setIsSubmittingConv(true);
+    const pItems: PurchaseItem[] = convItems.map(item => ({
+        product_id: item.product_id,
+        warehouse_id: convWarehouse,
+        batch_number: `BATCH-${Date.now().toString().slice(-4)}`,
+        quantity: item.quantity,
+        cost_price: item.cost_price,
+        selling_price: item.selling_price || 0,
+        expiry_date: '2099-12-31'
+    }));
+
+    const res = await db.createPurchaseInvoice(convOrder.supplier_id, pItems, convCashPaid, false, convDocNo, convDate);
+    if (res.success) {
+        await db.updatePurchaseOrderStatus(convOrder.id, 'COMPLETED');
+        toast.success("تم تحويل الطلب لفاتورة شراء فعلية بنجاح");
+        setOrders(db.getPurchaseOrders());
+        setIsConvModalOpen(false);
+    } else {
+        toast.error(res.message);
+    }
+    setIsSubmittingConv(false);
+  };
+
+  const convTotal = useMemo(() => convItems.reduce((a, b) => a + (b.quantity * b.cost_price), 0), [convItems]);
 
   const supplierOptions = useMemo(() => suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone })), [suppliers]);
   const productOptions = useMemo(() => products.map(p => ({ value: p.id, label: p.name, subLabel: p.code })), [products]);
@@ -329,7 +365,7 @@ export default function PurchaseOrders() {
                                         <td className="p-6 text-center">
                                             <div className="flex justify-center gap-3">
                                                 <button 
-                                                    onClick={() => handleConvertOrderToInvoice(order)}
+                                                    onClick={() => handleOpenConversion(order)}
                                                     disabled={order.status !== 'PENDING'}
                                                     className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all disabled:opacity-30 shadow-md shadow-blue-100"
                                                 >
@@ -358,6 +394,172 @@ export default function PurchaseOrders() {
                             )}
                         </tbody>
                     </table>
+                </div>
+            </div>
+        )}
+
+        {/* --- Conversion & Preview Modal --- */}
+        {isConvModalOpen && convOrder && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+                <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
+                    {/* Modal Header */}
+                    <div className="px-8 py-6 bg-slate-50 border-b flex justify-between items-center">
+                        <div>
+                            <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                                <RefreshCcw className="w-6 h-6 text-blue-600" />
+                                مراجعة وتحويل طلب الشراء للفاتورة
+                            </h3>
+                            <p className="text-xs text-slate-500 font-bold mt-1">
+                                المورد: <span className="text-blue-600">{suppliers.find(s => s.id === convOrder.supplier_id)?.name}</span> | المرجع: {convOrder.order_number}
+                            </p>
+                        </div>
+                        <button onClick={() => setIsConvModalOpen(false)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-slate-600 transition-all shadow-sm">
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+
+                    {/* Modal Content */}
+                    <div className="flex-1 overflow-y-auto p-8 bg-white grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        {/* Left Side: Items Table */}
+                        <div className="lg:col-span-8 space-y-6">
+                            <div className="flex items-center justify-between">
+                                <h4 className="font-black text-slate-700 flex items-center gap-2">
+                                    <PackagePlus className="w-5 h-5 text-purple-500" /> محتويات الفاتورة المقترحة
+                                </h4>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-xs font-black text-slate-400">توجيه للمخزن:</label>
+                                    <select 
+                                        className="text-xs font-bold border rounded-lg p-1.5 outline-none focus:ring-1 focus:ring-blue-500"
+                                        value={convWarehouse}
+                                        onChange={e => setConvWarehouse(e.target.value)}
+                                    >
+                                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                                <table className="w-full text-sm text-right">
+                                    <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[10px] border-b border-slate-100">
+                                        <tr>
+                                            <th className="p-4">الصنف</th>
+                                            <th className="p-4 text-center">الكمية</th>
+                                            <th className="p-4 text-center">سعر الشراء</th>
+                                            <th className="p-4 text-center">سعر البيع</th>
+                                            <th className="p-4 text-left">الإجمالي</th>
+                                            <th className="p-4"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 font-bold text-slate-700">
+                                        {convItems.map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="p-4">
+                                                    <div className="text-sm">{item.productName}</div>
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    <input 
+                                                        type="number" 
+                                                        className="w-20 border border-slate-200 rounded-lg p-1.5 text-center font-black focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={item.quantity}
+                                                        onChange={e => updateConvItem(idx, 'quantity', Number(e.target.value))}
+                                                    />
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    <input 
+                                                        type="number" 
+                                                        className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-black text-red-600 focus:ring-2 focus:ring-red-500 outline-none"
+                                                        value={item.cost_price}
+                                                        onChange={e => updateConvItem(idx, 'cost_price', Number(e.target.value))}
+                                                    />
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    <input 
+                                                        type="number" 
+                                                        className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-black text-emerald-600 focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                        value={item.selling_price}
+                                                        onChange={e => updateConvItem(idx, 'selling_price', Number(e.target.value))}
+                                                    />
+                                                </td>
+                                                <td className="p-4 text-left font-black text-slate-900">
+                                                    {currency}{(item.quantity * item.cost_price).toLocaleString()}
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    <button onClick={() => removeConvItem(idx)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Right Side: Documentation & Financials */}
+                        <div className="lg:col-span-4 space-y-6">
+                            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4 shadow-inner">
+                                <h4 className="font-black text-slate-800 text-sm flex items-center gap-2">
+                                    <Edit3 className="w-4 h-4 text-blue-600" /> بيانات الفاتورة النهائية
+                                </h4>
+                                
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                        <Hash className="w-3 h-3" /> رقم المستند (فاتورة المورد)
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full border-2 border-orange-100 p-3 rounded-2xl font-black text-orange-700 bg-white focus:ring-4 focus:ring-orange-50 outline-none transition-all"
+                                        placeholder="الرقم الورقي للفاتورة..."
+                                        value={convDocNo}
+                                        onChange={e => setConvDocNo(e.target.value)}
+                                        autoFocus
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" /> تاريخ الفاتورة
+                                    </label>
+                                    <input 
+                                        type="date" 
+                                        className="w-full border border-slate-200 p-3 rounded-2xl font-black bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        value={convDate}
+                                        onChange={e => setConvDate(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="pt-4 border-t border-slate-200">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <span className="text-xs font-black text-slate-500">إجمالي الفاتورة:</span>
+                                        <span className="text-2xl font-black text-slate-900">{currency}{convTotal.toLocaleString()}</span>
+                                    </div>
+                                    
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                        <Wallet className="w-3 h-3 text-emerald-500" /> المبلغ المسدد (كاش)
+                                    </label>
+                                    <input 
+                                        type="number" 
+                                        className="w-full border-2 border-emerald-100 p-4 rounded-2xl font-black text-2xl text-emerald-700 bg-white focus:ring-4 focus:ring-emerald-50 outline-none transition-all"
+                                        placeholder="0.00"
+                                        value={convCashPaid || ''}
+                                        onChange={e => setConvCashPaid(Number(e.target.value))}
+                                    />
+                                    <div className="mt-2 text-center text-[10px] font-black text-slate-400">
+                                        المتبقي ذمة للمورد: <span className="text-red-500">{currency}{(convTotal - convCashPaid).toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={executeConversion}
+                                disabled={isSubmittingConv || convItems.length === 0}
+                                className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:bg-slate-200 disabled:shadow-none"
+                            >
+                                {isSubmittingConv ? <span className="loader"></span> : <Save className="w-6 h-6 text-white" />}
+                                اعتماد تحويل الفاتورة
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         )}
