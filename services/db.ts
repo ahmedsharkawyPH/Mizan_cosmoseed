@@ -1,3 +1,4 @@
+
 import { 
   Customer, Product, ProductWithBatches, CartItem, Invoice, 
   PurchaseInvoice, PurchaseItem, CashTransaction, CashTransactionType, 
@@ -142,11 +143,30 @@ class Database {
   async clearAllSales() {
     if (isSupabaseConfigured) {
         await supabase.from('invoices').delete().neq('id', 'placeholder');
-        // Reset customer balances locally for consistency
         await this.syncFromCloud();
+    } else {
+        this.invoices = [];
+        this.saveToLocalCache();
     }
-    this.invoices = [];
-    this.saveToLocalCache();
+    return true;
+  }
+
+  async resetCustomerAccounts() {
+    if (isSupabaseConfigured) {
+        // Delete all sales invoices
+        await supabase.from('invoices').delete().neq('id', 'placeholder');
+        // Delete all customer payments
+        await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
+        // Reset balances
+        await supabase.from('customers').update({ current_balance: 0 }).neq('id', 'placeholder');
+        await this.syncFromCloud();
+    } else {
+        this.invoices = [];
+        this.cashTransactions = this.cashTransactions.filter(tx => tx.category !== 'CUSTOMER_PAYMENT');
+        this.customers.forEach(c => c.current_balance = 0);
+        this._cashBalance = this.cashTransactions.reduce((sum, tx) => tx.type === CashTransactionType.RECEIPT ? sum + tx.amount : sum - tx.amount, 0);
+        this.saveToLocalCache();
+    }
     return true;
   }
 
@@ -154,18 +174,20 @@ class Database {
     if (isSupabaseConfigured) {
         await supabase.from('purchase_invoices').delete().neq('id', 'placeholder');
         await this.syncFromCloud();
+    } else {
+        this.purchaseInvoices = [];
+        this.saveToLocalCache();
     }
-    this.purchaseInvoices = [];
-    this.saveToLocalCache();
     return true;
   }
 
   async clearAllOrders() {
     if (isSupabaseConfigured) {
         await supabase.from('purchase_orders').delete().neq('id', 'placeholder');
+    } else {
+        this.purchaseOrders = [];
+        this.saveToLocalCache();
     }
-    this.purchaseOrders = [];
-    this.saveToLocalCache();
     return true;
   }
 
@@ -196,7 +218,6 @@ class Database {
       .filter(t => t.type === type && t.ref_number?.startsWith(prefix))
       .map(t => parseInt(t.ref_number?.replace(prefix + '-', '') || '0'))
       .filter(n => !isNaN(n));
-    // Fixed: replaced 'expected' with 'refs'
     const nextNum = refs.length > 0 ? Math.max(...refs) + 1 : 1001;
     return `${prefix}-${nextNum}`;
   }

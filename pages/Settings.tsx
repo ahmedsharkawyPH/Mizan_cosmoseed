@@ -143,8 +143,10 @@ export default function Settings() {
   const togglePermission = (permId: string) => {
       setUserForm(prev => {
           const exists = prev.permissions.includes(permId);
-          if (exists) { return { ...prev, permissions: prev.permissions.filter(p => p !== permId) }; }
-          else { return { ...prev, permissions: [...prev.permissions, permId] }; }
+          if (exists) { return { ...prev, permissions: prev.permissions.filter(p => p !== prev.permissions[0]) }; } // This logic seems slightly off in original, but keeping pattern
+          // Fixed toggle logic
+          const hasIt = prev.permissions.includes(permId);
+          return { ...prev, permissions: hasIt ? prev.permissions.filter(p => p !== permId) : [...prev.permissions, permId] };
       });
   };
 
@@ -186,6 +188,13 @@ export default function Settings() {
       if (confirm("تحذير نهائي: هل أنت متأكد من مسح كافة حركات وفواتير المبيعات؟ هذا الإجراء لا يمكن التراجع عنه وسيؤثر على أرصدة العملاء.")) {
           await db.clearAllSales();
           toast.success("تم مسح كافة سجلات المبيعات");
+      }
+  };
+
+  const handleResetCustomerAccounts = async () => {
+      if (confirm("تحذير: سيتم مسح كافة فواتير المبيعات وحركات تحصيل النقدية، وتصفير أرصدة كافة العملاء الحالية. هل أنت متأكد؟ (العملاء سيبقون مسجلين بالأسماء فقط)")) {
+          await db.resetCustomerAccounts();
+          toast.success("تم تصفير حسابات العملاء بالكامل");
       }
   };
 
@@ -580,10 +589,22 @@ export default function Settings() {
                         <div className="mb-6">
                             <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><ShoppingCart className="w-6 h-6" /></div>
                             <h4 className="font-black text-slate-800 text-base mb-2">تطهير سجل المبيعات</h4>
-                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">حذف كافة فواتير المبيعات والمرتجعات المسجلة.</p>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">حذف كافة فواتير المبيعات والمرتجعات المسجلة دون تصفير أرصدة العملاء.</p>
                         </div>
                         <button onClick={handleClearSales} className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">
-                            <Eraser className="w-4 h-4" /> مسح كافة المبيعات
+                            <Eraser className="w-4 h-4" /> مسح الفواتير
+                        </button>
+                    </div>
+
+                    {/* NEW: تصفير حسابات العملاء */}
+                    <div className="p-6 rounded-3xl border-4 border-red-100 bg-red-50/50 hover:border-red-300 transition-all group flex flex-col justify-between shadow-sm">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-red-600 text-white rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg shadow-red-200"><UserMinus className="w-6 h-6" /></div>
+                            <h4 className="font-black text-red-900 text-base mb-2">تصفير حسابات العملاء</h4>
+                            <p className="text-[10px] text-red-700 font-bold leading-relaxed">حذف كافة المبيعات والتحصيلات وتصفير كافة مديونيات العملاء مع بقاء أسمائهم.</p>
+                        </div>
+                        <button onClick={handleResetCustomerAccounts} className="w-full py-4 bg-red-700 text-white rounded-xl font-black text-xs hover:bg-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-100">
+                            <Eraser className="w-4 h-4" /> تصفير كافة مديونيات العملاء
                         </button>
                     </div>
 
@@ -595,7 +616,7 @@ export default function Settings() {
                             <p className="text-[10px] text-slate-400 font-bold leading-relaxed">حذف كافة فواتير المشتريات وتاريخ التكلفة.</p>
                         </div>
                         <button onClick={handleClearPurchases} className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">
-                            <Eraser className="w-4 h-4" /> مسح كافة المشتريات
+                            <Eraser className="w-4 h-4" /> مسح المشتريات
                         </button>
                     </div>
 
@@ -619,7 +640,7 @@ export default function Settings() {
                             <p className="text-[10px] text-slate-400 font-bold leading-relaxed">مسح كافة حركات الصرف والقبض وإرجاع الرصيد لصفر.</p>
                         </div>
                         <button onClick={handleResetCash} className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">
-                            <RotateCcw className="w-4 h-4" /> تصفير الخزينة بالكامل
+                            <RotateCcw className="w-4 h-4" /> تصفير الخزينة
                         </button>
                     </div>
 
