@@ -26,43 +26,24 @@ export const readExcelFile = <T>(file: File): Promise<T[]> => {
 };
 
 /**
- * يقوم بإنشاء وتحميل نموذج إكسيل فارغ للأصناف
+ * تصدير بيانات المخزون بتنسيق تقرير مفصل
  */
-export const downloadInventoryTemplate = () => {
-  const headers = [
-    {
-      "code": "P001",
-      "name": "اسم الصنف التجريبي",
-      "quantity": 100,
-      "purchase_price": 50,
-      "selling_price": 75,
-      "batch_number": "BATCH-01",
-      "expiry_date": "2026-12-31"
-    }
-  ];
-
-  const ws = XLSX.utils.json_to_sheet(headers);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Inventory Template");
-
-  ws['!cols'] = [
-    { wch: 15 }, // code
-    { wch: 30 }, // name
-    { wch: 10 }, // quantity
-    { wch: 15 }, // purchase_price
-    { wch: 15 }, // selling_price
-    { wch: 15 }, // batch_number
-    { wch: 15 }, // expiry_date
-  ];
-
-  XLSX.writeFile(wb, "Mizan_Inventory_Template.xlsx");
-};
-
-/**
- * تصدير كافة المنتجات الحالية بالبيانات الأساسية المطلوبة
- */
-export const exportAllProductsToExcel = (products: ProductWithBatches[]) => {
-  exportFilteredProductsToExcel(products, "Master_Inventory");
+export const exportInventoryToExcel = (data: any[], fileName = "Inventory_Report") => {
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+  
+    // ضبط عرض الأعمدة تلقائياً
+    ws['!cols'] = [
+      { wch: 15 }, // الكود
+      { wch: 35 }, // الاسم
+      { wch: 20 }, // المخزن
+      { wch: 12 }, // الرصيد
+      { wch: 15 }, // التكلفة
+      { wch: 15 }, // البيع
+    ];
+  
+    XLSX.writeFile(wb, `Mizan_${fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
 /**
@@ -108,4 +89,22 @@ export const exportFilteredProductsToExcel = (products: ProductWithBatches[], fi
     ];
   
     XLSX.writeFile(wb, `Mizan_${fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+};
+
+export const downloadInventoryTemplate = () => {
+  const headers = [
+    {
+      "code": "P001",
+      "name": "اسم الصنف التجريبي",
+      "quantity": 100,
+      "purchase_price": 50,
+      "selling_price": 75,
+      "batch_number": "BATCH-01",
+      "expiry_date": "2026-12-31"
+    }
+  ];
+  const ws = XLSX.utils.json_to_sheet(headers);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Inventory Template");
+  XLSX.writeFile(wb, "Mizan_Inventory_Template.xlsx");
 };

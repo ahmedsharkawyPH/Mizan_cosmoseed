@@ -5,8 +5,9 @@ import { t } from '../utils/t';
 import { ArabicSmartSearch } from '../utils/search';
 import { 
   Search, Package, Filter, X, Zap, Hash, Tag, PlusCircle,
-  FileSpreadsheet, Loader2, Award, PackagePlus, EyeOff, ChevronLeft, ChevronRight
+  FileSpreadsheet, Loader2, Award, PackagePlus, EyeOff, ChevronLeft, ChevronRight, FileDown, CheckCircle2
 } from 'lucide-react';
+import { exportInventoryToExcel } from '../utils/excel';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -25,6 +26,14 @@ const Inventory: React.FC = () => {
 
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  
+  // خيارات التصدير
+  const [exportOptions, setExportOptions] = useState({
+      warehouseId: 'ALL',
+      onlyInStock: false
+  });
+
   const [quickAddForm, setQuickAddForm] = useState({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
 
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -44,16 +53,12 @@ const Inventory: React.FC = () => {
     loadProducts();
   }, [loadProducts, dbFullLoaded]);
 
-  // تحسين: حساب خريطة أفضل الموردين مرة واحدة فقط عند تحميل البيانات
   const bestSuppliersMap = useMemo(() => {
     const purchaseInvoices = db.getPurchaseInvoices() || [];
     const suppliers = db.getSuppliers() || [];
     const map: Record<string, string> = {};
     const bestPrices: Record<string, number> = {};
-    
-    // معالجة الفواتير مرة واحدة بترتيب التاريخ
     const sortedInvoices = [...purchaseInvoices].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
     sortedInvoices.forEach(inv => {
       if (inv.type === 'PURCHASE') {
         const supplier = suppliers.find(s => s.id === inv.supplier_id);
@@ -71,11 +76,9 @@ const Inventory: React.FC = () => {
   const allFilteredProducts = useMemo(() => {
     if (!products) return [];
     let results = [...products];
-
     if (selectedWarehouseFilter !== 'ALL') {
         results = results.filter(p => p.batches?.some((b: any) => b.warehouse_id === selectedWarehouseFilter));
     }
-
     if (hideZeroStock) {
         results = results.filter(p => {
             const qty = selectedWarehouseFilter === 'ALL' 
@@ -84,11 +87,9 @@ const Inventory: React.FC = () => {
             return qty > 0;
         });
     }
-
     if (searchQuery.trim()) {
         results = ArabicSmartSearch.smartSearch(results, searchQuery);
     }
-
     if (showLowStock) {
         const threshold = settings.lowStockThreshold || 10;
         results = results.filter(p => {
@@ -96,15 +97,12 @@ const Inventory: React.FC = () => {
             return total > 0 && total <= threshold;
         });
     }
-    
     if (showOutOfStock) {
         results = results.filter(p => (p.batches?.reduce((sum: any, b: any) => sum + b.quantity, 0) || 0) === 0);
     }
-
     return results;
   }, [products, searchQuery, selectedWarehouseFilter, hideZeroStock, showLowStock, showOutOfStock, settings.lowStockThreshold]);
 
-  // تقسيم النتائج إلى صفحات
   const totalPages = Math.ceil(allFilteredProducts.length / ITEMS_PER_PAGE);
   const paginatedProducts = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -112,7 +110,7 @@ const Inventory: React.FC = () => {
   }, [allFilteredProducts, currentPage]);
 
   useEffect(() => {
-    setCurrentPage(1); // العودة للصفحة الأولى عند تغيير البحث أو الفلتر
+    setCurrentPage(1);
   }, [searchQuery, selectedWarehouseFilter, hideZeroStock, showLowStock, showOutOfStock]);
 
   const handleSaveProduct = async () => {
@@ -131,12 +129,70 @@ const Inventory: React.FC = () => {
       loadProducts();
   };
 
+  const handleExportExcel = () => {
+      const toastId = toast.loading("جاري تحضير ملف الإكسيل...");
+      
+      // منطق الفلترة للتصدير
+      const exportData: any[] = [];
+      products.forEach(p => {
+          const pBatches = p.batches || [];
+          const filteredBatches = exportOptions.warehouseId === 'ALL' 
+            ? pBatches 
+            : pBatches.filter((b: any) => b.warehouse_id === exportOptions.warehouseId);
+          
+          const totalQty = filteredBatches.reduce((s: number, b: any) => s + b.quantity, 0);
+          
+          if (exportOptions.onlyInStock && totalQty <= 0) return;
+
+          // إذا اخترنا كل المخازن، نجمع الرصيد في سطر واحد أو نفصله حسب الرغبة
+          // هنا سنقوم بتصدير سطر لكل مخزن يتواجد به الصنف ليكون التقرير دقيقاً
+          if (filteredBatches.length > 0) {
+              filteredBatches.forEach((b: any) => {
+                  if (exportOptions.onlyInStock && b.quantity <= 0) return;
+                  exportData.push({
+                      "كود الصنف": p.code || '---',
+                      "اسم الصنف": p.name,
+                      "المخزن": warehouses.find(w => w.id === b.warehouse_id)?.name || 'غير معروف',
+                      "الرصيد": b.quantity,
+                      "سعر التكلفة": b.purchase_price,
+                      "سعر البيع": b.selling_price
+                  });
+              });
+          } else if (!exportOptions.onlyInStock) {
+              // إضافة الأصناف التي ليس لها أرصدة في المخزن المحدد
+              exportData.push({
+                  "كود الصنف": p.code || '---',
+                  "اسم الصنف": p.name,
+                  "المخزن": exportOptions.warehouseId === 'ALL' ? 'كافة المخازن' : warehouses.find(w => w.id === exportOptions.warehouseId)?.name,
+                  "الرصيد": 0,
+                  "سعر التكلفة": p.purchase_price || 0,
+                  "سعر البيع": p.selling_price || 0
+              });
+          }
+      });
+
+      if (exportData.length === 0) {
+          toast.error("لا توجد بيانات مطابقة لخيارات التصدير", { id: toastId });
+          return;
+      }
+
+      exportInventoryToExcel(exportData, exportOptions.warehouseId === 'ALL' ? 'Full_Inventory' : 'Warehouse_Inventory');
+      toast.success("تم استخراج الملف بنجاح", { id: toastId });
+      setIsExportModalOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-6 pb-20">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
            <div><h1 className="text-3xl font-black text-slate-800 flex items-center gap-3"><Package className="w-8 h-8 text-blue-600" /> {t('stock.title')}</h1></div>
            <div className="flex flex-wrap gap-2">
+             <button 
+                onClick={() => setIsExportModalOpen(true)}
+                className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
+             >
+                <FileDown className="w-5 h-5" /> تصدير إكسيل
+             </button>
              <button id="btn_new_product" name="btn_new_product" onClick={() => { setIsAddModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><PlusCircle className="w-5 h-5" /> {t('stock.new')}</button>
            </div>
         </div>
@@ -237,7 +293,6 @@ const Inventory: React.FC = () => {
             </table>
           </div>
 
-          {/* نظام التنقل بين الصفحات */}
           {totalPages > 1 && (
             <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-center gap-4">
                <button 
@@ -281,7 +336,65 @@ const Inventory: React.FC = () => {
         </div>
       </div>
 
-      {/* مودال إضافة صنف جديد (مختصر للأداء) */}
+      {/* مودال خيارات التصدير */}
+      {isExportModalOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden border border-slate-100">
+                  <div className="bg-emerald-600 p-6 flex justify-between items-center text-white">
+                      <h3 className="text-xl font-black flex items-center gap-3">
+                        <FileSpreadsheet className="w-6 h-6" /> خيارات تصدير المخزون
+                      </h3>
+                      <button onClick={() => setIsExportModalOpen(false)} className="p-2 hover:bg-white/20 rounded-full transition-colors"><X className="w-6 h-6" /></button>
+                  </div>
+                  
+                  <div className="p-8 space-y-6">
+                      <div>
+                          <label className="block text-xs font-black text-slate-400 uppercase mb-2 tracking-widest">تصدير بيانات المخزن:</label>
+                          <select 
+                            className="w-full border-2 border-slate-100 p-3 rounded-2xl font-bold focus:border-emerald-500 outline-none transition-all"
+                            value={exportOptions.warehouseId}
+                            onChange={e => setExportOptions({...exportOptions, warehouseId: e.target.value})}
+                          >
+                              <option value="ALL">-- كل المخازن المتاحة --</option>
+                              {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                      </div>
+
+                      <div className="space-y-3">
+                          <label className="block text-xs font-black text-slate-400 uppercase tracking-widest">نوع الأصناف المطلوبة:</label>
+                          <div className="grid grid-cols-1 gap-3">
+                              <button 
+                                onClick={() => setExportOptions({...exportOptions, onlyInStock: false})}
+                                className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${!exportOptions.onlyInStock ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm' : 'border-slate-100 text-slate-500 hover:border-slate-200'}`}
+                              >
+                                  <span className="font-black">كافة الأصناف (بدون استثناء)</span>
+                                  {!exportOptions.onlyInStock && <CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                              </button>
+                              <button 
+                                onClick={() => setExportOptions({...exportOptions, onlyInStock: true})}
+                                className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${exportOptions.onlyInStock ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm' : 'border-slate-100 text-slate-500 hover:border-slate-200'}`}
+                              >
+                                  <span className="font-black">الأصناف المتوفرة فقط (رصيد > 0)</span>
+                                  {exportOptions.onlyInStock && <CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                              </button>
+                          </div>
+                      </div>
+
+                      <div className="pt-4">
+                          <button 
+                            onClick={handleExportExcel}
+                            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:bg-emerald-600 transition-all active:scale-95 flex items-center justify-center gap-3"
+                          >
+                            <FileDown className="w-6 h-6" />
+                            بدء التصدير وتحميل الملف
+                          </button>
+                          <p className="text-[10px] text-center text-slate-400 font-bold mt-4 uppercase">سيتم إنشاء ملف Excel متوافق مع كافة البرامج المكتبية</p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {isAddModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-200">
