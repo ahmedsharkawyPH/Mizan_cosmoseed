@@ -172,7 +172,6 @@ export default function PurchaseInvoice({ type }: Props) {
         return;
     }
     
-    // Now passing documentNo instead of manualInvoiceNo
     const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn, documentNo, manualDate);
     if (res.success) {
         toast.success("تم حفظ الفاتورة بنجاح");
@@ -224,7 +223,7 @@ export default function PurchaseInvoice({ type }: Props) {
                                 <FileText className="w-4 h-4 text-orange-400" /> رقم المستند (فاتورة المورد)
                             </label>
                             <input 
-                                type="text"
+                                type="text" 
                                 className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-orange-500 bg-orange-50/20 focus:bg-white"
                                 placeholder="الرقم الورقي للفاتورة"
                                 value={documentNo}
@@ -236,7 +235,7 @@ export default function PurchaseInvoice({ type }: Props) {
                                 <Calendar className="w-4 h-4 text-slate-400" /> تاريخ الشراء
                             </label>
                             <input 
-                                type="date"
+                                type="date" 
                                 className="w-full border p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
                                 value={manualDate}
                                 onChange={e => setManualDate(e.target.value)}
@@ -247,9 +246,9 @@ export default function PurchaseInvoice({ type }: Props) {
             </div>
           </div>
 
-          {/* Item Input Row */}
-          <div className={`bg-white p-6 rounded-2xl shadow-card border-2 transition-all ${editingIndex !== null ? 'border-orange-400 ring-4 ring-orange-50' : 'border-slate-100'} space-y-4`}>
-            <div className="flex justify-between items-center border-b pb-2">
+          {/* Item Input Section */}
+          <div className={`bg-white p-6 rounded-2xl shadow-card border-2 transition-all ${editingIndex !== null ? 'border-orange-400 ring-4 ring-orange-50' : 'border-slate-100'} space-y-6`}>
+            <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="font-black text-slate-700 flex items-center gap-2">
                     {editingIndex !== null ? <Edit className="w-5 h-5 text-orange-500" /> : <TrendingUp className="w-5 h-5 text-blue-500" />}
                     {editingIndex !== null ? 'تعديل الصنف المحدد' : 'إضافة صنف للفاتورة'}
@@ -260,50 +259,59 @@ export default function PurchaseInvoice({ type }: Props) {
                              إلغاء التعديل
                         </button>
                     )}
-                    <select className="text-sm border p-1 rounded font-bold text-slate-600 outline-none focus:ring-1 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
-                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-black text-slate-400">المخزن:</label>
+                      <select className="text-xs border p-1.5 rounded-lg font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                          {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                      </select>
+                    </div>
                 </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                <div className="md:col-span-12 lg:col-span-4">
-                    <SearchableSelect 
-                        ref={productRef} 
-                        label={t('inv.product')} 
-                        placeholder="ابحث عن الصنف..." 
-                        options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} 
-                        value={selProd} 
-                        onChange={setSelProd} 
-                        disabled={!selectedSupplier}
-                    />
-                </div>
-                <div className="md:col-span-3 lg:col-span-1">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t('pur.cost')}</label>
-                    <input ref={costRef} type="number" className="w-full border p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} />
-                </div>
-                <div className="md:col-span-3 lg:col-span-1">
-                    <label className="text-[10px] font-bold text-blue-500 uppercase">ربح %</label>
-                    <input ref={marginRef} type="number" className="w-full border border-blue-200 p-2 rounded-lg font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} disabled={!selProd} />
-                </div>
-                <div className="md:col-span-3 lg:col-span-1">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t('stock.qty')}</label>
-                    <input ref={qtyRef} type="number" className="w-full border p-2 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} />
-                </div>
-                <div className="md:col-span-3 lg:col-span-2">
-                    <label className="text-[10px] font-bold text-emerald-600 uppercase">سعر البيع المقترح</label>
-                    <input ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2 rounded-lg font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} />
-                </div>
-                <div className="md:col-span-12 lg:col-span-3 flex items-end">
-                    <button onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[42px] rounded-xl font-black shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>
-                        {editingIndex !== null ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                        {editingIndex !== null ? 'تحديث الصنف' : 'إضافة للفاتورة'}
-                    </button>
-                </div>
+            <div className="space-y-5">
+              {/* Row 1: Product Search Only */}
+              <div className="w-full">
+                  <SearchableSelect 
+                      ref={productRef} 
+                      label={t('inv.product')} 
+                      placeholder="ابحث عن الصنف بالاسم أو الكود..." 
+                      options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} 
+                      value={selProd} 
+                      onChange={setSelProd} 
+                      disabled={!selectedSupplier}
+                      className="w-full"
+                  />
+              </div>
+
+              {/* Row 2: Financial Inputs & Action */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                  <div className="md:col-span-3 lg:col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('pur.cost')}</label>
+                      <input ref={costRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold outline-none focus:border-blue-500 transition-all" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+                  </div>
+                  <div className="md:col-span-3 lg:col-span-2">
+                      <label className="text-[10px] font-black text-blue-500 uppercase mb-1 block">ربح %</label>
+                      <input ref={marginRef} type="number" className="w-full border-2 border-blue-50 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:border-blue-500 transition-all bg-blue-50/20" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} disabled={!selProd} placeholder="0%" />
+                  </div>
+                  <div className="md:col-span-3 lg:col-span-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('stock.qty')}</label>
+                      <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-blue-500 transition-all" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="1" />
+                  </div>
+                  <div className="md:col-span-3 lg:col-span-3">
+                      <label className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">سعر البيع المقترح</label>
+                      <input ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
+                  </div>
+                  <div className="md:col-span-12 lg:col-span-3">
+                      <button onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>
+                          {editingIndex !== null ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                          {editingIndex !== null ? 'تحديث الصنف' : 'إضافة للفاتورة'}
+                      </button>
+                  </div>
+              </div>
             </div>
           </div>
 
-          {/* New Full Table for Cart Items */}
+          {/* Cart Table */}
           <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
              <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-2 font-black text-slate-600">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" /> الأصناف المضافة للجدول
