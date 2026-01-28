@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseOrder, PurchaseItem } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus, Info, Tag, Award, BarChart4, ChevronRight, Eye, RefreshCcw, Calendar, Hash, Edit3, Wallet } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, ShoppingBag, FileText, Search, Clock, TrendingUp, Truck, Check, X, ClipboardCheck, PackagePlus, Info, Tag, Award, BarChart4, ChevronRight, Eye, RefreshCcw, Calendar, Hash, Edit3, Wallet, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import SearchableSelect from '../components/SearchableSelect';
 // @ts-ignore
@@ -177,13 +177,21 @@ export default function PurchaseOrders() {
     }));
 
     const res = await db.createPurchaseInvoice(convOrder.supplier_id, pItems, convCashPaid, false, convDocNo, convDate);
+    
     if (res.success) {
         await db.updatePurchaseOrderStatus(convOrder.id, 'COMPLETED');
         toast.success("تم تحويل الطلب لفاتورة شراء فعلية بنجاح");
         setOrders(db.getPurchaseOrders());
         setIsConvModalOpen(false);
     } else {
-        toast.error(res.message);
+        if (res.message === 'CONFLICT_DETECTED') {
+            toast.error("حدث تعارض في رقم الفاتورة المولد تلقائياً (409 Conflict). جاري تحديث البيانات، يرجى المحاولة مرة أخرى.");
+            // Force re-sync to get latest invoice numbers
+            await db.syncFromCloud();
+            setOrders(db.getPurchaseOrders());
+        } else {
+            toast.error(res.message);
+        }
     }
     setIsSubmittingConv(false);
   };

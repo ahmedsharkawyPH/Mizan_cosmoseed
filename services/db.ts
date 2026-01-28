@@ -48,7 +48,6 @@ class Database {
     } else {
         this.isFullyLoaded = true;
     }
-    this.rebuildIndexes();
   }
 
   private async fetchAllFromTable(tableName: string) {
@@ -65,7 +64,7 @@ class Database {
     return allData;
   }
 
-  private async syncFromCloud() {
+  public async syncFromCloud() {
     try {
         this.isOffline = false;
         const [cust, prod, bat, inv, pur, cash, wh, reps, closings, adjs, orders, supp] = await Promise.all([
@@ -122,8 +121,6 @@ class Database {
     localStorage.setItem('mizan_settings', JSON.stringify(this.settings));
   }
 
-  private rebuildIndexes() {}
-
   getSettings() { return this.settings; }
   async updateSettings(s: any) { this.settings = s; this.saveToLocalCache(); return true; }
   getCustomers() { return this.customers; }
@@ -155,8 +152,76 @@ class Database {
     return this.cashTransactions.filter(t => t.reference_id === id).reduce((sum, t) => sum + t.amount, 0);
   }
 
+  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false, documentNumber?: string, manualDate?: string): Promise<{ success: boolean; message: string; id?: string }> {
+    // Generate unique ID with randomness to prevent collision
+    const invoiceId = `PUR${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
+    const finalDate = manualDate || new Date().toISOString();
+    
+    // Improved auto-numbering to prevent 409
+    const prefix = isReturn ? 'PR' : 'P';
+    const existingNums = this.purchaseInvoices
+        .filter(inv => inv.invoice_number && inv.invoice_number.startsWith(prefix))
+        .map(inv => {
+            const num = parseInt(inv.invoice_number.replace(prefix, ''));
+            return isNaN(num) ? 0 : num;
+        });
+    
+    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
+    const autoInvoiceNumber = `${prefix}${nextNum}`;
+
+    const invoice: PurchaseInvoice = { 
+        id: invoiceId, 
+        invoice_number: autoInvoiceNumber,
+        document_number: documentNumber || '',
+        supplier_id: supplierId, 
+        date: finalDate, 
+        total_amount: total, 
+        paid_amount: cashPaid, 
+        type: isReturn ? 'RETURN' : 'PURCHASE', 
+        items 
+    };
+
+    let cashTx = cashPaid > 0 ? {
+        id: `TX${Date.now()}${Math.floor(Math.random() * 100)}`, 
+        type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
+        category: 'SUPPLIER_PAYMENT', 
+        reference_id: invoiceId, 
+        amount: cashPaid, 
+        date: finalDate, 
+        notes: `Payment for PUR#${invoice.invoice_number} (Doc: ${documentNumber || '-'})`, 
+        ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
+    } : null;
+
+    if (isSupabaseConfigured) {
+        const { error } = await supabase.rpc('process_purchase_invoice', { p_invoice: invoice, p_items: items, p_cash_tx: cashTx });
+        if (error) {
+            // Check if conflict error and provide better message
+            if (error.code === '23505' || error.message.includes('duplicate')) {
+                return { success: false, message: 'CONFLICT_DETECTED' };
+            }
+            return { success: false, message: error.message };
+        }
+    }
+
+    this.purchaseInvoices.push(invoice);
+    if (cashTx) {
+        this.cashTransactions.push(cashTx as CashTransaction);
+        this._cashBalance += (cashTx.type === CashTransactionType.RECEIPT ? cashTx.amount : -cashTx.amount);
+    }
+
+    const supplier = this.suppliers.find(s => s.id === supplierId);
+    if (supplier) {
+        const adjustment = isReturn ? -total : total;
+        supplier.current_balance += (adjustment - cashPaid);
+    }
+
+    this.saveToLocalCache();
+    return { success: true, message: 'تم التسجيل بنجاح', id: invoiceId };
+  }
+
   async createInvoice(customerId: string, items: CartItem[], cashPaid: number, isReturn: boolean = false, addDisc: number = 0, user?: any): Promise<{ success: boolean; message: string; id?: string }> {
-    const invoiceId = `INV${Date.now()}`;
+    const invoiceId = `INV${Date.now()}${Math.floor(Math.random() * 100)}`;
     const customer = this.customers.find(c => c.id === customerId);
     const prevBalance = customer ? customer.current_balance : 0;
     
@@ -185,7 +250,7 @@ class Database {
     };
 
     let cashTx = cashPaid > 0 ? {
-        id: `TX${Date.now()}`, type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
+        id: `TX${Date.now()}${Math.floor(Math.random() * 100)}`, type: isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT,
         category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: customer?.name || 'Unknown', amount: cashPaid, date: invoice.date, notes: `Payment for INV#${invoice.invoice_number}`, ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.EXPENSE : CashTransactionType.RECEIPT)
     } : null;
 
@@ -238,70 +303,6 @@ class Database {
 
     this.saveToLocalCache();
     return { success: true, message: 'تم التحديث بنجاح', id };
-  }
-
-  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false, documentNumber?: string, manualDate?: string): Promise<{ success: boolean; message: string; id?: string }> {
-    const invoiceId = `PUR${Date.now()}`;
-    const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
-    const finalDate = manualDate || new Date().toISOString();
-    
-    // Generate automatic number based on logic: Filter by prefix and extract number
-    const prefix = isReturn ? 'PR' : 'P';
-    const existingPurchases = this.purchaseInvoices
-        .filter(inv => inv.invoice_number && inv.invoice_number.startsWith(prefix))
-        .map(inv => {
-            const numPart = inv.invoice_number.replace(prefix, '');
-            const parsed = parseInt(numPart);
-            return isNaN(parsed) ? 0 : parsed;
-        })
-        .filter(n => n > 0);
-    
-    const nextNum = existingPurchases.length > 0 ? Math.max(...existingPurchases) + 1 : 1;
-    const autoInvoiceNumber = `${prefix}${nextNum}`;
-
-    const invoice: PurchaseInvoice = { 
-        id: invoiceId, 
-        invoice_number: autoInvoiceNumber, // SYSTEM AUTO NUMBER
-        document_number: documentNumber || '', // MANUAL SUPPLIER NUMBER
-        supplier_id: supplierId, 
-        date: finalDate, 
-        total_amount: total, 
-        paid_amount: cashPaid, 
-        type: isReturn ? 'RETURN' : 'PURCHASE', 
-        items 
-    };
-
-    let cashTx = cashPaid > 0 ? {
-        id: `TX${Date.now()}`, 
-        type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-        category: 'SUPPLIER_PAYMENT', 
-        reference_id: invoiceId, 
-        amount: cashPaid, 
-        date: finalDate, 
-        notes: `Payment for PUR#${invoice.invoice_number} (Doc: ${documentNumber || '-'})`, 
-        ref_number: this.getNextTransactionRef(isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE)
-    } : null;
-
-    if (isSupabaseConfigured) {
-        // CRITICAL: We pass the 'invoice' object which now strictly separates invoice_number and document_number
-        const { error } = await supabase.rpc('process_purchase_invoice', { p_invoice: invoice, p_items: items, p_cash_tx: cashTx });
-        if (error) return { success: false, message: error.message };
-    }
-
-    this.purchaseInvoices.push(invoice);
-    if (cashTx) {
-        this.cashTransactions.push(cashTx as CashTransaction);
-        this._cashBalance += (cashTx.type === CashTransactionType.RECEIPT ? cashTx.amount : -cashTx.amount);
-    }
-
-    const supplier = this.suppliers.find(s => s.id === supplierId);
-    if (supplier) {
-        const adjustment = isReturn ? -total : total;
-        supplier.current_balance += (adjustment - cashPaid);
-    }
-
-    this.saveToLocalCache();
-    return { success: true, message: 'تم التسجيل بنجاح', id: invoiceId };
   }
 
   async deleteInvoice(id: string) {
