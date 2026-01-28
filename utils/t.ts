@@ -50,6 +50,19 @@ const translations: Record<string, Record<string, string>> = {
     'inv.discount': 'تفعيل الخصم على الصنف',
     'inv.return_mode': 'وضع المرتجع',
     
+    // Commissions
+    'comm.title': 'نظام حساب العمولات',
+    'comm.month_select': 'اختر الشهر المستهدف',
+    'comm.employee': 'الموظف / المندوب',
+    'comm.role': 'الصفة الوظيفية',
+    'comm.sales_val': 'إجمالي المبيعات',
+    'comm.ratio': 'نسبة العمولة %',
+    'comm.net_comm': 'صافي المستحق',
+    'comm.disburse': 'صرف عمولة نقداً',
+    'comm.success': 'تم تسجيل عملية صرف العمولة في سجلات الخزينة بنجاح',
+    'comm.no_sales': 'عفواً، لا توجد مبيعات مسجلة لهذا الموظف خلال هذا الشهر',
+    'comm.placeholder': 'لم يتم العثور على موظفين في هذا القسم',
+
     // Purchases Area
     'pur.title': 'فاتورة مشتريات جديدة',
     'pur.return_title': 'مرتجع مشتريات جديد',
@@ -98,9 +111,6 @@ const translations: Record<string, Record<string, string>> = {
     'set.backup_desc': 'احتفظ بنسخة دورية من بياناتك لضمان عدم فقدانها في حال تغيير الجهاز.',
     'set.danger_desc': 'تحتوي هذه المنطقة على عمليات حساسة تؤثر على سلامة البيانات.',
 
-    'user.mgmt_title': 'إدارة مستخدمي النظام وصلاحياتهم',
-    'user.add': 'إضافة مستخدم جديد',
-    'user.edit': 'تعديل مستخدم',
     'user.fullname': 'الاسم بالكامل',
     'user.username': 'اسم الدخول (Username)',
     'user.password': 'كلمة المرور',
@@ -108,19 +118,6 @@ const translations: Record<string, Record<string, string>> = {
     'user.permissions': 'الصلاحيات الممنوحة',
     'user.save': 'حفظ بيانات المستخدم',
     'user.delete_confirm': 'هل أنت متأكد من حذف هذا المستخدم؟',
-
-    'perm.VIEW_DASHBOARD': 'رؤية لوحة التحكم والإحصائيات',
-    'perm.VIEW_REPORTS': 'الاطلاع على التقارير المالية والتحليلية',
-    'perm.MANAGE_SALES': 'إصدار فواتير المبيعات والمرتجع',
-    'perm.MANAGE_INVENTORY': 'إدارة المخزون والأصناف',
-    'perm.MANAGE_STOCK_TAKE': 'القيام بعملية جرد المخازن',
-    'perm.MANAGE_CUSTOMERS': 'إدارة بيانات وحسابات العملاء',
-    'perm.MANAGE_SUPPLIERS': 'إدارة بيانات وحسابات الموردين',
-    'perm.MANAGE_REPS': 'إدارة المناديب وعمولاتهم',
-    'perm.MANAGE_WAREHOUSES': 'إضافة وتعديل المخازن',
-    'perm.MANAGE_CASH': 'التعامل مع الخزينة وسندات القبض والصرف',
-    'perm.MANAGE_SETTINGS': 'الدخول لإعدادات المدير والنظام',
-    'perm.MANAGE_USERS': 'إضافة وحذف المستخدمين وتعديل صلاحياتهم',
 
     'role.admin': 'مدير نظام (صلاحيات كاملة)',
     'role.user': 'مستخدم عادي',

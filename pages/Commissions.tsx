@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
@@ -46,13 +47,13 @@ export default function Commissions() {
   const handleDisburse = (emp: any) => {
     if (emp.netComm <= 0) return toast.error(t('comm.no_sales'));
     
-    if (confirm(`تأكيد صرف عمولة الموظف ${emp.name} بقيمة ${currency}${emp.netComm.toLocaleString()}؟`)) {
+    if (confirm(`هل أنت متأكد من صرف عمولة الموظف "${emp.name}" بقيمة ${currency}${emp.netComm.toLocaleString()}؟ سيتم تسجيل الحركة في سجل الخزينة.`)) {
         db.addCashTransaction({
             type: 'EXPENSE',
             category: 'COMMISSION',
             amount: emp.netComm,
             related_name: emp.name,
-            notes: `صرف عمولة مبيعات شهر ${targetMonth}`,
+            notes: `صرف عمولة مبيعات عن شهر ${targetMonth}`,
             date: new Date().toISOString()
         });
         toast.success(t('comm.success'));
@@ -64,24 +65,24 @@ export default function Commissions() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-6">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-4">
               <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center border border-indigo-100 shadow-inner">
                   <TrendingUp className="w-8 h-8 text-indigo-600" />
               </div>
               <div>
                   <h1 className="text-2xl font-black text-slate-800">{t('comm.title')}</h1>
-                  <p className="text-xs text-slate-400 font-bold mt-1">حساب مبيعات وعمولات المندوبين والتيليسيلز</p>
+                  <p className="text-xs text-slate-400 font-bold mt-1">احتساب مبيعات المناديب والتيليسيلز وصرف مستحقاتهم</p>
               </div>
           </div>
 
-          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border">
+          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-200">
               <Calendar className="w-5 h-5 text-slate-400" />
-              <label className="text-sm font-bold text-slate-700">{t('comm.month_select')}:</label>
+              <label className="text-sm font-black text-slate-700 whitespace-nowrap">{t('comm.month_select')}:</label>
               <input 
                 type="month" 
-                className="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-black text-indigo-600 outline-none focus:border-indigo-500"
+                className="bg-white border-2 border-slate-200 rounded-xl px-4 py-2 font-black text-indigo-600 outline-none focus:border-indigo-500 shadow-inner transition-all"
                 value={targetMonth}
                 onChange={e => setTargetMonth(e.target.value)}
               />
@@ -103,13 +104,13 @@ export default function Commissions() {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                       {employeesData.map(emp => (
-                          <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors">
+                          <tr key={emp.id} className="hover:bg-blue-50/30 transition-colors">
                               <td className="px-6 py-4">
-                                  <div className="font-bold text-slate-800">{emp.name}</div>
-                                  <div className="text-[10px] text-slate-400 font-mono">@{emp.username}</div>
+                                  <div className="font-black text-slate-800">{emp.name}</div>
+                                  <div className="text-[10px] text-slate-400 font-mono">ID: {emp.username}</div>
                               </td>
                               <td className="px-6 py-4">
-                                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${emp.role === 'REP' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${emp.role === 'REP' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
                                       {emp.role === 'REP' ? 'مندوب مبيعات' : 'تيليسيلز'}
                                   </span>
                               </td>
@@ -117,12 +118,15 @@ export default function Commissions() {
                                   {currency}{emp.salesVal.toLocaleString()}
                               </td>
                               <td className="px-6 py-4 text-center">
-                                  <input 
-                                    type="number"
-                                    className="w-16 border-2 border-slate-100 rounded-lg p-1 text-center font-bold text-indigo-600 focus:border-indigo-400 outline-none"
-                                    value={emp.ratio}
-                                    onChange={e => updateRatio(emp.id, parseFloat(e.target.value) || 0)}
-                                  />
+                                  <div className="inline-flex items-center gap-2">
+                                    <input 
+                                        type="number"
+                                        className="w-16 border-2 border-slate-100 rounded-lg p-1.5 text-center font-black text-indigo-600 focus:border-indigo-400 outline-none bg-slate-50/50"
+                                        value={emp.ratio}
+                                        onChange={e => updateRatio(emp.id, parseFloat(e.target.value) || 0)}
+                                    />
+                                    <span className="text-slate-300 font-bold">%</span>
+                                  </div>
                               </td>
                               <td className="px-6 py-4 text-center font-black text-emerald-600 bg-emerald-50/30">
                                   {currency}{emp.netComm.toLocaleString()}
@@ -131,9 +135,9 @@ export default function Commissions() {
                                   <button 
                                     onClick={() => handleDisburse(emp)}
                                     disabled={emp.netComm <= 0}
-                                    className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-indigo-600 transition-all shadow-md active:scale-95 disabled:opacity-30 flex items-center gap-2 mx-auto"
+                                    className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition-all shadow-md active:scale-95 disabled:opacity-20 flex items-center gap-2 mx-auto"
                                   >
-                                      <Wallet className="w-3.5 h-3.5" /> {t('comm.disburse')}
+                                      <Wallet className="w-4 h-4" /> {t('comm.disburse')}
                                   </button>
                               </td>
                           </tr>
@@ -143,10 +147,20 @@ export default function Commissions() {
           </div>
           {employeesData.length === 0 && (
               <div className="py-20 text-center text-slate-300">
-                  <Users className="w-12 h-12 mx-auto mb-2 opacity-10" />
-                  <p className="font-bold">لم يتم العثور على موظفين لحساب عمولاتهم</p>
+                  <Users className="w-16 h-16 mx-auto mb-4 opacity-10" />
+                  <p className="font-black text-lg">{t('comm.placeholder')}</p>
               </div>
           )}
+      </div>
+
+      <div className="bg-amber-50 border-2 border-dashed border-amber-200 p-6 rounded-3xl flex items-start gap-4">
+          <AlertCircle className="w-6 h-6 text-amber-500 shrink-0 mt-1" />
+          <div>
+              <h4 className="font-black text-amber-800 text-sm mb-1">تنبيه إداري</h4>
+              <p className="text-xs text-amber-700 font-bold leading-relaxed">
+                  عند الضغط على زر "صرف عمولة"، سيقوم النظام تلقائياً بإنشاء مستند "سند صرف" في الخزينة تحت بند (عمولات)، مما يؤثر على رصيد النقدية الحالي. يرجى التأكد من المبالغ قبل التأكيد.
+              </p>
+          </div>
       </div>
     </div>
   );
