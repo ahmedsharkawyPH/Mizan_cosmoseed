@@ -1,4 +1,3 @@
-
 import { 
   Customer, Product, ProductWithBatches, CartItem, Invoice, 
   PurchaseInvoice, PurchaseItem, CashTransaction, CashTransactionType, 
@@ -197,6 +196,7 @@ class Database {
       .filter(t => t.type === type && t.ref_number?.startsWith(prefix))
       .map(t => parseInt(t.ref_number?.replace(prefix + '-', '') || '0'))
       .filter(n => !isNaN(n));
+    // Fixed: replaced 'expected' with 'refs'
     const nextNum = refs.length > 0 ? Math.max(...refs) + 1 : 1001;
     return `${prefix}-${nextNum}`;
   }
@@ -420,6 +420,18 @@ class Database {
     const supplier: Supplier = { id: `SUPP${Date.now()}`, code: s.code || '', name: s.name, phone: s.phone || '', contact_person: s.contact_person || '', address: s.address || '', opening_balance: s.opening_balance || 0, current_balance: s.opening_balance || 0 };
     if (isSupabaseConfigured) await supabase.from('suppliers').insert(supplier);
     this.suppliers.push(supplier);
+    this.saveToLocalCache();
+  }
+
+  async updateSupplier(id: string, data: any) {
+    if (isSupabaseConfigured) await supabase.from('suppliers').update(data).eq('id', id);
+    const idx = this.suppliers.findIndex(s => s.id === id);
+    if (idx !== -1) { this.suppliers[idx] = { ...this.suppliers[idx], ...data }; this.saveToLocalCache(); }
+  }
+
+  async deleteSupplier(id: string) {
+    if (isSupabaseConfigured) await supabase.from('suppliers').delete().eq('id', id);
+    this.suppliers = this.suppliers.filter(s => s.id !== id);
     this.saveToLocalCache();
   }
 

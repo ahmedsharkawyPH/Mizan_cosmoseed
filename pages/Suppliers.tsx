@@ -1,10 +1,13 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { Supplier } from '../types';
 import { t } from '../utils/t';
-import { Plus, Search, Upload, Truck, X, Printer } from 'lucide-react';
+import { Plus, Search, Upload, Truck, X, Printer, Edit, Trash2 } from 'lucide-react';
 import { readExcelFile } from '../utils/excel';
 import { useLocation } from 'react-router-dom';
+// @ts-ignore
+import toast from 'react-hot-toast';
 
 interface StatementItem {
   date: string;
@@ -20,6 +23,9 @@ export default function Suppliers() {
   const [suppliers, setSuppliers] = useState(db.getSuppliers());
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  
   const [form, setForm] = useState({ code: '', name: '', phone: '', contact_person: '', address: '', opening_balance: 0 });
 
   // Statement State
@@ -28,16 +34,54 @@ export default function Suppliers() {
   // Auto-open modal from navigation state
   useEffect(() => {
     if (location.state && (location.state as any).openAdd) {
-        setIsOpen(true);
+        handleOpenAdd();
         window.history.replaceState({}, document.title);
     }
   }, [location]);
 
-  const handleAdd = () => {
-    db.addSupplier(form);
+  const handleOpenAdd = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setForm({ code: '', name: '', phone: '', contact_person: '', address: '', opening_balance: 0 });
+    setIsOpen(true);
+  };
+
+  const handleOpenEdit = (s: Supplier) => {
+    setIsEditMode(true);
+    setEditingId(s.id);
+    setForm({ 
+      code: s.code || '', 
+      name: s.name, 
+      phone: s.phone || '', 
+      contact_person: s.contact_person || '', 
+      address: s.address || '', 
+      opening_balance: s.opening_balance 
+    });
+    setIsOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.name) return toast.error("اسم المورد مطلوب");
+
+    if (isEditMode && editingId) {
+      await db.updateSupplier(editingId, form);
+      toast.success("تم تحديث بيانات المورد");
+    } else {
+      await db.addSupplier(form);
+      toast.success("تم إضافة المورد بنجاح");
+    }
+    
     setSuppliers(db.getSuppliers());
     setIsOpen(false);
     setForm({ code: '', name: '', phone: '', contact_person: '', address: '', opening_balance: 0 });
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm("هل أنت متأكد من حذف هذا المورد؟ سيتم حذف السجل نهائياً.")) {
+      await db.deleteSupplier(id);
+      setSuppliers(db.getSuppliers());
+      toast.success("تم حذف المورد");
+    }
   };
 
   const handleImport = async (e: any) => {
@@ -46,9 +90,9 @@ export default function Suppliers() {
         const data = await readExcelFile<any>(e.target.files[0]);
         data.forEach(s => db.addSupplier({ ...s, opening_balance: s.opening_balance || 0 }));
         setSuppliers(db.getSuppliers());
-        alert(t('common.success_import'));
+        toast.success(t('common.success_import'));
       } catch (err) {
-        alert(t('common.error_excel'));
+        toast.error(t('common.error_excel'));
       }
     }
   };
@@ -57,8 +101,6 @@ export default function Suppliers() {
     if (!statementSupplier) return [];
     
     const items: any[] = [];
-    
-    // fix: Changed direct access to private 'purchaseInvoices' to use 'getPurchaseInvoices()'
     const purchases = db.getPurchaseInvoices().filter((p: any) => p.supplier_id === statementSupplier.id);
     purchases.forEach((inv: any) => {
       if (inv.type === 'RETURN') {
@@ -80,15 +122,10 @@ export default function Suppliers() {
       }
     });
 
-    // 2. Payments (Debit -> Decrease Balance)
     const payments = db.getCashTransactions().filter(tx => 
       tx.category === 'SUPPLIER_PAYMENT' && tx.reference_id === statementSupplier.id
     );
     payments.forEach(pay => {
-       // Check if it's a refund (Receipt) or payment (Expense)
-       // Usually Supplier Payment is Expense (We pay them) -> Reduces Debt (Debit)
-       // Supplier Refund is Receipt (They pay us) -> Increases Debt (Credit) if we consider Balance as "What we owe them"
-       
        if (pay.type === 'EXPENSE') {
            items.push({
                 date: pay.date,
@@ -98,7 +135,6 @@ export default function Suppliers() {
                 rawDate: new Date(pay.date)
            });
        } else {
-           // Receipt (Refund from supplier)
            items.push({
                 date: pay.date,
                 description: `Refund: ${pay.notes || '-'}`,
@@ -109,14 +145,11 @@ export default function Suppliers() {
        }
     });
 
-    // Sort by Date
     items.sort((a, b) => a.rawDate.getTime() - b.rawDate.getTime());
 
-    // Calculate Running Balance
     let balance = statementSupplier.opening_balance;
     const finalStatement: StatementItem[] = [];
 
-    // Add Opening Balance Row
     finalStatement.push({
         date: '',
         description: t('common.opening'),
@@ -126,7 +159,6 @@ export default function Suppliers() {
     });
 
     items.forEach(item => {
-        // For Supplier: Balance = Previous + Credit (Purchase) - Debit (Payment/Return)
         balance = balance + item.credit - item.debit;
         finalStatement.push({
             date: item.date,
@@ -138,7 +170,6 @@ export default function Suppliers() {
     });
 
     return finalStatement;
-
   }, [statementSupplier]);
 
   return (
@@ -153,7 +184,7 @@ export default function Suppliers() {
             <Upload className="w-4 h-4" /> Import
             <input id="import_supplier_file" name="import_supplier_file" type="file" className="hidden" onChange={handleImport} />
           </label>
-          <button onClick={() => setIsOpen(true)} className="bg-blue-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700">
+          <button onClick={handleOpenAdd} className="bg-blue-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700">
             <Plus className="w-4 h-4" /> {t('supp.add')}
           </button>
         </div>
@@ -165,7 +196,7 @@ export default function Suppliers() {
              <button onClick={() => setIsOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
             </button>
-          <h3 className="font-bold text-lg">{t('supp.add')}</h3>
+          <h3 className="font-bold text-lg">{isEditMode ? 'تعديل بيانات مورد' : t('supp.add')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label htmlFor="supp_code" className="block text-xs font-bold text-slate-500 mb-1">{t('cust.code')}</label>
@@ -184,17 +215,19 @@ export default function Suppliers() {
               <input id="supp_contact" name="contact_person" placeholder={t('supp.contact')} className="w-full border p-2 rounded" value={form.contact_person} onChange={e => setForm({...form, contact_person: e.target.value})} />
             </div>
             <div>
-              <label htmlFor="supp_address" className="block text-xs font-bold text-slate-500 mb-1">Address</label>
+              <label htmlFor="supp_address" className="block text-xs font-bold text-slate-500 mb-1">العنوان</label>
               <input id="supp_address" name="address" placeholder="Address" className="w-full border p-2 rounded" value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
             </div>
-            <div>
-              <label htmlFor="supp_balance" className="block text-xs font-bold text-slate-500 mb-1">{t('cust.balance')}</label>
-              <input id="supp_balance" name="opening_balance" type="number" placeholder={t('cust.balance')} className="w-full border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} />
-            </div>
+            {!isEditMode && (
+              <div>
+                <label htmlFor="supp_balance" className="block text-xs font-bold text-slate-500 mb-1">{t('cust.balance')}</label>
+                <input id="supp_balance" name="opening_balance" type="number" placeholder={t('cust.balance')} className="w-full border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} />
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.action')}</button>
-            <button onClick={handleAdd} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">{t('set.save')}</button>
+            <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.cancel')}</button>
+            <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">{t('set.save')}</button>
           </div>
         </div>
         </div>
@@ -227,7 +260,7 @@ export default function Suppliers() {
             </thead>
             <tbody>
                 {suppliers.filter(s => s.name.toLowerCase().includes(search.toLowerCase())).map(s => (
-                <tr key={s.id} className="border-b hover:bg-gray-50">
+                <tr key={s.id} className="border-b hover:bg-gray-50 group">
                     <td className="p-4 font-mono text-gray-500">{s.code}</td>
                     <td className="p-4 font-bold">{s.name}</td>
                     <td className="p-4">{s.contact_person}</td>
@@ -236,18 +269,34 @@ export default function Suppliers() {
                     {currency}{s.current_balance.toLocaleString()}
                     </td>
                     <td className="p-4 text-center">
-                        <button 
-                            onClick={() => setStatementSupplier(s)}
-                            className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded text-xs font-medium border border-blue-200"
-                        >
-                            {t('common.statement')}
-                        </button>
+                        <div className="flex justify-center gap-2">
+                          <button 
+                              onClick={() => setStatementSupplier(s)}
+                              className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded text-xs font-medium border border-blue-200"
+                          >
+                              {t('common.statement')}
+                          </button>
+                          <button 
+                              onClick={() => handleOpenEdit(s)}
+                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="تعديل"
+                          >
+                              <Edit className="w-4 h-4" />
+                          </button>
+                          <button 
+                              onClick={() => handleDelete(s.id)}
+                              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="حذف"
+                          >
+                              <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                     </td>
                 </tr>
                 ))}
                 {suppliers.length === 0 && (
                     <tr>
-                        <td colSpan={6} className="p-8 text-center text-gray-400">No suppliers found</td>
+                        <td colSpan={6} className="p-8 text-center text-gray-400">لا يوجد موردين مسجلين</td>
                     </tr>
                 )}
             </tbody>
