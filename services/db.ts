@@ -5,7 +5,7 @@ import {
   User, Warehouse, Product, Batch, Representative, Customer, Supplier, 
   Invoice, PurchaseInvoice, PurchaseOrder, CashTransaction, StockMovement, 
   PendingAdjustment, DailyClosing, ProductWithBatches, CartItem, BatchStatus,
-  PaymentStatus, CashTransactionType
+  PaymentStatus, CashTransactionType, PurchaseItem
 } from '../types';
 
 /**
@@ -157,7 +157,6 @@ class Database {
       }
   }
 
-  // Fix: deleteProduct method was incomplete
   async deleteProduct(id: string) {
     if (isSupabaseConfigured) {
         await supabase.from('products').delete().eq('id', id);
@@ -168,53 +167,112 @@ class Database {
     return true;
   }
 
-  async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, additional_discount: number, creator?: { id: string, name: string }) {
-    const total_before_discount = items.reduce((sum, item) => {
-      const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
-      return sum + (item.quantity * price);
-    }, 0);
-    const total_item_discount = items.reduce((sum, item) => {
-      const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
-      return sum + (item.quantity * price * (item.discount_percentage / 100));
-    }, 0);
-    const net_total = Math.max(0, total_before_discount - total_item_discount - additional_discount);
-    const customer = this.customers.find(c => c.id === customer_id);
-    const previous_balance = customer?.current_balance || 0;
-
-    const invoice: Invoice = {
-      id: Date.now().toString(),
-      invoice_number: `INV-${Date.now().toString().slice(-6)}`,
-      customer_id,
-      created_by: creator?.id,
-      created_by_name: creator?.name,
-      date: new Date().toISOString(),
-      total_before_discount,
-      total_discount: total_item_discount,
-      additional_discount,
-      net_total,
-      previous_balance,
-      final_balance: previous_balance + (is_return ? -net_total : net_total),
-      payment_status: PaymentStatus.UNPAID,
-      items,
-      type: is_return ? 'RETURN' : 'SALE'
+  // Customer CRUD
+  async addCustomer(data: any) {
+    const customer: Customer = { 
+      ...data, 
+      id: Date.now().toString(), 
+      current_balance: data.opening_balance || 0 
     };
-
-    items.forEach(item => {
-      const batch = this.batches.find(b => b.id === item.batch?.id);
-      if (batch) batch.quantity += is_return ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity);
-    });
-
-    this.invoices.push(invoice);
-    if (customer) customer.current_balance = invoice.final_balance;
-    if (cash_paid > 0) await this.recordInvoicePayment(invoice.id, cash_paid);
+    this.customers.push(customer);
     this.saveToLocalCache();
-    return { success: true, id: invoice.id };
+    return customer;
   }
 
-  async updateInvoice(id: string, customer_id: string, items: CartItem[], cash_paid: number) {
-      // Mock update by replacing invoice
+  async updateCustomer(id: string, data: any) {
+    const customer = this.customers.find(c => c.id === id);
+    if (customer) {
+      Object.assign(customer, data);
+      await this.recalculateAllBalances();
+      this.saveToLocalCache();
+    }
+  }
+
+  async deleteCustomer(id: string) {
+    this.customers = this.customers.filter(c => c.id !== id);
+    this.saveToLocalCache();
+  }
+
+  // Supplier CRUD
+  async addSupplier(data: any) {
+    const supplier: Supplier = { 
+      ...data, 
+      id: Date.now().toString(), 
+      current_balance: data.opening_balance || 0 
+    };
+    this.suppliers.push(supplier);
+    this.saveToLocalCache();
+    return supplier;
+  }
+
+  async updateSupplier(id: string, data: any) {
+    const supplier = this.suppliers.find(s => s.id === id);
+    if (supplier) {
+      Object.assign(supplier, data);
+      await this.recalculateAllBalances();
+      this.saveToLocalCache();
+    }
+  }
+
+  async deleteSupplier(id: string) {
+    this.suppliers = this.suppliers.filter(s => s.id !== id);
+    this.saveToLocalCache();
+  }
+
+  async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, additional_discount: number, creator?: { id: string, name: string }): Promise<{ success: boolean; id?: string; message?: string }> {
+    try {
+      const total_before_discount = items.reduce((sum, item) => {
+        const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
+        return sum + (item.quantity * price);
+      }, 0);
+      const total_item_discount = items.reduce((sum, item) => {
+        const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
+        return sum + (item.quantity * price * (item.discount_percentage / 100));
+      }, 0);
+      const net_total = Math.max(0, total_before_discount - total_item_discount - additional_discount);
+      const customer = this.customers.find(c => c.id === customer_id);
+      const previous_balance = customer?.current_balance || 0;
+
+      const invoice: Invoice = {
+        id: Date.now().toString(),
+        invoice_number: `INV-${Date.now().toString().slice(-6)}`,
+        customer_id,
+        created_by: creator?.id,
+        created_by_name: creator?.name,
+        date: new Date().toISOString(),
+        total_before_discount,
+        total_discount: total_item_discount,
+        additional_discount,
+        net_total,
+        previous_balance,
+        final_balance: previous_balance + (is_return ? -net_total : net_total),
+        payment_status: PaymentStatus.UNPAID,
+        items,
+        type: is_return ? 'RETURN' : 'SALE'
+      };
+
+      items.forEach(item => {
+        const batch = this.batches.find(b => b.id === item.batch?.id);
+        if (batch) batch.quantity += is_return ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity);
+      });
+
+      this.invoices.push(invoice);
+      if (customer) customer.current_balance = invoice.final_balance;
+      if (cash_paid > 0) await this.recordInvoicePayment(invoice.id, cash_paid);
+      this.saveToLocalCache();
+      return { success: true, id: invoice.id };
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Error creating invoice' };
+    }
+  }
+
+  async updateInvoice(id: string, customer_id: string, items: CartItem[], cash_paid: number): Promise<{ success: boolean; id?: string; message?: string }> {
+    try {
       await this.deleteInvoice(id);
       return await this.createInvoice(customer_id, items, cash_paid, false, 0);
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Error updating invoice' };
+    }
   }
 
   async deleteInvoice(id: string) {
@@ -230,7 +288,7 @@ class Database {
     }
   }
 
-  async recordInvoicePayment(invoiceId: string, amount: number) {
+  async recordInvoicePayment(invoiceId: string, amount: number): Promise<{ success: boolean; message?: string }> {
       const inv = this.invoices.find(i => i.id === invoiceId);
       const cust = this.customers.find(c => c.id === inv?.customer_id);
       if (inv && cust) {
@@ -252,54 +310,58 @@ class Database {
       return { success: false, message: 'Invoice or customer not found' };
   }
 
-  async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], paid_amount: number, is_return: boolean = false, doc_no?: string, date?: string) {
-      const total_amount = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
-      const inv: PurchaseInvoice = {
-          id: Date.now().toString(),
-          invoice_number: `PUR-${Date.now().toString().slice(-6)}`,
-          document_number: doc_no,
-          supplier_id,
-          date: date || new Date().toISOString(),
-          total_amount,
-          paid_amount,
-          type: is_return ? 'RETURN' : 'PURCHASE',
-          items
-      };
-      
-      items.forEach(item => {
-          if (!is_return) {
-              this.batches.push({
-                  id: `pb-${Date.now()}-${item.product_id}`,
-                  product_id: item.product_id,
-                  warehouse_id: item.warehouse_id,
-                  batch_number: item.batch_number,
-                  purchase_price: item.cost_price,
-                  selling_price: item.selling_price,
-                  quantity: item.quantity,
-                  expiry_date: item.expiry_date,
-                  status: BatchStatus.ACTIVE
-              });
-          } else {
-              const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id);
-              if (batch) batch.quantity -= item.quantity;
-          }
-      });
+  async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], paid_amount: number, is_return: boolean = false, doc_no?: string, date?: string): Promise<{ success: boolean; message?: string }> {
+      try {
+        const total_amount = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
+        const inv: PurchaseInvoice = {
+            id: Date.now().toString(),
+            invoice_number: `PUR-${Date.now().toString().slice(-6)}`,
+            document_number: doc_no,
+            supplier_id,
+            date: date || new Date().toISOString(),
+            total_amount,
+            paid_amount,
+            type: is_return ? 'RETURN' : 'PURCHASE',
+            items
+        };
+        
+        items.forEach(item => {
+            if (!is_return) {
+                this.batches.push({
+                    id: `pb-${Date.now()}-${item.product_id}`,
+                    product_id: item.product_id,
+                    warehouse_id: item.warehouse_id,
+                    batch_number: item.batch_number,
+                    purchase_price: item.cost_price,
+                    selling_price: item.selling_price,
+                    quantity: item.quantity,
+                    expiry_date: item.expiry_date,
+                    status: BatchStatus.ACTIVE
+                });
+            } else {
+                const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id);
+                if (batch) batch.quantity -= item.quantity;
+            }
+        });
 
-      this.purchaseInvoices.push(inv);
-      if (paid_amount > 0) {
-          this.cashTransactions.push({
-              id: `ptx-${Date.now()}`,
-              type: is_return ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-              category: 'SUPPLIER_PAYMENT',
-              reference_id: inv.id,
-              amount: paid_amount,
-              date: inv.date,
-              notes: `سداد فاتورة مشتريات #${inv.invoice_number}`,
-              related_name: this.suppliers.find(s => s.id === supplier_id)?.name
-          });
+        this.purchaseInvoices.push(inv);
+        if (paid_amount > 0) {
+            this.cashTransactions.push({
+                id: `ptx-${Date.now()}`,
+                type: is_return ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
+                category: 'SUPPLIER_PAYMENT',
+                reference_id: inv.id,
+                amount: paid_amount,
+                date: inv.date,
+                notes: `سداد فاتورة مشتريات #${inv.invoice_number}`,
+                related_name: this.suppliers.find(s => s.id === supplier_id)?.name
+            });
+        }
+        await this.recalculateAllBalances();
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, message: e.message || 'Error creating purchase invoice' };
       }
-      await this.recalculateAllBalances();
-      return { success: true };
   }
 
   async deletePurchaseInvoice(id: string) {
@@ -353,11 +415,15 @@ class Database {
       return true; 
   }
 
-  async createPurchaseOrder(supplier_id: string, items: any[]) {
-      const order: PurchaseOrder = { id: Date.now().toString(), order_number: `PO-${Date.now().toString().slice(-4)}`, supplier_id, date: new Date().toISOString(), status: 'PENDING', items };
-      this.purchaseOrders.push(order);
-      this.saveToLocalCache();
-      return { success: true };
+  async createPurchaseOrder(supplier_id: string, items: any[]): Promise<{ success: boolean; message?: string }> {
+      try {
+        const order: PurchaseOrder = { id: Date.now().toString(), order_number: `PO-${Date.now().toString().slice(-4)}`, supplier_id, date: new Date().toISOString(), status: 'PENDING', items };
+        this.purchaseOrders.push(order);
+        this.saveToLocalCache();
+        return { success: true };
+      } catch (e: any) {
+        return { success: false, message: e.message || 'Error creating purchase order' };
+      }
   }
   async updatePurchaseOrderStatus(id: string, status: any) {
       const o = this.purchaseOrders.find(x => x.id === id);
@@ -375,6 +441,18 @@ class Database {
           this.settings.expenseCategories.push(cat);
           this.saveToLocalCache();
       }
+  }
+
+  // Daily Closings
+  async saveDailyClosing(data: any) {
+    const closing: DailyClosing = {
+      ...data,
+      id: Date.now().toString(),
+      updated_at: new Date().toISOString()
+    };
+    this.dailyClosings.push(closing);
+    this.saveToLocalCache();
+    return true;
   }
 
   getABCAnalysis() {
