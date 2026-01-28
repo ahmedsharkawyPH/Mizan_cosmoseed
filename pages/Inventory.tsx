@@ -374,7 +374,7 @@ const Inventory: React.FC = () => {
                                 onClick={() => setExportOptions({...exportOptions, onlyInStock: true})}
                                 className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${exportOptions.onlyInStock ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm' : 'border-slate-100 text-slate-500 hover:border-slate-200'}`}
                               >
-                                  <span className="font-black">الأصناف المتوفرة فقط (رصيد > 0)</span>
+                                  <span className="font-black">الأصناف المتوفرة فقط (رصيد &gt; 0)</span>
                                   {exportOptions.onlyInStock && <CheckCircle2 className="w-5 h-5 text-emerald-600" />}
                               </button>
                           </div>
