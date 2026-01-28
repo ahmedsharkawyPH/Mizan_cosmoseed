@@ -9,10 +9,10 @@ import {
   Printer, Upload, Image as ImageIcon, Database, Download, 
   AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, 
   Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck, Globe, Wifi, WifiOff, RefreshCcw,
-  BadgeInfo, Store, Coins, LayoutDashboard
+  BadgeInfo, Store, Coins, LayoutDashboard, Eraser, ShoppingBag, ShoppingCart, RotateCcw, Wallet
 } from 'lucide-react';
 import { t } from '../utils/t';
-import { PendingAdjustment } from '../types';
+import { PendingAdjustment, Warehouse } from '../types';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -36,6 +36,8 @@ export default function Settings() {
   const user = authService.getCurrentUser();
   
   const [users, setUsers] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [selectedWarehouseReset, setSelectedWarehouseReset] = useState('');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [userForm, setUserForm] = useState({ 
       id: '', name: '', username: '', password: '', role: 'USER',
@@ -45,6 +47,11 @@ export default function Settings() {
   useEffect(() => {
     if (activeTab === 'users') { setUsers(authService.getUsers()); }
     if (activeTab === 'approvals') { setPendingApprovals(db.getPendingAdjustments()); }
+    if (activeTab === 'data') {
+        const whs = db.getWarehouses();
+        setWarehouses(whs);
+        if (whs.length > 0) setSelectedWarehouseReset(whs[0].id);
+    }
   }, [activeTab]);
 
   const stats = useMemo(() => {
@@ -172,6 +179,43 @@ export default function Settings() {
               } catch (err) { toast.error("خطأ في قراءة الملف."); }
           };
           reader.readAsText(file);
+      }
+  };
+
+  // --- دوال المسح الجديدة ---
+  const handleClearSales = async () => {
+      if (confirm("تحذير نهائي: هل أنت متأكد من مسح كافة حركات وفواتير المبيعات؟ هذا الإجراء لا يمكن التراجع عنه وسيؤثر على أرصدة العملاء.")) {
+          await db.clearAllSales();
+          toast.success("تم مسح كافة سجلات المبيعات");
+      }
+  };
+
+  const handleClearPurchases = async () => {
+      if (confirm("تحذير نهائي: هل أنت متأكد من مسح كافة حركات وفواتير المشتريات؟ سيؤدي ذلك لفقدان تاريخ الشراء وتكاليف الأصناف.")) {
+          await db.clearAllPurchases();
+          toast.success("تم مسح كافة سجلات المشتريات");
+      }
+  };
+
+  const handleClearOrders = async () => {
+      if (confirm("هل تريد مسح كافة طلبات الشراء المسودة والملغاة؟")) {
+          await db.clearAllOrders();
+          toast.success("تم مسح كافة طلبات الشراء");
+      }
+  };
+
+  const handleResetCash = async () => {
+      if (confirm("تحذير: سيتم تصفير الخزينة ومسح كافة حركات القبض والصرف (بما في ذلك دفعات العملاء والموردين). هل أنت متأكد؟")) {
+          await db.resetCashRegister();
+          toast.success("تم تصفير سجل الخزينة بنجاح");
+      }
+  };
+
+  const handleClearWarehouseStock = async () => {
+      const whName = warehouses.find(w => w.id === selectedWarehouseReset)?.name;
+      if (confirm(`تحذير: هل أنت متأكد من مسح كافة المنتجات (الأرصدة) داخل مخزن "${whName}"؟ سيتم تصفير الكميات تماماً.`)) {
+          await db.clearWarehouseStock(selectedWarehouseReset);
+          toast.success(`تم تصفير مخزن ${whName} بنجاح`);
       }
   };
 
@@ -478,7 +522,7 @@ export default function Settings() {
                                         <div className="flex justify-center gap-3">
                                             <button onClick={() => handleOpenUserModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 className="w-4 h-4" /></button>
                                             {u.username !== 'admin' && (
-                                                <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteUser(id)} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
                                             )}
                                         </div>
                                     </td>
@@ -522,39 +566,111 @@ export default function Settings() {
         )}
 
         {activeTab === 'data' && (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 pb-10">
                 <div className="flex flex-col gap-2 border-b pb-4 border-slate-50">
                     <div className="flex items-center gap-3">
-                        <AlertTriangle className="w-6 h-6 text-red-600" />
-                        <h3 className="text-xl font-black text-red-600">{t('set.danger_zone')}</h3>
+                        <AlertTriangle className="w-8 h-8 text-red-600" />
+                        <h3 className="text-2xl font-black text-red-600">{t('set.danger_zone')}</h3>
                     </div>
-                    <p className="text-xs text-slate-400 font-bold max-w-2xl">{t('set.danger_desc')}</p>
+                    <p className="text-sm text-slate-500 font-bold max-w-2xl">تحذير: العمليات التالية تؤدي لحذف البيانات نهائياً من النظام والسحابة. لا يمكن التراجع!</p>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="p-8 rounded-3xl border-2 border-slate-100 bg-slate-50/50 flex flex-col justify-between hover:shadow-lg transition-all group">
-                        <div className="flex gap-5 mb-6">
-                            <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-100 group-hover:rotate-12 transition-transform"><RefreshCcw className="w-7 h-7 text-white" /></div>
-                            <div>
-                                <h4 className="font-black text-slate-800 text-base">إعادة مزامنة الأرصدة الحالية</h4>
-                                <p className="text-[10px] text-slate-400 mt-2 font-bold leading-relaxed uppercase tracking-tighter">يقوم النظام بإعادة حساب أرصدة العملاء والموردين بناءً على الفواتير والسندات المسجلة وتحديث السحابة فوراً.</p>
-                            </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* مسح المبيعات */}
+                    <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><ShoppingCart className="w-6 h-6" /></div>
+                            <h4 className="font-black text-slate-800 text-base mb-2">تطهير سجل المبيعات</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">حذف كافة فواتير المبيعات والمرتجعات المسجلة.</p>
                         </div>
-                        <button onClick={() => db.recalculateAllBalances()} className="bg-white border-2 border-blue-600 text-blue-600 px-6 py-3 rounded-2xl font-black hover:bg-blue-600 hover:text-white transition-all shadow-sm flex items-center justify-center gap-3 active:scale-95">
-                            <RefreshCcw className="w-4 h-4" /> تحديث أرصدة السحابة
+                        <button onClick={handleClearSales} className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">
+                            <Eraser className="w-4 h-4" /> مسح كافة المبيعات
                         </button>
                     </div>
-                    
-                    <div className="p-8 rounded-3xl border-2 border-red-50 bg-red-50/30 flex flex-col justify-between hover:shadow-lg transition-all group">
-                        <div className="flex gap-5 mb-6">
-                            <div className="w-14 h-14 bg-red-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-red-100 group-hover:rotate-12 transition-transform"><RefreshCw className="w-7 h-7 text-white" /></div>
-                            <div>
-                                <h4 className="font-black text-red-800 text-base">{t('set.factory_reset')}</h4>
-                                <p className="text-[10px] text-red-600/70 mt-2 font-bold leading-relaxed uppercase tracking-tighter">{t('set.factory_desc')}</p>
+
+                    {/* مسح المشتريات */}
+                    <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><ShoppingBag className="w-6 h-6" /></div>
+                            <h4 className="font-black text-slate-800 text-base mb-2">تطهير سجل المشتريات</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">حذف كافة فواتير المشتريات وتاريخ التكلفة.</p>
+                        </div>
+                        <button onClick={handleClearPurchases} className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">
+                            <Eraser className="w-4 h-4" /> مسح كافة المشتريات
+                        </button>
+                    </div>
+
+                    {/* مسح الطلبات */}
+                    <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><FileText className="w-6 h-6" /></div>
+                            <h4 className="font-black text-slate-800 text-base mb-2">مسح مسودات الطلبات</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">حذف سجل طلبات الشراء (المسودة) المعلقة.</p>
+                        </div>
+                        <button onClick={handleClearOrders} className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">
+                            <Eraser className="w-4 h-4" /> مسح كافة الطلبات
+                        </button>
+                    </div>
+
+                    {/* تصفير الخزينة */}
+                    <div className="p-6 rounded-3xl border-2 border-slate-100 bg-white hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm">
+                        <div className="mb-6">
+                            {/* 
+                                Fix: Error in file pages/Settings.tsx on line 618: Cannot find name 'Wallet'.
+                                Added Wallet to lucide-react imports above.
+                            */}
+                            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Wallet className="w-6 h-6" /></div>
+                            <h4 className="font-black text-slate-800 text-base mb-2">تصفير سجل الخزينة</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">مسح كافة حركات الصرف والقبض وإرجاع الرصيد لصفر.</p>
+                        </div>
+                        <button onClick={handleResetCash} className="w-full py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2">
+                            <RotateCcw className="w-4 h-4" /> تصفير الخزينة بالكامل
+                        </button>
+                    </div>
+
+                    {/* مسح مخزن محدد */}
+                    <div className="p-6 rounded-3xl border-2 border-slate-100 bg-slate-50/50 hover:border-red-200 transition-all group flex flex-col justify-between shadow-sm col-span-1 md:col-span-2">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Store className="w-6 h-6" /></div>
+                            <h4 className="font-black text-slate-800 text-base mb-2">تصفير أرصدة مخزن محدد</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed mb-4">اختر مخزناً لمسح كافة الأصناف الموجودة داخله (إزالة الـ Batches).</p>
+                            
+                            <div className="flex gap-2">
+                                <select 
+                                    className="flex-1 border-2 border-slate-200 p-2.5 rounded-xl font-bold focus:border-red-400 outline-none"
+                                    value={selectedWarehouseReset}
+                                    onChange={e => setSelectedWarehouseReset(e.target.value)}
+                                >
+                                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                </select>
+                                <button onClick={handleClearWarehouseStock} className="px-6 py-3 bg-red-600 text-white rounded-xl font-black text-xs hover:bg-red-700 shadow-md">
+                                    تصفير المخزن المختار
+                                </button>
                             </div>
                         </div>
-                        <button onClick={() => db.resetDatabase()} className="bg-red-600 text-white px-6 py-3 rounded-2xl font-black hover:bg-red-700 shadow-xl shadow-red-100 w-full transition-all active:scale-95">
-                            {t('set.reset_everything')}
+                    </div>
+
+                    {/* المزامنة اليدوية (إضافية) */}
+                    <div className="p-6 rounded-3xl border-2 border-blue-50 bg-blue-50/30 group flex flex-col justify-between shadow-sm">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-blue-600 text-white rounded-xl flex items-center justify-center mb-4 group-hover:rotate-12 transition-transform"><RefreshCcw className="w-6 h-6" /></div>
+                            <h4 className="font-black text-slate-800 text-base mb-2">تحديث الأرصدة</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">إعادة حساب كافة أرصدة العملاء والموردين من السحابة.</p>
+                        </div>
+                        <button onClick={() => db.recalculateAllBalances()} className="w-full py-3 bg-blue-600 text-white rounded-xl font-black text-xs hover:bg-blue-700 transition-all">
+                            تحديث السحابة
+                        </button>
+                    </div>
+
+                    {/* ضبط المصنع الشامل */}
+                    <div className="p-6 rounded-3xl border-4 border-red-100 bg-red-50 group flex flex-col justify-between shadow-md">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-red-600 text-white rounded-xl flex items-center justify-center mb-4 animate-pulse"><AlertTriangle className="w-6 h-6" /></div>
+                            <h4 className="font-black text-red-900 text-base mb-2">إعادة ضبط المصنع</h4>
+                            <p className="text-[10px] text-red-700 font-bold leading-relaxed">مسح شامل وشامل لكافة البيانات (الأصناف، العملاء، الموردين، الحركات) والعودة للنظام فارغاً.</p>
+                        </div>
+                        <button onClick={() => db.resetDatabase()} className="w-full py-4 bg-red-700 text-white rounded-xl font-black text-sm hover:bg-black transition-all shadow-lg">
+                            ضبط المصنع (حذف شامل)
                         </button>
                     </div>
                 </div>

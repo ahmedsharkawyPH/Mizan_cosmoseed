@@ -138,6 +138,59 @@ class Database {
   getCashTransactions() { return [...this.cashTransactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()); }
   getRepresentatives() { return this.representatives; }
 
+  // --- دوال منطقة الخطر (Danger Zone Operations) ---
+
+  async clearAllSales() {
+    if (isSupabaseConfigured) {
+        await supabase.from('invoices').delete().neq('id', 'placeholder');
+        // Reset customer balances locally for consistency
+        await this.syncFromCloud();
+    }
+    this.invoices = [];
+    this.saveToLocalCache();
+    return true;
+  }
+
+  async clearAllPurchases() {
+    if (isSupabaseConfigured) {
+        await supabase.from('purchase_invoices').delete().neq('id', 'placeholder');
+        await this.syncFromCloud();
+    }
+    this.purchaseInvoices = [];
+    this.saveToLocalCache();
+    return true;
+  }
+
+  async clearAllOrders() {
+    if (isSupabaseConfigured) {
+        await supabase.from('purchase_orders').delete().neq('id', 'placeholder');
+    }
+    this.purchaseOrders = [];
+    this.saveToLocalCache();
+    return true;
+  }
+
+  async clearWarehouseStock(warehouseId: string) {
+    if (isSupabaseConfigured) {
+        await supabase.from('batches').delete().eq('warehouse_id', warehouseId);
+    }
+    this.batches = this.batches.filter(b => b.warehouse_id !== warehouseId);
+    this.saveToLocalCache();
+    return true;
+  }
+
+  async resetCashRegister() {
+    if (isSupabaseConfigured) {
+        await supabase.from('cash_transactions').delete().neq('id', 'placeholder');
+    }
+    this.cashTransactions = [];
+    this._cashBalance = 0;
+    this.saveToLocalCache();
+    return true;
+  }
+
+  // --- End of Danger Zone ---
+
   getNextTransactionRef(type: CashTransactionType): string {
     const prefix = type === CashTransactionType.RECEIPT ? 'REC' : 'EXP';
     const refs = this.cashTransactions
@@ -153,12 +206,10 @@ class Database {
   }
 
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean = false, documentNumber?: string, manualDate?: string): Promise<{ success: boolean; message: string; id?: string }> {
-    // Generate unique ID with randomness and timestamp to ensure zero collision
     const invoiceId = `PUR${Date.now()}${Math.floor(Math.random() * 10000)}`;
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
     const finalDate = manualDate || new Date().toISOString();
     
-    // Advanced auto-numbering logic
     const prefix = isReturn ? 'PR' : 'P';
     const existingNums = this.purchaseInvoices
         .filter(inv => inv.invoice_number && inv.invoice_number.startsWith(prefix))
@@ -196,7 +247,6 @@ class Database {
     if (isSupabaseConfigured) {
         const { error } = await supabase.rpc('process_purchase_invoice', { p_invoice: invoice, p_items: items, p_cash_tx: cashTx });
         if (error) {
-            // Precise handling of 409 (Unique Constraint)
             if (error.code === '23505' || error.message.includes('duplicate')) {
                 return { success: false, message: 'CONFLICT_DETECTED' };
             }
@@ -204,7 +254,6 @@ class Database {
         }
     }
 
-    // Update Local State only after cloud success
     this.purchaseInvoices.push(invoice);
     if (cashTx) {
         this.cashTransactions.push(cashTx as CashTransaction);
@@ -244,7 +293,6 @@ class Database {
     const invoice: Invoice = { 
         id: invoiceId, invoice_number: invoiceNumber, customer_id: customerId, created_by: user?.id, 
         created_by_name: user?.name, date: new Date().toISOString(), total_before_discount: items.reduce((s, i) => s + (i.quantity * (i.unit_price || 0)), 0), 
-        // Fixed below line: replaced 'item' with 'i' to match reduce callback parameters
         total_discount: items.reduce((s, i) => s + ((i.quantity * (i.unit_price || 0)) * (i.discount_percentage / 100)), 0), 
         additional_discount: addDisc, net_total: netTotal, previous_balance: prevBalance, 
         final_balance: finalBalance, payment_status: cashPaid >= netTotal ? PaymentStatus.PAID : (cashPaid > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
