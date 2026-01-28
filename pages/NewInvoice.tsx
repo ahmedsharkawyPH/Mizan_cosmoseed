@@ -100,9 +100,20 @@ export default function NewInvoice() {
     customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })), 
   [customers]);
 
+  // تحديث قائمة الأصناف لتشمل السعر والكمية في البحث
   const productOptions = useMemo(() => 
-    products.map(p => ({ value: p.id, label: p.name, subLabel: p.code })), 
-  [products]);
+    products.map(p => {
+        const batchInWarehouse = p.batches.find(b => b.warehouse_id === selectedWarehouse);
+        const qtyInWarehouse = batchInWarehouse ? batchInWarehouse.quantity : 0;
+        const price = batchInWarehouse ? batchInWarehouse.selling_price : (p.selling_price || 0);
+        
+        return { 
+            value: p.id, 
+            label: p.name, 
+            subLabel: `سعر: ${price} ${currency} | رصيد: ${qtyInWarehouse} | كود: ${p.code || '---'}`
+        };
+    }), 
+  [products, selectedWarehouse, currency]);
 
   useEffect(() => {
       if (selectedCustomer && !id) {
@@ -122,12 +133,10 @@ export default function NewInvoice() {
     return products.find(p => p.id === selectedProduct);
   }, [selectedProduct, products]);
 
-  // تحسين: جلب أحدث تشغيلة (Batch) لضمان الحصول على أحدث سعر مشتريات
   const availableBatch = useMemo(() => {
     if (!currentProduct || !selectedWarehouse) return null;
     const warehouseBatches = currentProduct.batches.filter(b => b.warehouse_id === selectedWarehouse);
     if (warehouseBatches.length === 0) return null;
-    // ترتيب تنازلي حسب التاريخ لضمان أن أول عنصر هو الأحدث
     return warehouseBatches.sort((a, b) => b.id.localeCompare(a.id))[0];
   }, [currentProduct, selectedWarehouse]);
 
@@ -139,7 +148,6 @@ export default function NewInvoice() {
 
   const lastPurchasePrice = useMemo(() => {
     if (!selectedProduct) return 0;
-    // محاولة جلب أحدث تكلفة من تشغيلات المنتج
     if (availableBatch) return availableBatch.purchase_price;
     if (currentProduct?.purchase_price) return currentProduct.purchase_price;
     

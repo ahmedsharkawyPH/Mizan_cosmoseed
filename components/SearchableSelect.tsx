@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo, useId } from 'react';
 import { Search, ChevronDown, Check, Zap } from 'lucide-react';
 import { ArabicSmartSearch } from '../utils/search';
@@ -39,7 +40,6 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const listRef = useRef<HTMLUListElement>(null);
   
   const generatedId = useId();
-  // Ensure we use the passed id or the generated one for BOTH label and input
   const internalId = id || `searchable-${generatedId}`;
   const internalName = name || internalId;
 
@@ -198,7 +198,11 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                        {opt.label}
                        {opt._searchScore > 50 && <Zap className={`w-3 h-3 ${idx === highlightedIndex ? 'text-yellow-400' : 'text-emerald-500'}`} />}
                     </div>
-                    {opt.subLabel && <div className={`text-[10px] font-mono ${idx === highlightedIndex ? 'text-slate-300' : 'text-slate-400'}`}>{opt.subLabel}</div>}
+                    {opt.subLabel && (
+                        <div className={`text-[11px] font-bold mt-0.5 leading-tight ${idx === highlightedIndex ? 'text-blue-300' : 'text-blue-600'}`}>
+                            {opt.subLabel}
+                        </div>
+                    )}
                   </div>
                   {value === opt.value && <Check className={`w-4 h-4 ${idx === highlightedIndex ? 'text-white' : 'text-blue-600'}`} />}
                 </li>
