@@ -49,24 +49,62 @@ class Database {
     this.isFullyLoaded = true;
   }
 
-  // المزامنة من السحابة - متوافقة مع جداول system_settings و settings
+  /**
+   * دالة مساعدة لجلب كافة البيانات من جدول مهما كان عدد الصفوف (Chunking)
+   * تتخطى حد الـ 1000 سجل الافتراضي في Supabase
+   */
+  private async fetchFullTable<T>(tableName: string): Promise<T[]> {
+    let allData: T[] = [];
+    let from = 0;
+    let to = 999;
+    let finished = false;
+
+    while (!finished) {
+      const { data, error } = await supabase
+        .from(tableName)
+        .select('*')
+        .range(from, to);
+
+      if (error) {
+        console.error(`Error fetching table ${tableName}:`, error);
+        finished = true;
+      } else if (data) {
+        allData = [...allData, ...data];
+        if (data.length < 1000) {
+          finished = true;
+        } else {
+          from += 1000;
+          to += 1000;
+        }
+      } else {
+        finished = true;
+      }
+    }
+    return allData;
+  }
+
+  // المزامنة من السحابة - الآن تدعم جلب آلاف السجلات
   async syncFromCloud() {
     if (!isSupabaseConfigured) return;
     
     try {
-        const [
-            {data: p}, {data: b}, {data: c}, {data: s}, 
-            {data: inv}, {data: pinv}, {data: tx}, {data: wh},
-            {data: sysSett}, {data: appSett}
-        ] = await Promise.all([
-            supabase.from('products').select('*'),
-            supabase.from('batches').select('*'),
-            supabase.from('customers').select('*'),
-            supabase.from('suppliers').select('*'),
-            supabase.from('invoices').select('*'),
-            supabase.from('purchase_invoices').select('*'),
-            supabase.from('cash_transactions').select('*'),
-            supabase.from('warehouses').select('*'),
+        console.log("Starting deep sync from cloud...");
+        
+        // جلب البيانات الكبيرة بنظام التتابع
+        const [p, b, c, s, inv, pinv, tx, wh, po] = await Promise.all([
+            this.fetchFullTable<Product>('products'),
+            this.fetchFullTable<Batch>('batches'),
+            this.fetchFullTable<Customer>('customers'),
+            this.fetchFullTable<Supplier>('suppliers'),
+            this.fetchFullTable<Invoice>('invoices'),
+            this.fetchFullTable<PurchaseInvoice>('purchase_invoices'),
+            this.fetchFullTable<CashTransaction>('cash_transactions'),
+            this.fetchFullTable<Warehouse>('warehouses'),
+            this.fetchFullTable<PurchaseOrder>('purchase_orders')
+        ]);
+
+        // جلب الإعدادات (سجل واحد عادةً)
+        const [ {data: sysSett}, {data: appSett} ] = await Promise.all([
             supabase.from('system_settings').select('*').eq('id', 'global_settings').maybeSingle(),
             supabase.from('settings').select('*').eq('id', 1).maybeSingle()
         ]);
@@ -79,10 +117,12 @@ class Database {
         if (pinv) this.purchaseInvoices = pinv;
         if (tx) this.cashTransactions = tx;
         if (wh && wh.length > 0) this.warehouses = wh;
+        if (po) this.purchaseOrders = po;
 
-        // دمج الإعدادات من الجداول السحابية (الأولوية لجدول settings لأنه أشمل)
+        console.log(`Sync Complete: Loaded ${this.products.length} products.`);
+
+        // دمج الإعدادات
         const cloudSettings: any = {};
-
         if (sysSett) {
             cloudSettings.companyName = sysSett.company_name;
             cloudSettings.currency = sysSett.currency;
@@ -115,7 +155,7 @@ class Database {
         this.saveToLocalCache();
         this.isFullyLoaded = true;
     } catch (error) {
-        console.error("Cloud Sync Failed:", error);
+        console.error("Deep Cloud Sync Failed:", error);
     }
   }
 
