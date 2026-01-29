@@ -423,7 +423,7 @@ const Inventory: React.FC = () => {
                     </div>
                     <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl cursor-pointer group">
                         <input type="checkbox" className="w-6 h-6 rounded-lg text-emerald-600 focus:ring-emerald-500" checked={exportOptions.onlyInStock} onChange={e => setExportOptions({...exportOptions, onlyInStock: e.target.checked})} />
-                        <span className="text-sm font-bold text-slate-700">تصدير الأصناف المتوفرة فقط (رصيد > 0)</span>
+                        <span className="text-sm font-bold text-slate-700">تصدير الأصناف المتوفرة فقط (رصيد {'>'} 0)</span>
                     </label>
                     <button onClick={handleExportExcel} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">بدء التصدير الآن</button>
                 </div>
@@ -453,7 +453,7 @@ const Inventory: React.FC = () => {
                     </div>
                     <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl cursor-pointer group">
                         <input type="checkbox" className="w-6 h-6 rounded-lg text-red-600 focus:ring-red-500" checked={pdfExportOptions.onlyInStock} onChange={e => setPdfExportOptions({...pdfExportOptions, onlyInStock: e.target.checked})} />
-                        <span className="text-sm font-bold text-slate-700">تصدير الأصناف المتوفرة فقط (رصيد > 0)</span>
+                        <span className="text-sm font-bold text-slate-700">تصدير الأصناف المتوفرة فقط (رصيد {'>'} 0)</span>
                     </label>
                     <button onClick={handleExportPdf} disabled={isPdfGenerating} className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-red-100 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
                         {isPdfGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Download className="w-6 h-6" />}
