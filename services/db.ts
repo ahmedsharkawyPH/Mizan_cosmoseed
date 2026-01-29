@@ -509,6 +509,27 @@ class Database {
       }
   }
 
+  async deleteWarehouse(id: string): Promise<{ success: boolean; message?: string }> {
+    const w = this.warehouses.find(x => x.id === id);
+    if (!w) return { success: false, message: 'المخزن غير موجود' };
+    if (w.is_default) return { success: false, message: 'لا يمكن حذف المخزن الرئيسي الافتراضي' };
+    
+    // التحقق من وجود أرصدة
+    const hasStock = this.batches.some(b => b.warehouse_id === id && b.quantity > 0);
+    if (hasStock) return { success: false, message: 'لا يمكن حذف المخزن لوجود أرصدة (كميات) بداخله حالياً' };
+
+    if (isSupabaseConfigured) {
+        await supabase.from('warehouses').delete().eq('id', id);
+        // مسح التشغيلات الفارغة المرتبطة به لضمان نظافة البيانات
+        await supabase.from('batches').delete().eq('warehouse_id', id);
+    }
+    
+    this.warehouses = this.warehouses.filter(x => x.id !== id);
+    this.batches = this.batches.filter(b => b.warehouse_id !== id);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
   async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean, docNo?: string, date?: string): Promise<{ success: boolean; message?: string }> {
     try {
       const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);

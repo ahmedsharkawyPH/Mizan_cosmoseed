@@ -175,7 +175,19 @@ const translations: Record<string, Record<string, string>> = {
     'list.title': 'سجل المبيعات والمرتجع',
     'list.search': 'بحث...',
     'list.status': 'الحالة',
-    'list.no_data': 'لا توجد بيانات متاحة'
+    'list.no_data': 'لا توجد بيانات متاحة',
+
+    // Warehouses
+    'ware.title': 'تعريف المخازن',
+    'ware.add': 'إضافة مخزن جديد',
+    'ware.edit': 'تعديل بيانات المخزن',
+    'ware.name': 'اسم المخزن',
+    'ware.type': 'نوع المخزن',
+    'ware.default': 'المخزن الرئيسي (افتراضي)',
+    'ware.sub': 'مخزن فرعي',
+    'ware.delete_confirm': 'هل أنت متأكد من حذف هذا المخزن؟ سيتم مسح كافة السجلات المرتبطة به.',
+    'ware.error_default': 'لا يمكن حذف المخزن الرئيسي الافتراضي للنظام.',
+    'ware.error_has_stock': 'لا يمكن حذف المخزن لوجود أصناف أو أرصدة بداخله حالياً.'
   }
 };
 
