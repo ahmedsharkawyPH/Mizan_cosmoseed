@@ -142,16 +142,13 @@ export default function Settings() {
 
   const togglePermission = (permId: string) => {
       setUserForm(prev => {
-          const exists = prev.permissions.includes(permId);
-          if (exists) { return { ...prev, permissions: prev.permissions.filter(p => p !== prev.permissions[0]) }; } // This logic seems slightly off in original, but keeping pattern
-          // Fixed toggle logic
           const hasIt = prev.permissions.includes(permId);
           return { ...prev, permissions: hasIt ? prev.permissions.filter(p => p !== permId) : [...prev.permissions, permId] };
       });
   };
 
   const handleBackup = () => {
-      const data = db.exportDatabase();
+      const data = db.exportDbData();
       const blob = new Blob([data], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -172,7 +169,7 @@ export default function Settings() {
               try {
                   const content = event.target?.result as string;
                   if (confirm("تحذير: سيؤدي ذلك لاستبدال كافة البيانات الحالية. هل أنت متأكد؟")) {
-                      const success = db.importDatabase(content);
+                      const success = db.importDbData(content);
                       if (success) {
                           toast.success("تمت الاستعادة بنجاح");
                           setTimeout(() => window.location.reload(), 1000);
