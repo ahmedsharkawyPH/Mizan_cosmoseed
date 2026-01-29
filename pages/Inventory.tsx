@@ -6,9 +6,13 @@ import { ArabicSmartSearch } from '../utils/search';
 import { 
   Search, Package, Filter, X, Zap, Hash, Tag, PlusCircle,
   FileSpreadsheet, Loader2, Award, PackagePlus, EyeOff, ChevronLeft, ChevronRight, FileDown, CheckCircle2,
-  Edit, Trash2, ClipboardList, Printer, ArrowRight, TrendingUp, History
+  Edit, Trash2, ClipboardList, Printer, ArrowRight, TrendingUp, History, FileText, Download
 } from 'lucide-react';
 import { exportInventoryToExcel } from '../utils/excel';
+// @ts-ignore
+import html2canvas from 'html2canvas';
+// @ts-ignore
+import { jsPDF } from 'jspdf';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -38,12 +42,19 @@ const Inventory: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   
   // States for Edit/ItemCard
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [viewingCardProduct, setViewingCardProduct] = useState<any | null>(null);
 
   const [exportOptions, setExportOptions] = useState({
+      warehouseId: 'ALL',
+      onlyInStock: false
+  });
+
+  const [pdfExportOptions, setPdfExportOptions] = useState({
       warehouseId: 'ALL',
       onlyInStock: false
   });
@@ -155,7 +166,7 @@ const Inventory: React.FC = () => {
           code: p.code || '',
           purchase_price: p.purchase_price || 0,
           selling_price: p.selling_price || 0,
-          initial_qty: 0, // لا يتم تعديل الرصيد الافتتاحي من هنا بل من الجرد
+          initial_qty: 0, 
           warehouse_id: ''
       });
       setIsAddModalOpen(true);
@@ -163,14 +174,11 @@ const Inventory: React.FC = () => {
 
   const handleDelete = async (id: string) => {
       if (window.confirm("هل أنت متأكد من حذف هذا الصنف؟")) {
-          // التحقق من وجود حركات قبل الحذف
           const hasInvoices = db.getInvoices().some(inv => inv.items.some(it => it.product.id === id));
           const hasPurchases = db.getPurchaseInvoices().some(inv => inv.items.some(it => it.product_id === id));
-          
           if (hasInvoices || hasPurchases) {
               return toast.error("لا يمكن حذف صنف له حركات بيع أو شراء مسجلة. يمكنك تصفير رصيده فقط.");
           }
-
           await db.deleteProduct(id);
           toast.success("تم الحذف بنجاح");
           loadProducts();
@@ -181,8 +189,6 @@ const Inventory: React.FC = () => {
       if (!viewingCardProduct) return [];
       const pid = viewingCardProduct.id;
       const all: ProductMovement[] = [];
-
-      // 1. المبيعات ومرتجع المبيعات
       db.getInvoices().forEach(inv => {
           const item = inv.items.find(it => it.product.id === pid);
           if (item) {
@@ -199,8 +205,6 @@ const Inventory: React.FC = () => {
               });
           }
       });
-
-      // 2. المشتريات ومرتجع المشتريات
       db.getPurchaseInvoices().forEach(inv => {
           const item = inv.items.find(it => it.product_id === pid);
           if (item) {
@@ -217,10 +221,7 @@ const Inventory: React.FC = () => {
               });
           }
       });
-
-      // ترتيب الحركات وحساب الرصيد
       all.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      
       let runningBalance = 0;
       return all.map(m => {
           runningBalance += (m.qtyIn - m.qtyOut);
@@ -251,13 +252,96 @@ const Inventory: React.FC = () => {
       setIsExportModalOpen(false);
   };
 
+  const handleExportPdf = async () => {
+    setIsPdfGenerating(true);
+    const toastId = toast.loading("جاري إنشاء تقرير PDF...");
+    
+    // 1. فلترة البيانات
+    let dataToPdf = products.filter(p => {
+        const pBatches = p.batches || [];
+        const filteredBatches = pdfExportOptions.warehouseId === 'ALL' ? pBatches : pBatches.filter((b: any) => b.warehouse_id === pdfExportOptions.warehouseId);
+        const totalQty = filteredBatches.reduce((s: number, b: any) => s + b.quantity, 0);
+        if (pdfExportOptions.onlyInStock && totalQty <= 0) return false;
+        return true;
+    });
+
+    if (dataToPdf.length === 0) {
+        toast.error("لا توجد بيانات مطابقة للخيارات المختارة", { id: toastId });
+        setIsPdfGenerating(false);
+        return;
+    }
+
+    // 2. إنشاء حاوية مؤقتة للتقرير للتحويل إلى PDF
+    const reportContainer = document.createElement('div');
+    reportContainer.style.width = '210mm'; // عرض A4
+    reportContainer.style.padding = '15mm';
+    reportContainer.style.background = 'white';
+    reportContainer.style.direction = 'rtl';
+    reportContainer.style.fontFamily = 'Cairo, sans-serif';
+    reportContainer.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
+            <div>
+                <h1 style="margin: 0; font-size: 24px; font-weight: 900;">${settings.companyName}</h1>
+                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">تقرير قائمة الأسعار والمخزون</p>
+                <p style="margin: 5px 0 0 0; font-size: 12px;">المخزن: ${pdfExportOptions.warehouseId === 'ALL' ? 'الكل' : warehouses.find(w => w.id === pdfExportOptions.warehouseId)?.name}</p>
+            </div>
+            <div style="text-align: left;">
+                <p style="margin: 0; font-size: 12px;">تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-EG')}</p>
+                <p style="margin: 5px 0 0 0; font-size: 10px; color: #999;">Mizan Online Pro</p>
+            </div>
+        </div>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f3f4f6;">
+                    <th style="border: 1px solid #ddd; padding: 10px; text-align: center; width: 40px;">#</th>
+                    <th style="border: 1px solid #ddd; padding: 10px; text-align: right;">اسم الصنف</th>
+                    <th style="border: 1px solid #ddd; padding: 10px; text-align: center;">الكود</th>
+                    <th style="border: 1px solid #ddd; padding: 10px; text-align: center;">سعر البيع</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${dataToPdf.map((p, i) => `
+                    <tr>
+                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 11px;">${i+1}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${p.name}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-family: monospace;">${p.code || '---'}</td>
+                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-weight: 900;">${currency}${p.selling_price?.toLocaleString()}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    document.body.appendChild(reportContainer);
+
+    try {
+        const canvas = await html2canvas(reportContainer, { scale: 2, useCORS: true });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Inventory_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+        
+        toast.success("تم تصدير ملف PDF بنجاح", { id: toastId });
+        setIsPdfModalOpen(false);
+    } catch (err) {
+        toast.error("حدث خطأ أثناء إنشاء الملف", { id: toastId });
+    } finally {
+        document.body.removeChild(reportContainer);
+        setIsPdfGenerating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-6 pb-20">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
            <div><h1 className="text-3xl font-black text-slate-800 flex items-center gap-3"><Package className="w-8 h-8 text-blue-600" /> {t('stock.title')}</h1></div>
            <div className="flex flex-wrap gap-2">
-             <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all active:scale-95"><FileDown className="w-5 h-5" /> تصدير إكسيل</button>
+             <button onClick={() => setIsPdfModalOpen(true)} className="bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-red-700 transition-all active:scale-95"><FileText className="w-5 h-5" /> تصدير PDF</button>
+             <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all active:scale-95"><FileSpreadsheet className="w-5 h-5" /> تصدير إكسيل</button>
              <button id="btn_new_product" name="btn_new_product" onClick={() => { setEditingProduct(null); setIsAddModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><PlusCircle className="w-5 h-5" /> {t('stock.new')}</button>
            </div>
         </div>
@@ -320,6 +404,65 @@ const Inventory: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Excel Export Modal */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+                <div className="bg-emerald-600 p-6 flex justify-between items-center text-white">
+                    <h3 className="text-xl font-black flex items-center gap-3"><FileSpreadsheet className="w-6 h-6" /> تصدير المخزون (Excel)</h3>
+                    <button onClick={() => setIsExportModalOpen(false)} className="text-white/60 hover:text-white"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="p-8 space-y-6">
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">تحديد المخزن</label>
+                        <select className="w-full border-2 border-slate-100 p-3 rounded-2xl outline-none focus:border-emerald-500 font-bold" value={exportOptions.warehouseId} onChange={e => setExportOptions({...exportOptions, warehouseId: e.target.value})}>
+                            <option value="ALL">-- كافة المخازن --</option>
+                            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        </select>
+                    </div>
+                    <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl cursor-pointer group">
+                        <input type="checkbox" className="w-6 h-6 rounded-lg text-emerald-600 focus:ring-emerald-500" checked={exportOptions.onlyInStock} onChange={e => setExportOptions({...exportOptions, onlyInStock: e.target.checked})} />
+                        <span className="text-sm font-bold text-slate-700">تصدير الأصناف المتوفرة فقط (رصيد > 0)</span>
+                    </label>
+                    <button onClick={handleExportExcel} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">بدء التصدير الآن</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* PDF Export Modal */}
+      {isPdfModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+                <div className="bg-red-600 p-6 flex justify-between items-center text-white">
+                    <h3 className="text-xl font-black flex items-center gap-3"><FileText className="w-6 h-6" /> تصدير تقرير PDF</h3>
+                    <button onClick={() => setIsPdfModalOpen(false)} className="text-white/60 hover:text-white"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="p-8 space-y-6">
+                    <div className="p-4 bg-red-50 rounded-2xl border border-red-100 mb-2">
+                        <p className="text-[10px] text-red-600 font-black uppercase mb-1">محتوى التقرير:</p>
+                        <p className="text-xs font-bold text-red-800 flex items-center gap-2"><CheckCircle2 className="w-3 h-3" /> اسم الصنف + الكود + سعر البيع</p>
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">تحديد المخزن للمطابقة</label>
+                        <select className="w-full border-2 border-slate-100 p-3 rounded-2xl outline-none focus:border-red-500 font-bold" value={pdfExportOptions.warehouseId} onChange={e => setPdfExportOptions({...pdfExportOptions, warehouseId: e.target.value})}>
+                            <option value="ALL">-- كافة المخازن --</option>
+                            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        </select>
+                    </div>
+                    <label className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl cursor-pointer group">
+                        <input type="checkbox" className="w-6 h-6 rounded-lg text-red-600 focus:ring-red-500" checked={pdfExportOptions.onlyInStock} onChange={e => setPdfExportOptions({...pdfExportOptions, onlyInStock: e.target.checked})} />
+                        <span className="text-sm font-bold text-slate-700">تصدير الأصناف المتوفرة فقط (رصيد > 0)</span>
+                    </label>
+                    <button onClick={handleExportPdf} disabled={isPdfGenerating} className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-red-100 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
+                        {isPdfGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Download className="w-6 h-6" />}
+                        {isPdfGenerating ? "جاري الإنشاء..." : "إنشاء ملف PDF"}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Item Card Modal */}
       {viewingCardProduct && (
