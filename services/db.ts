@@ -581,7 +581,7 @@ class Database {
       const openingCash = prevClosing ? prevClosing.cash_balance : 0;
       
       const expectedCash = openingCash + cashSales + otherReceipts - cashPurchases - expenses;
-      const inventoryValue = this.getProductsWithBatches().reduce((sum, p) => sum + (p.batches.reduce((s, b) => s + b.quantity, 0) * (p.purchase_price || 0))), 0);
+      const inventoryValue = this.getProductsWithBatches().reduce((sum, p) => sum + (p.batches.reduce((s, b) => s + b.quantity, 0) * (p.purchase_price || 0)), 0);
       
       return { openingCash, cashSales, expenses, cashPurchases, expectedCash, inventoryValue };
   }
