@@ -21,10 +21,17 @@ class Database {
   representatives: Representative[] = [];
   settings: any = { 
       companyName: 'Mizan Online', 
+      companyAddress: '',
+      companyPhone: '',
+      companyLogo: '',
+      companyTaxNumber: '',
       currency: 'LE', 
+      language: 'ar',
+      invoiceTemplate: '1',
+      printerPaperSize: 'A4',
       lowStockThreshold: 10,
       distributionLines: [],
-      expenseCategories: ['CUSTOMER_PAYMENT', 'SUPPLIER_PAYMENT', 'COMMISSION', 'SALARY', 'RENT', 'ELECTRICITY', 'MARKETING', 'CAR', 'OTHER']
+      expenseCategories: ['SALARY', 'ELECTRICITY', 'MARKETING', 'RENT', 'MAINTENANCE', 'OTHER']
   };
   dailyClosings: DailyClosing[] = [];
   pendingAdjustments: PendingAdjustment[] = [];
@@ -42,15 +49,15 @@ class Database {
     this.isFullyLoaded = true;
   }
 
-  // المزامنة الفعلية من السحابة - هذا الجزء سيحل مشكلة البيانات القديمة عند الفتح من جهاز آخر
+  // المزامنة من السحابة - متوافقة مع جداول system_settings و settings
   async syncFromCloud() {
     if (!isSupabaseConfigured) return;
     
     try {
-        // جلب كافة الجداول الأساسية بطلب واحد متوازي لسرعة الأداء
         const [
             {data: p}, {data: b}, {data: c}, {data: s}, 
-            {data: inv}, {data: pinv}, {data: tx}, {data: wh}
+            {data: inv}, {data: pinv}, {data: tx}, {data: wh},
+            {data: sysSett}, {data: appSett}
         ] = await Promise.all([
             supabase.from('products').select('*'),
             supabase.from('batches').select('*'),
@@ -59,7 +66,9 @@ class Database {
             supabase.from('invoices').select('*'),
             supabase.from('purchase_invoices').select('*'),
             supabase.from('cash_transactions').select('*'),
-            supabase.from('warehouses').select('*')
+            supabase.from('warehouses').select('*'),
+            supabase.from('system_settings').select('*').eq('id', 'global_settings').maybeSingle(),
+            supabase.from('settings').select('*').eq('id', 1).maybeSingle()
         ]);
 
         if (p) this.products = p;
@@ -71,7 +80,39 @@ class Database {
         if (tx) this.cashTransactions = tx;
         if (wh && wh.length > 0) this.warehouses = wh;
 
-        this.saveToLocalCache(); // تحديث الذاكرة المحلية بالبيانات الجديدة من السحابة
+        // دمج الإعدادات من الجداول السحابية (الأولوية لجدول settings لأنه أشمل)
+        const cloudSettings: any = {};
+
+        if (sysSett) {
+            cloudSettings.companyName = sysSett.company_name;
+            cloudSettings.currency = sysSett.currency;
+            cloudSettings.companyLogo = sysSett.company_logo;
+            cloudSettings.companyAddress = sysSett.company_address;
+            cloudSettings.companyPhone = sysSett.company_phone;
+            cloudSettings.lowStockThreshold = sysSett.low_stock_threshold;
+            if (sysSett.expense_categories) cloudSettings.expenseCategories = sysSett.expense_categories;
+        }
+
+        if (appSett) {
+            cloudSettings.companyName = appSett.companyname || cloudSettings.companyName;
+            cloudSettings.companyAddress = appSett.companyaddress || cloudSettings.companyAddress;
+            cloudSettings.companyPhone = appSett.companyphone || cloudSettings.companyPhone;
+            cloudSettings.companyTaxNumber = appSett.companytaxnumber;
+            cloudSettings.companyLogo = appSett.companylogo || cloudSettings.companyLogo;
+            cloudSettings.currency = appSett.currency || cloudSettings.currency;
+            cloudSettings.language = appSett.language;
+            cloudSettings.invoiceTemplate = appSett.invoicetemplate;
+            cloudSettings.printerPaperSize = appSett.printerpapersize;
+            cloudSettings.expenseCategories = appSett.expensecategories || cloudSettings.expenseCategories;
+            cloudSettings.lowStockThreshold = appSett.lowstockthreshold || cloudSettings.lowStockThreshold;
+            cloudSettings.distributionLines = appSett.distributionlines || [];
+        }
+
+        if (Object.keys(cloudSettings).length > 0) {
+            this.settings = { ...this.settings, ...cloudSettings };
+        }
+
+        this.saveToLocalCache();
         this.isFullyLoaded = true;
     } catch (error) {
         console.error("Cloud Sync Failed:", error);
@@ -175,7 +216,6 @@ class Database {
       this.saveToLocalCache();
   }
 
-  // Fix: Added updateProduct to handle metadata changes
   async updateProduct(id: string, data: Partial<Product>) {
     const p = this.products.find(x => x.id === id);
     if (p) {
@@ -261,8 +301,6 @@ class Database {
       };
 
       if (isSupabaseConfigured) {
-          // استخدام دالة RPC المعقدة لضمان تنفيذ العملية ككتلة واحدة (Atomic Transaction)
-          // هذا يمنع ضياع البيانات في حال انقطاع الإنترنت أثناء المعالجة
           const { error } = await supabase.rpc('process_sales_invoice', {
               p_invoice: invoice,
               p_items: items
@@ -290,7 +328,6 @@ class Database {
     }
   }
 
-  // Fix: Added deleteInvoice to support sales invoice removal
   async deleteInvoice(id: string) {
     const inv = this.invoices.find(i => i.id === id);
     if (!inv) return;
@@ -308,7 +345,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // Fix: Added updateInvoice to allow modifying existing sales records
   async updateInvoice(id: string, customer_id: string, items: CartItem[], cash_paid: number) {
     const oldInv = this.invoices.find(i => i.id === id);
     const is_return = oldInv?.type === 'RETURN';
@@ -344,8 +380,51 @@ class Database {
       return { success: false, message: 'Invoice or customer not found' };
   }
 
-  // باقي الدوال تم تعديلها لتشمل المزامنة بنفس النمط
-  async updateSettings(s: any) { this.settings = { ...this.settings, ...s }; this.saveToLocalCache(); return true; }
+  // تحديث الإعدادات مع مزامنة الجداول system_settings و settings
+  async updateSettings(s: any) { 
+      this.settings = { ...this.settings, ...s }; 
+      
+      if (isSupabaseConfigured) {
+          try {
+              // 1. تحديث جدول system_settings
+              await supabase.from('system_settings').upsert({ 
+                  id: 'global_settings',
+                  company_name: this.settings.companyName,
+                  currency: this.settings.currency,
+                  expense_categories: this.settings.expenseCategories,
+                  company_logo: this.settings.companyLogo,
+                  company_address: this.settings.companyAddress,
+                  company_phone: this.settings.companyPhone,
+                  low_stock_threshold: this.settings.lowStockThreshold,
+                  updated_at: new Date().toISOString()
+              });
+
+              // 2. تحديث جدول settings
+              await supabase.from('settings').upsert({
+                  id: 1,
+                  companyname: this.settings.companyName,
+                  companyaddress: this.settings.companyAddress,
+                  companyphone: this.settings.companyPhone,
+                  companytaxnumber: this.settings.companyTaxNumber,
+                  companylogo: this.settings.companyLogo,
+                  currency: this.settings.currency,
+                  language: this.settings.language,
+                  invoicetemplate: this.settings.invoiceTemplate,
+                  printerpapersize: this.settings.printerPaperSize,
+                  expensecategories: this.settings.expenseCategories,
+                  lowstockthreshold: this.settings.lowStockThreshold,
+                  distributionlines: this.settings.distributionLines,
+                  updated_at: new Date().toISOString()
+              });
+
+          } catch (e) {
+              console.error("Failed to sync settings to cloud:", e);
+          }
+      }
+      this.saveToLocalCache(); 
+      return true; 
+  }
+  
   async updateCustomer(id: string, data: any) {
     const customer = this.customers.find(c => c.id === id);
     if (customer) {
@@ -381,7 +460,6 @@ class Database {
     this.saveToLocalCache(); 
   }
 
-  // Fix: Added updateWarehouse for basic CRUD
   async updateWarehouse(id: string, name: string) {
       const w = this.warehouses.find(x => x.id === id);
       if (w) {
@@ -391,7 +469,6 @@ class Database {
       }
   }
 
-  // Fix: Added createPurchaseInvoice to handle incoming stock
   async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean, docNo?: string, date?: string): Promise<{ success: boolean; message?: string }> {
     try {
       const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
@@ -409,7 +486,6 @@ class Database {
 
       if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(invoice);
 
-      // Fix: Changed forEach to for-of loop to allow using await correctly within the async function.
       for (const item of items) {
         let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
         if (batch) {
@@ -458,7 +534,6 @@ class Database {
     }
   }
 
-  // Fix: Added deletePurchaseInvoice to reverse purchase effects
   async deletePurchaseInvoice(id: string) {
     const inv = this.purchaseInvoices.find(i => i.id === id);
     if (!inv) return;
@@ -476,7 +551,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // Fix: Added representative management methods
   async updateRepresentative(id: string, data: any) {
     const rep = this.representatives.find(r => r.id === id);
     if (rep) {
@@ -499,7 +573,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // Fix: Added stock take and adjustment methods
   async submitStockTake(adjustments: any[]) {
       const pAds = adjustments.map(a => ({
           ...a,
@@ -540,7 +613,6 @@ class Database {
       return false;
   }
 
-  // Fix: Added purchase order management
   async createPurchaseOrder(supplier_id: string, items: any[]) {
       const order: PurchaseOrder = {
           id: Date.now().toString(),
@@ -565,7 +637,6 @@ class Database {
       }
   }
 
-  // Fix: Added daily summary and closing methods
   getDailySummary(date: string) {
       const invoices = this.invoices.filter(i => i.date.startsWith(date) && i.type === 'SALE');
       const pInvoices = this.purchaseInvoices.filter(i => i.date.startsWith(date) && i.type === 'PURCHASE');
@@ -594,7 +665,6 @@ class Database {
       return true;
   }
 
-  // Fix: Added sequence generators and categories helpers
   getNextTransactionRef(type: CashTransactionType) {
       return `${type === 'RECEIPT' ? 'REC' : 'EXP'}-${Date.now().toString().slice(-6)}`;
   }
@@ -606,7 +676,6 @@ class Database {
       }
   }
 
-  // Fix: Added danger zone data clearing methods
   async clearAllSales() {
     this.invoices = [];
     this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'CUSTOMER_PAYMENT');
@@ -662,7 +731,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // Fix: Added inventory analysis reports
   getABCAnalysis() {
     const productRevenues: Record<string, number> = {};
     this.invoices.filter(i => i.type === 'SALE').forEach(inv => {
@@ -699,7 +767,6 @@ class Database {
       const latestCost = latestBatch?.purchase_price || p.purchase_price || 0;
       const wac = pBatches.length > 0 ? (pBatches.reduce((sum, b) => sum + (b.quantity * b.purchase_price), 0) / Math.max(1, totalQty)) : latestCost;
       
-      // Calculate turnover (Sales in last 30 days / Avg Inventory)
       const now = new Date();
       const thirtyDaysAgo = new Date(new Date().setDate(now.getDate() - 30)).toISOString();
       const salesQty = this.invoices.filter(i => i.date >= thirtyDaysAgo && i.type === 'SALE').reduce((sum, inv) => {
