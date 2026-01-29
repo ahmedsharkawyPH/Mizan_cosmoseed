@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
@@ -34,6 +34,10 @@ export default function NewInvoice() {
   
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [showLastCost, setShowLastCost] = useState(false);
+
+  // States for price warning
+  const [showPriceWarning, setShowPriceWarning] = useState(false);
+  const [confirmationInput, setConfirmationInput] = useState('');
 
   // States for in-table editing
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
@@ -180,6 +184,20 @@ export default function NewInvoice() {
   const addItemToCart = () => {
     if (!currentProduct) return;
     const finalPrice = invoiceConfig.enableManualPrice ? Number(manualPrice) : Number(currentSellingPrice);
+    
+    // Check for Price Warning
+    if (!isReturnMode && finalPrice < lastPurchasePrice) {
+        setShowPriceWarning(true);
+        setConfirmationInput('');
+        return;
+    }
+
+    proceedToAddItem();
+  };
+
+  const proceedToAddItem = () => {
+    if (!currentProduct) return;
+    const finalPrice = invoiceConfig.enableManualPrice ? Number(manualPrice) : Number(currentSellingPrice);
     const finalDiscount = invoiceConfig.enableDiscount ? Number(discount) : 0;
     const newItem: CartItem = {
       product: currentProduct,
@@ -196,6 +214,7 @@ export default function NewInvoice() {
     setDiscount(0);
     setManualPrice(0);
     setShowLastCost(false);
+    setShowPriceWarning(false);
     setTimeout(() => productRef.current?.focus(), 50);
   };
 
@@ -499,6 +518,51 @@ export default function NewInvoice() {
                       <div className="flex items-center justify-between p-4 border border-slate-100 rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors group">
                         <label htmlFor="set_discount_enabled" className="text-sm font-bold text-slate-700 flex-1 cursor-pointer">{t('inv.discount')}</label>
                         <input id="set_discount_enabled" name="setting_discount" type="checkbox" className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 cursor-pointer" checked={invoiceConfig.enableDiscount} onChange={e => setInvoiceConfig({...invoiceConfig, enableDiscount: e.target.checked})} />
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- Price Warning Persistent Modal --- */}
+      {showPriceWarning && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-red-950/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+              <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden border-4 border-red-500 animate-in zoom-in duration-300">
+                  <div className="bg-red-500 p-8 text-center text-white">
+                      <AlertTriangle className="w-16 h-16 mx-auto mb-4 animate-bounce" />
+                      <h2 className="text-2xl font-black mb-2">تحذير: بيع بأقل من التكلفة!</h2>
+                      <p className="text-red-100 font-bold">
+                          سعر البيع المحدد ({manualPrice} {currency}) أقل من سعر التكلفة ({lastPurchasePrice} {currency}).
+                      </p>
+                  </div>
+                  
+                  <div className="p-8 space-y-6">
+                      <div className="text-center space-y-2">
+                          <p className="text-slate-600 font-bold">للمتابعة بهذا السعر، يرجى كتابة كلمة <span className="text-red-600 font-black underline">موافق</span> في الحقل أدناه:</p>
+                          <input 
+                            type="text" 
+                            className="w-full border-2 border-slate-200 p-4 rounded-2xl text-center font-black text-xl focus:border-red-500 focus:ring-4 focus:ring-red-50 outline-none transition-all"
+                            placeholder="اكتب موافق هنا..."
+                            value={confirmationInput}
+                            onChange={(e) => setConfirmationInput(e.target.value)}
+                            autoFocus
+                          />
+                      </div>
+
+                      <div className="flex gap-4">
+                          <button 
+                            onClick={() => setShowPriceWarning(false)} 
+                            className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black hover:bg-slate-200 transition-all"
+                          >
+                              تراجع (تعديل السعر)
+                          </button>
+                          <button 
+                            onClick={proceedToAddItem}
+                            disabled={confirmationInput !== 'موافق'}
+                            className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black shadow-xl shadow-red-200 hover:bg-red-700 transition-all disabled:opacity-20 disabled:shadow-none"
+                          >
+                              تأكيد الإضافة
+                          </button>
                       </div>
                   </div>
               </div>
