@@ -35,8 +35,10 @@ export default function NewInvoice() {
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [showLastCost, setShowLastCost] = useState(false);
 
+  // States for in-table editing
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [tempQty, setTempQty] = useState<number>(0);
+  const [editingField, setEditingField] = useState<'qty' | 'price' | null>(null);
+  const [tempVal, setTempVal] = useState<number>(0);
 
   const [showSettings, setShowSettings] = useState(false);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceSettings>(() => {
@@ -100,7 +102,6 @@ export default function NewInvoice() {
     customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })), 
   [customers]);
 
-  // تحديث قائمة الأصناف لتشمل السعر والكمية في البحث
   const productOptions = useMemo(() => 
     products.map(p => {
         const batchInWarehouse = p.batches.find(b => b.warehouse_id === selectedWarehouse);
@@ -198,11 +199,16 @@ export default function NewInvoice() {
     setTimeout(() => productRef.current?.focus(), 50);
   };
 
-  const updateCartItemQty = (idx: number, newQty: number) => {
+  const updateCartItemValue = (idx: number, field: 'qty' | 'price', newVal: number) => {
     const newCart = [...cart];
-    newCart[idx] = { ...newCart[idx], quantity: newQty };
+    if (field === 'qty') {
+        newCart[idx] = { ...newCart[idx], quantity: newVal };
+    } else {
+        newCart[idx] = { ...newCart[idx], unit_price: newVal };
+    }
     setCart(newCart);
     setEditingIdx(null);
+    setEditingField(null);
     setTimeout(() => productRef.current?.focus(), 50);
   };
 
@@ -389,28 +395,49 @@ export default function NewInvoice() {
                       <td className="px-4 py-3 text-slate-400">{idx + 1}</td>
                       <td className="px-4 py-3 font-bold text-slate-800">{item.product.name}</td>
                       <td className="px-4 py-3 text-center">
-                        {editingIdx === idx ? (
+                        {editingIdx === idx && editingField === 'qty' ? (
                           <input 
                             id={`inv_editing_qty_${idx}`}
                             name={`editing_qty_${idx}`}
                             autoFocus
                             type="number"
                             className="w-20 border-2 border-blue-500 rounded p-1 text-center font-bold"
-                            value={tempQty}
-                            onChange={(e) => setTempQty(parseInt(e.target.value) || 0)}
-                            onBlur={() => setEditingIdx(null)}
+                            value={tempVal}
+                            onChange={(e) => setTempVal(parseInt(e.target.value) || 0)}
+                            onBlur={() => { setEditingIdx(null); setEditingField(null); }}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') updateCartItemQty(idx, tempQty);
-                              if (e.key === 'Escape') setEditingIdx(null);
+                              if (e.key === 'Enter') updateCartItemValue(idx, 'qty', tempVal);
+                              if (e.key === 'Escape') { setEditingIdx(null); setEditingField(null); }
                             }}
                           />
                         ) : (
-                          <button id={`btn_edit_qty_${idx}`} name={`btn_edit_qty_${idx}`} onClick={() => { setEditingIdx(idx); setTempQty(item.quantity); }} className="font-bold text-slate-700 hover:text-blue-600 transition-colors px-2 py-1 rounded hover:bg-blue-50">
+                          <button id={`btn_edit_qty_${idx}`} name={`btn_edit_qty_${idx}`} onClick={() => { setEditingIdx(idx); setEditingField('qty'); setTempVal(item.quantity); }} className="font-bold text-slate-700 hover:text-blue-600 transition-colors px-2 py-1 rounded hover:bg-blue-50">
                             {item.quantity}{item.bonus_quantity > 0 && <span className="text-xs text-green-600 ml-1">+{item.bonus_quantity}</span>}
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-center text-slate-600">{currency}{price}</td>
+                      <td className="px-4 py-3 text-center">
+                        {editingIdx === idx && editingField === 'price' ? (
+                           <input 
+                             id={`inv_editing_price_${idx}`}
+                             name={`editing_price_${idx}`}
+                             autoFocus
+                             type="number"
+                             className="w-24 border-2 border-orange-500 rounded p-1 text-center font-bold text-orange-700"
+                             value={tempVal}
+                             onChange={(e) => setTempVal(parseFloat(e.target.value) || 0)}
+                             onBlur={() => { setEditingIdx(null); setEditingField(null); }}
+                             onKeyDown={(e) => {
+                               if (e.key === 'Enter') updateCartItemValue(idx, 'price', tempVal);
+                               if (e.key === 'Escape') { setEditingIdx(null); setEditingField(null); }
+                             }}
+                           />
+                        ) : (
+                           <button id={`btn_edit_price_${idx}`} name={`btn_edit_price_${idx}`} onClick={() => { setEditingIdx(idx); setEditingField('price'); setTempVal(price); }} className="font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded transition-colors">
+                              {currency}{price.toLocaleString()}
+                           </button>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-left font-bold text-slate-900">{currency}{total.toFixed(2)}</td>
                       <td className="px-4 py-3 text-center"><button id={`btn_remove_item_${idx}`} name={`btn_remove_item_${idx}`} onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 transition-colors p-1"><Trash2 className="w-4 h-4" /></button></td>
                     </tr>
