@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseItem, PurchaseInvoice as IPurchaseInvoice } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock, History, Truck } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 // @ts-ignore
@@ -67,14 +67,14 @@ export default function PurchaseInvoice({ type }: Props) {
   const lastPurchasesIntelligence = useMemo(() => {
     if (!selProd) return [];
     const allInvoices = db.getPurchaseInvoices();
-    const history: { price: number, supplierName: string, date: string }[] = [];
+    const historyData: { price: number, supplierName: string, date: string }[] = [];
 
     allInvoices.forEach(inv => {
         if (inv.type === 'PURCHASE') {
             const item = inv.items.find(i => i.product_id === selProd);
             if (item) {
                 const supplier = suppliers.find(s => s.id === inv.supplier_id);
-                history.push({
+                historyData.push({
                     price: item.cost_price,
                     supplierName: supplier?.name || 'غير معروف',
                     date: inv.date
@@ -83,7 +83,7 @@ export default function PurchaseInvoice({ type }: Props) {
         }
     });
 
-    return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
+    return historyData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
   }, [selProd, suppliers]);
 
   const handleCostChange = (val: number) => {
@@ -323,18 +323,28 @@ export default function PurchaseInvoice({ type }: Props) {
                       className="w-full"
                   />
 
-                  {/* شريط ذكاء الأسعار - يعرض آخر 3 أسعار شراء */}
+                  {/* ذكاء الأسعار - يعرض آخر 3 أسعار شراء على شكل بطاقات */}
                   {selProd && lastPurchasesIntelligence.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2 mt-2 p-3 bg-blue-50/50 rounded-xl border border-blue-100 animate-in fade-in slide-in-from-top-1">
-                          <span className="text-[10px] font-black text-blue-600 uppercase flex items-center gap-1 shrink-0">
-                              <Clock className="w-3 h-3" /> سجل الأسعار:
-                          </span>
-                          <div className="flex flex-wrap gap-2">
+                      <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                          <div className="flex items-center gap-2 mb-2 text-blue-600">
+                              <History className="w-4 h-4" />
+                              <span className="text-[10px] font-black uppercase tracking-tight">سجل المشتريات السابقة (آخر 3 أسعار)</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                               {lastPurchasesIntelligence.map((p, idx) => (
-                                  <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-blue-100 rounded-lg shadow-sm">
-                                      <span className="text-xs font-black text-blue-800">{currency}{p.price.toLocaleString()}</span>
-                                      <span className="text-[9px] font-bold text-slate-400 border-r pr-1.5 mr-0.5">{p.supplierName}</span>
-                                      <span className="text-[8px] text-slate-300 font-mono">{new Date(p.date).toLocaleDateString('ar-EG')}</span>
+                                  <div key={idx} className="bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 shadow-sm hover:border-blue-200 hover:bg-white transition-all group">
+                                      <div className="flex justify-between items-start mb-2">
+                                          <div className="text-xl font-black text-blue-700">{currency}{p.price.toLocaleString()}</div>
+                                          <div className="bg-slate-200 text-slate-500 text-[8px] px-1.5 py-0.5 rounded font-mono group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
+                                              {new Date(p.date).toLocaleDateString('ar-EG')}
+                                          </div>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 truncate">
+                                          <div className="p-1 bg-slate-200 rounded group-hover:bg-blue-50 transition-colors">
+                                            <Truck className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
+                                          </div>
+                                          {p.supplierName}
+                                      </div>
                                   </div>
                               ))}
                           </div>
