@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseItem, PurchaseInvoice as IPurchaseInvoice } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 // @ts-ignore
@@ -49,7 +49,6 @@ export default function PurchaseInvoice({ type }: Props) {
     const def = warehouses.find(w => w.is_default);
     if(def) setSelectedWarehouse(def.id);
 
-    // التحميل في حالة التعديل
     if (id) {
         const inv = db.getPurchaseInvoices().find(i => i.id === id);
         if (inv) {
@@ -63,6 +62,29 @@ export default function PurchaseInvoice({ type }: Props) {
         }
     }
   }, [id, warehouses]);
+
+  // منطق جلب آخر 3 أسعار شراء للصنف المختار
+  const lastPurchasesIntelligence = useMemo(() => {
+    if (!selProd) return [];
+    const allInvoices = db.getPurchaseInvoices();
+    const history: { price: number, supplierName: string, date: string }[] = [];
+
+    allInvoices.forEach(inv => {
+        if (inv.type === 'PURCHASE') {
+            const item = inv.items.find(i => i.product_id === selProd);
+            if (item) {
+                const supplier = suppliers.find(s => s.id === inv.supplier_id);
+                history.push({
+                    price: item.cost_price,
+                    supplierName: supplier?.name || 'غير معروف',
+                    date: inv.date
+                });
+            }
+        }
+    });
+
+    return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
+  }, [selProd, suppliers]);
 
   const handleCostChange = (val: number) => {
     setCost(val);
@@ -189,8 +211,6 @@ export default function PurchaseInvoice({ type }: Props) {
     }
     
     if (id) {
-        // في حالة التعديل نقوم بحذف القديم أولاً ثم إنشاء الجديد
-        // لضمان إعادة ضبط المخازن والأرصدة بشكل صحيح
         await db.deletePurchaseInvoice(id);
     }
     
@@ -218,7 +238,6 @@ export default function PurchaseInvoice({ type }: Props) {
 
       <div className="flex flex-col xl:flex-row gap-6">
         <div className="flex-1 space-y-6">
-          {/* Header Info */}
           <div className="bg-white p-6 rounded-2xl shadow-card border border-slate-100">
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
                 <div className="md:col-span-5">
@@ -270,7 +289,6 @@ export default function PurchaseInvoice({ type }: Props) {
             </div>
           </div>
 
-          {/* Item Input Section */}
           <div className={`bg-white p-6 rounded-2xl shadow-card border-2 transition-all ${editingIndex !== null ? 'border-orange-400 ring-4 ring-orange-50' : 'border-slate-100'} space-y-6`}>
             <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="font-black text-slate-700 flex items-center gap-2">
@@ -304,6 +322,24 @@ export default function PurchaseInvoice({ type }: Props) {
                       disabled={!selectedSupplier}
                       className="w-full"
                   />
+
+                  {/* شريط ذكاء الأسعار - يعرض آخر 3 أسعار شراء */}
+                  {selProd && lastPurchasesIntelligence.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 mt-2 p-3 bg-blue-50/50 rounded-xl border border-blue-100 animate-in fade-in slide-in-from-top-1">
+                          <span className="text-[10px] font-black text-blue-600 uppercase flex items-center gap-1 shrink-0">
+                              <Clock className="w-3 h-3" /> سجل الأسعار:
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                              {lastPurchasesIntelligence.map((p, idx) => (
+                                  <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-blue-100 rounded-lg shadow-sm">
+                                      <span className="text-xs font-black text-blue-800">{currency}{p.price.toLocaleString()}</span>
+                                      <span className="text-[9px] font-bold text-slate-400 border-r pr-1.5 mr-0.5">{p.supplierName}</span>
+                                      <span className="text-[8px] text-slate-300 font-mono">{new Date(p.date).toLocaleDateString('ar-EG')}</span>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+                  )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
@@ -313,7 +349,7 @@ export default function PurchaseInvoice({ type }: Props) {
                   </div>
                   <div className="md:col-span-3 lg:col-span-2">
                       <label className="text-[10px] font-black text-blue-500 uppercase mb-1 block">ربح %</label>
-                      <input ref={marginRef} type="number" className="w-full border-2 border-blue-50 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:border-blue-500 transition-all bg-blue-50/20" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} disabled={!selProd} placeholder="0%" />
+                      <input ref={marginRef} type="number" className="w-full border border-blue-200 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => setMargin(Number(e.target.value))} />
                   </div>
                   <div className="md:col-span-3 lg:col-span-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('stock.qty')}</label>
@@ -333,7 +369,6 @@ export default function PurchaseInvoice({ type }: Props) {
             </div>
           </div>
 
-          {/* Cart Table */}
           <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
              <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-2 font-black text-slate-600">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" /> الأصناف المضافة للجدول
@@ -386,7 +421,6 @@ export default function PurchaseInvoice({ type }: Props) {
           </div>
         </div>
 
-        {/* Sidebar Summary */}
         <div className="w-full xl:w-96 bg-white p-8 rounded-2xl shadow-card border border-slate-100 h-fit space-y-6 sticky top-6">
             <h3 className="font-black text-slate-800 text-lg border-b pb-4 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-blue-500" /> ملخص الفاتورة
