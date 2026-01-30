@@ -4,11 +4,14 @@ import { db } from '../services/db';
 import { Supplier, PurchaseInvoice, PurchaseItem } from '../types';
 import { Search, RotateCcw, Truck, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle, Loader2, Filter } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { t } from '../utils/t';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
 export default function PurchaseReturn() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState<string>('');
   const [supplierInvoices, setSupplierInvoices] = useState<PurchaseInvoice[]>([]);
@@ -16,21 +19,28 @@ export default function PurchaseReturn() {
   const [returnItems, setReturnItems] = useState<PurchaseItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cashRefund, setCashRefund] = useState(0);
-  const [invoiceSearch, setInvoiceSearch] = useState(''); // حالة البحث الجديدة
+  const [invoiceSearch, setInvoiceSearch] = useState(''); 
 
   const currency = db.getSettings().currency;
 
   useEffect(() => {
     setSuppliers(db.getSuppliers());
-  }, []);
+
+    // Handle Preselected Invoice from Conversion Feature
+    if (location.state && (location.state as any).preselectInvoice) {
+        const inv = (location.state as any).preselectInvoice as PurchaseInvoice;
+        setSelectedSupplier(inv.supplier_id);
+        handleSelectInvoice(inv);
+        toast.success("تم تحميل الفاتورة لعمل المرتجع");
+    }
+  }, [location]);
 
   useEffect(() => {
     if (selectedSupplier) {
       const invoices = db.getPurchaseInvoices().filter(inv => inv.supplier_id === selectedSupplier && inv.type === 'PURCHASE');
       setSupplierInvoices(invoices);
-      setSelectedInvoice(null);
-      setReturnItems([]);
-      setInvoiceSearch(''); // تصفية البحث عند تغيير المورد
+      if (!selectedInvoice) setReturnItems([]);
+      setInvoiceSearch(''); 
     }
   }, [selectedSupplier]);
 
@@ -38,16 +48,12 @@ export default function PurchaseReturn() {
     suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone })), 
   [suppliers]);
 
-  // منطق تصفية فواتير المشتريات بناءً على رقم الفاتورة أو صنف بداخلها
   const filteredInvoices = useMemo(() => {
     if (!invoiceSearch.trim()) return supplierInvoices;
     
     const query = invoiceSearch.toLowerCase();
     return supplierInvoices.filter(inv => {
-      // 1. البحث برقم الفاتورة
       if (inv.invoice_number.includes(query)) return true;
-      
-      // 2. البحث باسم أو كود منتج داخل الفاتورة
       return inv.items.some(item => {
         const prod = db.getProductsWithBatches().find(p => p.id === item.product_id);
         return prod?.name.toLowerCase().includes(query) || prod?.code?.toLowerCase().includes(query);
@@ -57,7 +63,6 @@ export default function PurchaseReturn() {
 
   const handleSelectInvoice = (inv: PurchaseInvoice) => {
     setSelectedInvoice(inv);
-    // Initialize return items with 0 quantity initially
     const items = inv.items.map(item => ({
       ...item,
       quantity: 0
@@ -103,6 +108,7 @@ export default function PurchaseReturn() {
         setSelectedInvoice(null);
         setReturnItems([]);
         setCashRefund(0);
+        navigate('/purchases/list');
       } else {
         toast.error(result.message);
       }
@@ -131,10 +137,12 @@ export default function PurchaseReturn() {
           <RotateCcw className="w-8 h-8 text-red-600" />
           مرتجع مشتريات (من فاتورة سابقة)
         </h1>
+        <button onClick={() => navigate('/purchases/list')} className="p-2 hover:bg-white rounded-full transition-all text-slate-400">
+            <ArrowLeft className="w-6 h-6" />
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Step 1: Select Supplier & Invoice */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100">
             <label className="block text-sm font-black text-slate-500 uppercase mb-3 flex items-center gap-2">
@@ -154,7 +162,6 @@ export default function PurchaseReturn() {
                 <FileText className="w-4 h-4 text-red-500" /> الخطوة 2: اختر فاتورة الشراء
               </label>
 
-              {/* حقل البحث داخل فواتير المورد */}
               <div className="relative mb-4">
                 <Search className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
                 <input 
@@ -204,7 +211,6 @@ export default function PurchaseReturn() {
           )}
         </div>
 
-        {/* Step 2: Select Items to Return */}
         <div className="lg:col-span-2">
           {selectedInvoice ? (
             <div className="bg-white rounded-3xl shadow-card border border-slate-100 overflow-hidden animate-in zoom-in duration-300">

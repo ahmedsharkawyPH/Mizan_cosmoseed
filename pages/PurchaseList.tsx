@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { PurchaseInvoice } from '../types';
 import { t } from '../utils/t';
-import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2 } from 'lucide-react';
+import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2, RefreshCcw, ShoppingCart, RotateCcw, AlertCircle, ArrowRightLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 // @ts-ignore
 import toast from 'react-hot-toast';
@@ -23,8 +23,9 @@ export default function PurchaseList() {
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPage, setJumpPage] = useState('');
 
-  // Detail Modal
+  // Modals State
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
+  const [conversionInvoice, setConversionInvoice] = useState<PurchaseInvoice | null>(null);
 
   const loadInvoices = () => {
     setInvoices(db.getPurchaseInvoices());
@@ -78,6 +79,26 @@ export default function PurchaseList() {
   const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || 'غير معروف';
   const getProductName = (id: string) => products.find(p => p.id === id)?.name || 'صنف غير معروف';
 
+  // Conversion Actions
+  const goToReturn = () => {
+      if (!conversionInvoice) return;
+      navigate('/purchases/return-from-invoice', { state: { preselectInvoice: conversionInvoice } });
+      setConversionInvoice(null);
+  };
+
+  const copyToSales = () => {
+      if (!conversionInvoice) return;
+      const salesItems = conversionInvoice.items.map(item => ({
+          product: products.find(p => p.id === item.product_id),
+          quantity: item.quantity,
+          unit_price: item.selling_price,
+          discount_percentage: 0,
+          bonus_quantity: item.bonus_quantity || 0
+      }));
+      navigate('/invoice/new', { state: { prefillItems: salesItems } });
+      setConversionInvoice(null);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -113,7 +134,7 @@ export default function PurchaseList() {
 
       <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
-            <table className="w-full text-sm text-right min-w-[800px]">
+            <table className="w-full text-sm text-right min-w-[900px]">
                 <thead className="bg-slate-50/50 text-slate-500 uppercase text-[10px] border-b border-slate-100 font-black">
                     <tr>
                         <th className="px-6 py-4">رقم الفاتورة</th>
@@ -140,9 +161,18 @@ export default function PurchaseList() {
                             <td className="px-6 py-4 text-left font-black text-slate-900">{currency}{inv.total_amount.toLocaleString()}</td>
                             <td className="px-6 py-4 text-center">
                                 <div className="flex justify-center gap-2">
-                                    <button onClick={() => setSelectedInvoice(inv)} className="p-2 border border-slate-100 rounded-lg hover:bg-white text-slate-500 hover:text-blue-600 shadow-sm transition-all" title="معاينة"><Eye className="w-4 h-4" /></button>
-                                    <button onClick={() => navigate(`/purchases/edit/${inv.id}`)} className="p-2 border border-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white shadow-sm transition-all" title="تعديل"><Edit className="w-4 h-4" /></button>
-                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-2 border border-slate-100 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 shadow-sm transition-all" title="حذف"><Trash2 className="w-4 h-4" /></button>
+                                    <button onClick={() => setConversionInvoice(inv)} className="p-2 border border-slate-100 rounded-lg bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm transition-all" title="تحويل الفاتورة">
+                                        <ArrowRightLeft className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => setSelectedInvoice(inv)} className="p-2 border border-slate-100 rounded-lg hover:bg-white text-slate-500 hover:text-blue-600 shadow-sm transition-all" title="معاينة">
+                                        <Eye className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => navigate(`/purchases/edit/${inv.id}`)} className="p-2 border border-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white shadow-sm transition-all" title="تعديل">
+                                        <Edit className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-2 border border-slate-100 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 shadow-sm transition-all" title="حذف">
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -216,6 +246,75 @@ export default function PurchaseList() {
             </div>
         )}
       </div>
+
+      {/* --- Conversion Smart Modal --- */}
+      {conversionInvoice && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 animate-in zoom-in duration-200">
+                  <div className="p-8 bg-indigo-600 text-white flex justify-between items-center">
+                      <div>
+                          <h3 className="text-xl font-black flex items-center gap-3">
+                              <ArrowRightLeft className="w-6 h-6" /> تحويل فاتورة المشتريات
+                          </h3>
+                          <p className="text-xs text-indigo-100 font-bold mt-1">المرجع: {conversionInvoice.invoice_number} | المورد: {getSupplierName(conversionInvoice.supplier_id)}</p>
+                      </div>
+                      <button onClick={() => setConversionInvoice(null)} className="p-2 hover:bg-white/20 rounded-full transition-colors">
+                          <X className="w-6 h-6" />
+                      </button>
+                  </div>
+
+                  <div className="p-8 space-y-6">
+                      <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100">
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest flex items-center gap-2">
+                              <ShoppingCart className="w-3 h-3" /> ملخص أصناف الفاتورة
+                          </h4>
+                          <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
+                              {conversionInvoice.items.map((item, i) => (
+                                  <div key={i} className="flex justify-between items-center text-xs font-bold text-slate-600">
+                                      <span className="truncate max-w-[180px]">{getProductName(item.product_id)}</span>
+                                      <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-100 text-indigo-600">{item.quantity} قطعة</span>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4">
+                          <button 
+                            onClick={goToReturn}
+                            className="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-100 hover:border-red-500 hover:bg-red-50 transition-all group text-right"
+                          >
+                              <div className="p-3 rounded-xl bg-red-100 text-red-600 group-hover:scale-110 transition-transform">
+                                  <RotateCcw className="w-6 h-6" />
+                              </div>
+                              <div>
+                                  <div className="font-black text-slate-800">تحويل لمرتجع مشتريات</div>
+                                  <p className="text-[10px] text-slate-400 font-bold">يخصم الكميات من المخزون ويخفض رصيد المورد</p>
+                              </div>
+                          </button>
+
+                          <button 
+                            onClick={copyToSales}
+                            className="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-100 hover:border-blue-600 hover:bg-blue-50 transition-all group text-right"
+                          >
+                              <div className="p-3 rounded-xl bg-blue-100 text-blue-600 group-hover:scale-110 transition-transform">
+                                  <ShoppingCart className="w-6 h-6" />
+                              </div>
+                              <div>
+                                  <div className="font-black text-slate-800">نسخ لفاتورة مبيعات جديدة</div>
+                                  <p className="text-[10px] text-slate-400 font-bold">يفتح فاتورة مبيعات محملة بالأصناف بأسعار البيع</p>
+                              </div>
+                          </button>
+                      </div>
+                  </div>
+
+                  <div className="p-6 bg-slate-50 border-t flex justify-center">
+                      <p className="text-[10px] text-slate-400 font-bold flex items-center gap-2">
+                          <AlertCircle className="w-3 h-3" /> ميزة التحويل الذكي تحافظ على دقة البيانات وتوفر وقت الإدخال
+                      </p>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* Detail Modal */}
       {selectedInvoice && (

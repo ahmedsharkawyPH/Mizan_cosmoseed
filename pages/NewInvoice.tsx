@@ -3,8 +3,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks } from 'lucide-react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 // @ts-ignore
@@ -18,6 +18,7 @@ interface InvoiceSettings {
 
 export default function NewInvoice() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<ProductWithBatches[]>([]);
@@ -47,7 +48,7 @@ export default function NewInvoice() {
   const [showSettings, setShowSettings] = useState(false);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceSettings>(() => {
       const saved = localStorage.getItem('invoice_settings');
-      return saved ? JSON.parse(saved) : { enableManualPrice: false, enableDiscount: true, showCostInfo: false };
+      return saved ? JSON.parse(saved) : { enableManualPrice: true, enableDiscount: true, showCostInfo: false };
   });
 
   useEffect(() => {
@@ -77,6 +78,12 @@ export default function NewInvoice() {
     const def = db.getWarehouses().find(w => w.is_default);
     if(def) setSelectedWarehouse(def.id);
     
+    // Handle Prefilled Items (From Conversion Feature)
+    if (location.state && (location.state as any).prefillItems) {
+        setCart((location.state as any).prefillItems);
+        toast.success("تم استيراد الأصناف من فاتورة المشتريات");
+    }
+
     if (id) {
       const invoices = db.getInvoices();
       const invoice = invoices.find(i => i.id === id);
@@ -89,7 +96,7 @@ export default function NewInvoice() {
     } else {
         setTimeout(() => customerRef.current?.focus(), 100);
     }
-  }, [id]);
+  }, [id, location]);
 
   useEffect(() => {
     const checkInterval = setInterval(() => {
