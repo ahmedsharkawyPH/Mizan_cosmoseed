@@ -24,6 +24,7 @@ export default function PurchaseOrders() {
   
   const [selProd, setSelProd] = useState('');
   const [qty, setQty] = useState(1);
+  const [bonus, setBonus] = useState(0); 
   const [cost, setCost] = useState(0); 
   const [margin, setMargin] = useState(0); 
   const [sellingPrice, setSellingPrice] = useState(0); 
@@ -113,11 +114,20 @@ export default function PurchaseOrders() {
   }, [selProd, products]);
 
   const handleAddItem = () => {
-      if (!selProd || qty <= 0) return;
+      if (!selProd || (qty <= 0 && bonus <= 0)) return;
       const p = products.find(x => x.id === selProd);
       if (!p) return;
-      setCart([...cart, { product: p, quantity: qty, cost_price: cost, selling_price: sellingPrice, last_cost: prodStats?.lastPrices[0]?.price || 0, current_stock: prodStats?.currentStock || 0, monthly_avg: prodStats?.monthlyAvg || 0 }]);
-      setSelProd(''); setQty(1); setCost(0); setSellingPrice(0); setMargin(0); setProdStats(null);
+      setCart([...cart, { 
+        product: p, 
+        quantity: qty, 
+        bonus_quantity: bonus,
+        cost_price: cost, 
+        selling_price: sellingPrice, 
+        last_cost: prodStats?.lastPrices[0]?.price || 0, 
+        current_stock: prodStats?.currentStock || 0, 
+        monthly_avg: prodStats?.monthlyAvg || 0 
+      }]);
+      setSelProd(''); setQty(1); setBonus(0); setCost(0); setSellingPrice(0); setMargin(0); setProdStats(null);
       toast.success("تمت إضافة الصنف للطلب");
   };
 
@@ -125,7 +135,16 @@ export default function PurchaseOrders() {
 
   const handleSaveOrder = async () => {
       if (!selectedSupplier || cart.length === 0) return;
-      const itemsPayload = cart.map(item => ({ product_id: item.product.id, quantity: item.quantity, cost_price: item.cost_price, selling_price: item.selling_price, last_cost: item.last_cost, current_stock: item.current_stock, monthly_avg: item.monthly_avg }));
+      const itemsPayload = cart.map(item => ({ 
+        product_id: item.product.id, 
+        quantity: item.quantity, 
+        bonus_quantity: item.bonus_quantity,
+        cost_price: item.cost_price, 
+        selling_price: item.selling_price, 
+        last_cost: item.last_cost, 
+        current_stock: item.current_stock, 
+        monthly_avg: item.monthly_avg 
+      }));
       const res = await db.createPurchaseOrder(selectedSupplier, itemsPayload);
       if (res.success) { 
           toast.success("تم حفظ طلب الشراء بنجاح");
@@ -141,7 +160,8 @@ export default function PurchaseOrders() {
     setConvOrder(order);
     const mappedItems = order.items.map(item => ({
         ...item,
-        productName: products.find(p => p.id === item.product_id)?.name || 'صنف غير معروف'
+        productName: products.find(p => p.id === item.product_id)?.name || 'صنف غير معروف',
+        bonus_quantity: (item as any).bonus_quantity || 0 
     }));
     setConvItems(mappedItems);
     setConvDocNo('');
@@ -171,6 +191,7 @@ export default function PurchaseOrders() {
         warehouse_id: convWarehouse,
         batch_number: `BATCH-${Date.now().toString().slice(-4)}`,
         quantity: item.quantity,
+        bonus_quantity: item.bonus_quantity || 0, // Fix: Added missing bonus_quantity
         cost_price: item.cost_price,
         selling_price: item.selling_price || 0,
         expiry_date: '2099-12-31'
@@ -186,9 +207,8 @@ export default function PurchaseOrders() {
     } else {
         if (res.message === 'CONFLICT_DETECTED' && retry) {
             toast("حدث تعارض في رقم التسلسل، جاري التحديث التلقائي...");
-            // Force Sync and Retry once
             await db.syncFromCloud();
-            executeConversion(false); // Second attempt with fresh sync
+            executeConversion(false); 
         } else {
             toast.error(res.message === 'CONFLICT_DETECTED' ? "فشل الحفظ بسبب تعارض الرقم التسلسلي، يرجى المحاولة لاحقاً." : res.message);
         }
@@ -259,13 +279,17 @@ export default function PurchaseOrders() {
                             </div>
                             <div className="w-24">
                                 <label className="block text-[10px] font-black text-emerald-400 uppercase mb-1">سعر البيع</label>
-                                <input type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500" value={sellingPrice || ''} onChange={e => setSellingPrice(Number(e.target.value))} />
+                                <input type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:ring-2 focus:ring-blue-500" value={sellingPrice || ''} onChange={e => setSellingPrice(Number(e.target.value))} />
                             </div>
                             <div className="w-20">
                                 <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">الكمية</label>
                                 <input type="number" className="w-full border p-2.5 rounded-xl font-black text-center" value={qty || ''} onChange={e => setQty(Number(e.target.value))} min="1" />
                             </div>
-                            <button onClick={handleAddItem} disabled={!selProd || qty <= 0} className="bg-purple-600 text-white px-5 py-3 rounded-xl font-black hover:bg-purple-700 disabled:opacity-50 transition-all shadow-lg active:scale-95">
+                            <div className="w-20">
+                                <label className="block text-[10px] font-black text-orange-400 uppercase mb-1">بونص</label>
+                                <input type="number" className="w-full border border-orange-200 p-2.5 rounded-xl font-black text-center bg-orange-50/20" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} min="0" />
+                            </div>
+                            <button onClick={handleAddItem} disabled={!selProd || (qty <= 0 && bonus <= 0)} className="bg-purple-600 text-white px-5 py-3 rounded-xl font-black hover:bg-purple-700 disabled:opacity-50 transition-all shadow-lg active:scale-95">
                                 <Plus className="w-6 h-6" />
                             </button>
                         </div>
@@ -303,6 +327,7 @@ export default function PurchaseOrders() {
                                             <div className="text-[10px] text-blue-600 font-black mb-1 mt-1">تكلفة: {currency}{item.cost_price}</div>
                                             <div className="text-[10px] text-slate-400 flex gap-3 font-bold">
                                                 <span>الكمية: <b className="text-slate-700">{item.quantity}</b></span>
+                                                {item.bonus_quantity > 0 && <span className="text-orange-500">بونص: <b>{item.bonus_quantity}</b></span>}
                                                 <span className="text-emerald-600">البيع: {currency}{item.selling_price}</span>
                                             </div>
                                         </div>
@@ -452,6 +477,7 @@ export default function PurchaseOrders() {
                                         <tr>
                                             <th className="p-4">الصنف</th>
                                             <th className="p-4 text-center">الكمية</th>
+                                            <th className="p-4 text-center">البونص</th>
                                             <th className="p-4 text-center">سعر الشراء</th>
                                             <th className="p-4 text-center">سعر البيع</th>
                                             <th className="p-4 text-left">الإجمالي</th>
@@ -470,6 +496,14 @@ export default function PurchaseOrders() {
                                                         className="w-20 border border-slate-200 rounded-lg p-1.5 text-center font-black focus:ring-2 focus:ring-blue-500 outline-none"
                                                         value={item.quantity}
                                                         onChange={e => updateConvItem(idx, 'quantity', Number(e.target.value))}
+                                                    />
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    <input 
+                                                        type="number" 
+                                                        className="w-20 border border-slate-200 rounded-lg p-1.5 text-center font-black text-orange-600 focus:ring-2 focus:ring-orange-500 outline-none bg-orange-50/10"
+                                                        value={item.bonus_quantity}
+                                                        onChange={e => updateConvItem(idx, 'bonus_quantity', Number(e.target.value))}
                                                     />
                                                 </td>
                                                 <td className="p-4 text-center">
@@ -561,7 +595,7 @@ export default function PurchaseOrders() {
                             <button 
                                 onClick={() => executeConversion()}
                                 disabled={isSubmittingConv || convItems.length === 0}
-                                className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:bg-slate-200 disabled:shadow-none"
+                                className="w-full bg-slate-900 text-white py-5 rounded-[1.5rem] font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:bg-slate-200 disabled:shadow-none"
                             >
                                 {isSubmittingConv ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6 text-white" />}
                                 اعتماد تحويل الفاتورة
