@@ -45,7 +45,6 @@ const Inventory: React.FC = () => {
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
   
-  // States for Edit/ItemCard
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [viewingCardProduct, setViewingCardProduct] = useState<any | null>(null);
 
@@ -252,12 +251,17 @@ const Inventory: React.FC = () => {
       setIsExportModalOpen(false);
   };
 
+  /**
+   * دالة معالجة تصدير PDF المطورة
+   * تقوم بتقسيم البيانات إلى مجموعات (Chunks) وتصوير كل صفحة مستقلة لتجنب انهيار الذاكرة (Memory Crash)
+   * وتستخدم JPEG لضمان عدم حدوث خطأ Corruption
+   */
   const handleExportPdf = async () => {
     setIsPdfGenerating(true);
-    const toastId = toast.loading("جاري إنشاء تقرير PDF...");
+    const toastId = toast.loading("جاري تحضير تقرير PDF...");
     
-    // 1. جلب البيانات وفلترتها وترتيبها أبجدياً
-    let dataToPdf = products.filter(p => {
+    // 1. فلترة وترتيب البيانات
+    let allData = products.filter(p => {
         const pBatches = p.batches || [];
         const filteredBatches = pdfExportOptions.warehouseId === 'ALL' ? pBatches : pBatches.filter((b: any) => b.warehouse_id === pdfExportOptions.warehouseId);
         const totalQty = filteredBatches.reduce((s: number, b: any) => s + b.quantity, 0);
@@ -265,95 +269,101 @@ const Inventory: React.FC = () => {
         return true;
     });
 
-    // الترتيب الأبجدي حسب الاسم
-    dataToPdf.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    allData.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
 
-    if (dataToPdf.length === 0) {
-        toast.error("لا توجد بيانات مطابقة للخيارات المختارة", { id: toastId });
+    if (allData.length === 0) {
+        toast.error("لا توجد بيانات مطابقة", { id: toastId });
         setIsPdfGenerating(false);
         return;
     }
 
-    // 2. إنشاء حاوية مؤقتة للتقرير بنظام العمودين
-    const reportContainer = document.createElement('div');
-    reportContainer.style.width = '210mm'; 
-    reportContainer.style.padding = '10mm';
-    reportContainer.style.background = 'white';
-    reportContainer.style.direction = 'rtl';
-    reportContainer.style.fontFamily = 'Cairo, sans-serif';
+    // 2. إعدادات التقسيم
+    const itemsPerPage = 160; // 80 سطر في كل عمود (عمودين)
+    const chunks: any[][] = [];
+    for (let i = 0; i < allData.length; i += itemsPerPage) {
+        chunks.push(allData.slice(i, i + itemsPerPage));
+    }
+
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
     
-    // الهيدر
-    reportContainer.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
-            <div>
-                <h1 style="margin: 0; font-size: 20px; font-weight: 900;">${settings.companyName}</h1>
-                <p style="margin: 3px 0 0 0; font-size: 12px; color: #666;">تقرير قائمة الأسعار والمخزون (نظام العمودين)</p>
-            </div>
-            <div style="text-align: left;">
-                <p style="margin: 0; font-size: 10px;">التاريخ: ${new Date().toLocaleDateString('ar-EG')}</p>
-                <p style="margin: 3px 0 0 0; font-size: 9px; color: #999;">مخزن: ${pdfExportOptions.warehouseId === 'ALL' ? 'الكل' : warehouses.find(w => w.id === pdfExportOptions.warehouseId)?.name}</p>
-            </div>
-        </div>
-        
-        <div style="column-count: 2; column-gap: 20px; column-rule: 1px dashed #eee;">
-            <table style="width: 100%; border-collapse: collapse; page-break-inside: auto;">
-                <thead>
-                    <tr style="background: #f8fafc; border-bottom: 2px solid #333;">
-                        <th style="padding: 6px; text-align: right; font-size: 10px; border: 1px solid #ddd;">الصنف</th>
-                        <th style="padding: 6px; text-align: center; font-size: 10px; border: 1px solid #ddd; width: 60px;">السعر</th>
-                        <th style="padding: 6px; text-align: center; font-size: 10px; border: 1px solid #ddd; width: 50px;">الكود</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${dataToPdf.map((p) => `
-                        <tr style="border-bottom: 1px solid #eee; break-inside: avoid;">
-                            <td style="padding: 5px; font-size: 10px; font-weight: bold; border: 1px solid #f1f1f1;">${p.name}</td>
-                            <td style="padding: 5px; text-align: center; font-size: 10px; font-weight: 900; color: #2563eb; border: 1px solid #f1f1f1;">${p.selling_price?.toLocaleString()}</td>
-                            <td style="padding: 5px; text-align: center; font-size: 8px; color: #999; font-family: monospace; border: 1px solid #f1f1f1;">${p.code || '-'}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-
-        <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; text-align: center; font-size: 9px; color: #bbb;">
-            تم التوليد بواسطة Mizan Online Pro - إجمالي الأصناف: ${dataToPdf.length}
-        </div>
-    `;
-
-    document.body.appendChild(reportContainer);
-
     try {
-        const canvas = await html2canvas(reportContainer, { scale: 2, useCORS: true });
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        // التعامل مع الصفحات المتعددة إذا لزم الأمر
-        let heightLeft = pdfHeight;
-        let position = 0;
-        let pageHeight = pdf.internal.pageSize.getHeight();
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            
+            // تحديث التوست لإظهار التقدم
+            toast.loading(`جاري معالجة الصفحة ${i + 1} من ${chunks.length}...`, { id: toastId });
 
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
+            // إنشاء حاوية مؤقتة للصفحة الحالية
+            const pageDiv = document.createElement('div');
+            pageDiv.style.width = '210mm';
+            pageDiv.style.padding = '10mm';
+            pageDiv.style.background = 'white';
+            pageDiv.style.direction = 'rtl';
+            pageDiv.style.fontFamily = 'Cairo, sans-serif';
+            pageDiv.style.position = 'fixed';
+            pageDiv.style.top = '-10000px'; // بعيداً عن الشاشة
+            
+            pageDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 15px;">
+                    <div>
+                        <h1 style="margin: 0; font-size: 18px; font-weight: 900;">${settings.companyName}</h1>
+                        <p style="margin: 2px 0 0 0; font-size: 11px; color: #666;">تقرير الأسعار (نظام العمودين)</p>
+                    </div>
+                    <div style="text-align: left;">
+                        <p style="margin: 0; font-size: 9px;">تاريخ: ${new Date().toLocaleDateString('ar-EG')}</p>
+                        <p style="margin: 2px 0 0 0; font-size: 9px; color: #999;">صفحة ${i + 1} من ${chunks.length}</p>
+                    </div>
+                </div>
+                
+                <div style="column-count: 2; column-gap: 15px; column-rule: 1px dashed #ddd;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #f8fafc; border-bottom: 2px solid #333;">
+                                <th style="padding: 4px; text-align: right; font-size: 9px; border: 1px solid #ddd;">الصنف</th>
+                                <th style="padding: 4px; text-align: center; font-size: 9px; border: 1px solid #ddd; width: 55px;">السعر</th>
+                                <th style="padding: 4px; text-align: center; font-size: 9px; border: 1px solid #ddd; width: 45px;">الكود</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${chunk.map(p => `
+                                <tr style="border-bottom: 1px solid #eee; break-inside: avoid;">
+                                    <td style="padding: 4px; font-size: 9px; font-weight: bold; border: 1px solid #f9f9f9;">${p.name}</td>
+                                    <td style="padding: 4px; text-align: center; font-size: 9px; font-weight: 900; color: #2563eb; border: 1px solid #f9f9f9;">${p.selling_price?.toLocaleString()}</td>
+                                    <td style="padding: 4px; text-align: center; font-size: 7px; color: #aaa; font-family: monospace; border: 1px solid #f9f9f9;">${p.code || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
 
-        while (heightLeft >= 0) {
-            position = heightLeft - pdfHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-            heightLeft -= pageHeight;
+            document.body.appendChild(pageDiv);
+
+            // تحويل الصفحة إلى صورة (JPEG بدقة عالية)
+            const canvas = await html2canvas(pageDiv, { 
+                scale: 1.5, 
+                useCORS: true, 
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+            
+            const imgData = canvas.toDataURL('image/jpeg', 0.9); // استخدام JPEG
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+            if (i > 0) pdf.addPage();
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
+            document.body.removeChild(pageDiv); // حذف من DOM فوراً لتحرير الذاكرة
         }
-        
-        pdf.save(`Inventory_Condensed_${new Date().toISOString().split('T')[0]}.pdf`);
-        
-        toast.success("تم تصدير ملف PDF بنظام العمودين بنجاح", { id: toastId });
+
+        pdf.save(`Inventory_Pro_${new Date().toISOString().split('T')[0]}.pdf`);
+        toast.success("تم تصدير التقرير بنجاح", { id: toastId });
         setIsPdfModalOpen(false);
     } catch (err) {
-        console.error(err);
-        toast.error("حدث خطأ أثناء إنشاء الملف", { id: toastId });
+        console.error("PDF Export error:", err);
+        toast.error("فشل في إنشاء ملف PDF، ربما الذاكرة ممتلئة", { id: toastId });
     } finally {
-        document.body.removeChild(reportContainer);
         setIsPdfGenerating(false);
     }
   };
@@ -466,7 +476,8 @@ const Inventory: React.FC = () => {
                 <div className="p-8 space-y-6">
                     <div className="p-4 bg-red-50 rounded-2xl border border-red-100 mb-2">
                         <p className="text-[10px] text-red-600 font-black uppercase mb-1">محتوى التقرير:</p>
-                        <p className="text-xs font-bold text-red-800 flex items-center gap-2"><CheckCircle2 className="w-3 h-3" /> اسم الصنف + الكود + سعر البيع (نظام العمودين)</p>
+                        <p className="text-xs font-bold text-red-800 flex items-center gap-2"><CheckCircle2 className="w-3 h-3" /> نظام العمودين لتقليل الصفحات (أبجدياً)</p>
+                        <p className="text-[9px] text-red-500 font-bold mt-1">* سيتم تقسيم التقرير إلى صفحات متعددة لتجنب الأخطاء</p>
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">تحديد المخزن للمطابقة</label>
@@ -481,7 +492,7 @@ const Inventory: React.FC = () => {
                     </label>
                     <button onClick={handleExportPdf} disabled={isPdfGenerating} className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-red-100 hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2">
                         {isPdfGenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Download className="w-6 h-6" />}
-                        {isPdfGenerating ? "جاري الإنشاء..." : "إنشاء ملف PDF"}
+                        {isPdfGenerating ? "جاري المعالجة والتقسيم..." : "إنشاء ملف PDF"}
                     </button>
                 </div>
             </div>
