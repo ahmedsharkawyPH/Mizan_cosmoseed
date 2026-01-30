@@ -372,7 +372,7 @@ export default function PurchaseInvoice({ type }: Props) {
                       <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-blue-500 transition-all" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} disabled={!selProd} placeholder="1" />
                   </div>
                   <div className="md:col-span-2 lg:col-span-2">
-                      <label className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص (مجاني)</label>
+                      <label className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص </label>
                       <input ref={bonusRef} type="number" className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-orange-500 transition-all bg-orange-50/10" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="0" />
                   </div>
                   <div className="md:col-span-3 lg:col-span-2">
