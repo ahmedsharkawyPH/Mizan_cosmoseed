@@ -549,8 +549,10 @@ class Database {
 
       for (const item of items) {
         let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
+        const totalQtyToAdd = item.quantity + (item.bonus_quantity || 0); // Include bonus in stock
+
         if (batch) {
-          batch.quantity += isReturn ? -item.quantity : item.quantity;
+          batch.quantity += isReturn ? -totalQtyToAdd : totalQtyToAdd;
           batch.purchase_price = item.cost_price;
           batch.selling_price = item.selling_price;
         } else {
@@ -561,7 +563,7 @@ class Database {
             batch_number: item.batch_number,
             purchase_price: item.cost_price,
             selling_price: item.selling_price,
-            quantity: isReturn ? -item.quantity : item.quantity,
+            quantity: isReturn ? -totalQtyToAdd : totalQtyToAdd,
             expiry_date: item.expiry_date,
             status: BatchStatus.ACTIVE
           };
@@ -600,7 +602,8 @@ class Database {
     if (!inv) return;
     inv.items.forEach(item => {
       const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
-      if (batch) batch.quantity += (inv.type === 'PURCHASE' ? -item.quantity : item.quantity);
+      const totalQtyToRemove = item.quantity + (item.bonus_quantity || 0);
+      if (batch) batch.quantity += (inv.type === 'PURCHASE' ? -totalQtyToRemove : totalQtyToRemove);
     });
     if (isSupabaseConfigured) {
         await supabase.from('purchase_invoices').delete().eq('id', id);

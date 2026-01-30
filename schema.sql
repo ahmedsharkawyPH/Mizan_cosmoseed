@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
 
 -- 2. الدوال البرمجية المحدثة (RPC)
 
--- دالة معالجة المشتريات (تتضمن منطق تحديث السعر التلقائي)
+-- دالة معالجة المشتريات (تتضمن منطق تحديث السعر التلقائي والبونص)
 CREATE OR REPLACE FUNCTION process_purchase_invoice(
     p_invoice JSONB,
     p_items JSONB,
@@ -45,6 +45,7 @@ CREATE OR REPLACE FUNCTION process_purchase_invoice(
 RETURNS TEXT AS $$
 DECLARE
     v_item RECORD;
+    v_total_qty NUMERIC;
 BEGIN
     -- 1. إدراج رأس الفاتورة
     INSERT INTO purchase_invoices (
@@ -58,14 +59,17 @@ BEGIN
     -- 2. معالجة الأصناف (التحديث اللحظي للمخزون والأسعار)
     FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(
         product_id TEXT, warehouse_id TEXT, batch_number TEXT, 
-        quantity NUMERIC, cost_price NUMERIC, selling_price NUMERIC, expiry_date TEXT
+        quantity NUMERIC, bonus_quantity NUMERIC, cost_price NUMERIC, selling_price NUMERIC, expiry_date TEXT
     ) LOOP
+        -- حساب إجمالي الكمية المضافة للمخزن (الأساسية + البونص)
+        v_total_qty := COALESCE(v_item.quantity, 0) + COALESCE(v_item.bonus_quantity, 0);
+
         -- أ. تحديث أو إضافة التشغيلة (Batch) لضبط أرصدة المخازن
         INSERT INTO batches (
             id, product_id, warehouse_id, batch_number, quantity, purchase_price, selling_price, expiry_date, status
         ) VALUES (
             'B-' || gen_random_uuid(), v_item.product_id, v_item.warehouse_id,
-            v_item.batch_number, v_item.quantity, v_item.cost_price,
+            v_item.batch_number, v_total_qty, v_item.cost_price,
             v_item.selling_price, v_item.expiry_date, 'ACTIVE'
         )
         ON CONFLICT (product_id, warehouse_id, batch_number) 
@@ -75,7 +79,6 @@ BEGIN
             selling_price = EXCLUDED.selling_price;
 
         -- ب. المنطق المطلوب: تحديث السعر الافتراضي في جدول المنتجات الأساسي
-        -- يتم ذلك فقط في حالة الشراء (وليس المرتجع) ليصبح السعر الجديد هو المعتمد في المبيعات
         IF (p_invoice->>'type' = 'PURCHASE') THEN
             UPDATE products 
             SET purchase_price = v_item.cost_price, 
@@ -99,61 +102,6 @@ BEGIN
     UPDATE suppliers 
     SET current_balance = current_balance + ((p_invoice->>'total_amount')::NUMERIC - (p_invoice->>'paid_amount')::NUMERIC)
     WHERE id = p_invoice->>'supplier_id';
-
-    RETURN 'SUCCESS';
-END;
-$$ LANGUAGE plpgsql;
-
--- دالة معالجة المبيعات
-CREATE OR REPLACE FUNCTION process_sales_invoice(
-    p_invoice JSONB,
-    p_items JSONB,
-    p_cash_tx JSONB DEFAULT NULL
-)
-RETURNS TEXT AS $$
-DECLARE
-    v_item RECORD;
-BEGIN
-    -- إدراج الفاتورة
-    INSERT INTO invoices (
-        id, invoice_number, customer_id, created_by, created_by_name, date,
-        total_before_discount, total_discount, additional_discount, net_total,
-        previous_balance, final_balance, payment_status, items, type
-    ) VALUES (
-        p_invoice->>'id', p_invoice->>'invoice_number', p_invoice->>'customer_id',
-        p_invoice->>'created_by', p_invoice->>'created_by_name',
-        (p_invoice->>'date')::TIMESTAMP WITH TIME ZONE,
-        (p_invoice->>'total_before_discount')::NUMERIC, (p_invoice->>'total_discount')::NUMERIC,
-        (p_invoice->>'additional_discount')::NUMERIC, (p_invoice->>'net_total')::NUMERIC,
-        (p_invoice->>'previous_balance')::NUMERIC, (p_invoice->>'final_balance')::NUMERIC,
-        p_invoice->>'payment_status', p_items, p_invoice->>'type'
-    );
-
-    -- خصم الكمية من المخزن (التشغيلة المحددة)
-    FOR v_item IN SELECT * FROM jsonb_to_recordset(p_items) AS x(
-        product JSONB, batch JSONB, quantity NUMERIC
-    ) LOOP
-        UPDATE batches 
-        SET quantity = quantity - v_item.quantity
-        WHERE id = (v_item.batch->>'id');
-    END LOOP;
-
-    -- تسجيل النقدية
-    IF p_cash_tx IS NOT NULL THEN
-        INSERT INTO cash_transactions (
-            id, type, category, reference_id, related_name, amount, date, notes, ref_number
-        ) VALUES (
-            p_cash_tx->>'id', p_cash_tx->>'type', p_cash_tx->>'category',
-            p_cash_tx->>'reference_id', p_cash_tx->>'related_name',
-            (p_cash_tx->>'amount')::NUMERIC, (p_cash_tx->>'date')::TIMESTAMP WITH TIME ZONE,
-            p_cash_tx->>'notes', p_cash_tx->>'ref_number'
-        );
-    END IF;
-
-    -- تحديث رصيد العميل
-    UPDATE customers 
-    SET current_balance = (p_invoice->>'final_balance')::NUMERIC
-    WHERE id = p_invoice->>'customer_id';
 
     RETURN 'SUCCESS';
 END;

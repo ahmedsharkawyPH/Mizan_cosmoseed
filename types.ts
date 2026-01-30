@@ -124,6 +124,7 @@ export interface PurchaseItem {
   warehouse_id: string; 
   batch_number: string; 
   quantity: number;
+  bonus_quantity: number; // New Field added
   cost_price: number;
   selling_price: number;
   expiry_date: string;

@@ -35,6 +35,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
   const [qty, setQty] = useState(1);
+  const [bonus, setBonus] = useState(0); // Bonus state added
   const [cost, setCost] = useState(0);
   const [margin, setMargin] = useState(0); 
   const [sell, setSell] = useState(0);
@@ -43,6 +44,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const costRef = useRef<HTMLInputElement>(null);
   const marginRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
+  const bonusRef = useRef<HTMLInputElement>(null); // Bonus ref added
   const sellRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -138,8 +140,8 @@ export default function PurchaseInvoice({ type }: Props) {
         toast.error("يرجى اختيار الصنف أولاً");
         return;
     }
-    if (Number(qty) <= 0) {
-        toast.error("الكمية يجب أن تكون أكبر من صفر");
+    if (Number(qty) <= 0 && Number(bonus) <= 0) {
+        toast.error("الكمية أو البونص يجب أن تكون أكبر من صفر");
         return;
     }
     if (!selectedWarehouse) {
@@ -152,6 +154,7 @@ export default function PurchaseInvoice({ type }: Props) {
       warehouse_id: selectedWarehouse,
       batch_number: editingIndex !== null ? cart[editingIndex].batch_number : `BATCH-${Date.now().toString().slice(-6)}`,
       quantity: Number(qty),
+      bonus_quantity: Number(bonus),
       cost_price: Number(cost),
       selling_price: Number(sell),
       expiry_date: '2099-12-31'
@@ -170,6 +173,7 @@ export default function PurchaseInvoice({ type }: Props) {
 
     setSelProd('');
     setQty(1);
+    setBonus(0);
     setCost(0);
     setMargin(0);
     setSell(0);
@@ -182,6 +186,7 @@ export default function PurchaseInvoice({ type }: Props) {
       setEditingIndex(index);
       setSelProd(item.product_id);
       setQty(item.quantity);
+      setBonus(item.bonus_quantity || 0);
       setCost(item.cost_price);
       setSell(item.selling_price);
       if (item.cost_price > 0) {
@@ -195,6 +200,7 @@ export default function PurchaseInvoice({ type }: Props) {
       setEditingIndex(null);
       setSelProd('');
       setQty(1);
+      setBonus(0);
       setCost(0);
       setMargin(0);
       setSell(0);
@@ -357,22 +363,26 @@ export default function PurchaseInvoice({ type }: Props) {
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('pur.cost')}</label>
                       <input ref={costRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold outline-none focus:border-blue-500 transition-all" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
                   </div>
-                  <div className="md:col-span-3 lg:col-span-2">
+                  <div className="md:col-span-2 lg:col-span-2">
                       <label className="text-[10px] font-black text-blue-500 uppercase mb-1 block">ربح %</label>
                       <input ref={marginRef} type="number" className="w-full border border-blue-200 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => setMargin(Number(e.target.value))} />
                   </div>
-                  <div className="md:col-span-3 lg:col-span-2">
+                  <div className="md:col-span-2 lg:col-span-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('stock.qty')}</label>
-                      <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-blue-500 transition-all" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="1" />
+                      <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-blue-500 transition-all" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} disabled={!selProd} placeholder="1" />
                   </div>
-                  <div className="md:col-span-3 lg:col-span-3">
+                  <div className="md:col-span-2 lg:col-span-2">
+                      <label className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص (مجاني)</label>
+                      <input ref={bonusRef} type="number" className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-orange-500 transition-all bg-orange-50/10" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="0" />
+                  </div>
+                  <div className="md:col-span-3 lg:col-span-2">
                       <label className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">سعر البيع المقترح</label>
                       <input ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
                   </div>
-                  <div className="md:col-span-12 lg:col-span-3">
+                  <div className="md:col-span-12 lg:col-span-2">
                       <button onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>
                           {editingIndex !== null ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                          {editingIndex !== null ? 'تحديث الصنف' : 'إضافة للفاتورة'}
+                          {editingIndex !== null ? 'تحديث' : 'إضافة'}
                       </button>
                   </div>
               </div>
@@ -390,6 +400,7 @@ export default function PurchaseInvoice({ type }: Props) {
                          <th className="px-4 py-4 text-center">مسلسل</th>
                          <th className="px-4 py-4">اسم الصنف</th>
                          <th className="px-4 py-4 text-center">الكمية</th>
+                         <th className="px-4 py-4 text-center">البونص</th>
                          <th className="px-4 py-4 text-center">سعر الشراء</th>
                          <th className="px-4 py-4 text-center">سعر البيع</th>
                          <th className="px-4 py-4 text-left">الإجمالي</th>
@@ -407,6 +418,13 @@ export default function PurchaseInvoice({ type }: Props) {
                             <td className="px-4 py-4 text-center">
                                <span className="px-3 py-1 bg-slate-100 rounded-lg text-slate-700">{item.quantity}</span>
                             </td>
+                            <td className="px-4 py-4 text-center">
+                               {item.bonus_quantity > 0 ? (
+                                   <span className="px-3 py-1 bg-orange-50 text-orange-600 rounded-lg border border-orange-100">+{item.bonus_quantity}</span>
+                               ) : (
+                                   <span className="text-slate-300">-</span>
+                               )}
+                            </td>
                             <td className="px-4 py-4 text-center text-slate-600">{currency}{item.cost_price.toLocaleString()}</td>
                             <td className="px-4 py-4 text-center text-emerald-600">{currency}{item.selling_price.toLocaleString()}</td>
                             <td className="px-4 py-4 text-left text-slate-900 font-black">
@@ -422,7 +440,7 @@ export default function PurchaseInvoice({ type }: Props) {
                       ))}
                       {cart.length === 0 && (
                           <tr>
-                              <td colSpan={7} className="p-10 text-center text-slate-300 font-bold italic">لا توجد أصناف في الجدول بعد</td>
+                              <td colSpan={8} className="p-10 text-center text-slate-300 font-bold italic">لا توجد أصناف في الجدول بعد</td>
                           </tr>
                       )}
                    </tbody>
