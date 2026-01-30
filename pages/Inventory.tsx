@@ -82,7 +82,7 @@ const Inventory: React.FC = () => {
     const suppliers = db.getSuppliers() || [];
     const map: Record<string, string> = {};
     const bestPrices: Record<string, number> = {};
-    const sortedInvoices = [...purchaseInvoices].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const sortedInvoices = [...purchaseInvoices].sort((a,b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     sortedInvoices.forEach(inv => {
       if (inv.type === 'PURCHASE') {
         const supplier = suppliers.find(s => s.id === inv.supplier_id);
@@ -256,7 +256,7 @@ const Inventory: React.FC = () => {
     setIsPdfGenerating(true);
     const toastId = toast.loading("جاري إنشاء تقرير PDF...");
     
-    // 1. فلترة البيانات
+    // 1. جلب البيانات وفلترتها وترتيبها أبجدياً
     let dataToPdf = products.filter(p => {
         const pBatches = p.batches || [];
         const filteredBatches = pdfExportOptions.warehouseId === 'ALL' ? pBatches : pBatches.filter((b: any) => b.warehouse_id === pdfExportOptions.warehouseId);
@@ -265,51 +265,60 @@ const Inventory: React.FC = () => {
         return true;
     });
 
+    // الترتيب الأبجدي حسب الاسم
+    dataToPdf.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
     if (dataToPdf.length === 0) {
         toast.error("لا توجد بيانات مطابقة للخيارات المختارة", { id: toastId });
         setIsPdfGenerating(false);
         return;
     }
 
-    // 2. إنشاء حاوية مؤقتة للتقرير للتحويل إلى PDF
+    // 2. إنشاء حاوية مؤقتة للتقرير بنظام العمودين
     const reportContainer = document.createElement('div');
-    reportContainer.style.width = '210mm'; // عرض A4
-    reportContainer.style.padding = '15mm';
+    reportContainer.style.width = '210mm'; 
+    reportContainer.style.padding = '10mm';
     reportContainer.style.background = 'white';
     reportContainer.style.direction = 'rtl';
     reportContainer.style.fontFamily = 'Cairo, sans-serif';
+    
+    // الهيدر
     reportContainer.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
             <div>
-                <h1 style="margin: 0; font-size: 24px; font-weight: 900;">${settings.companyName}</h1>
-                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">تقرير قائمة الأسعار والمخزون</p>
-                <p style="margin: 5px 0 0 0; font-size: 12px;">المخزن: ${pdfExportOptions.warehouseId === 'ALL' ? 'الكل' : warehouses.find(w => w.id === pdfExportOptions.warehouseId)?.name}</p>
+                <h1 style="margin: 0; font-size: 20px; font-weight: 900;">${settings.companyName}</h1>
+                <p style="margin: 3px 0 0 0; font-size: 12px; color: #666;">تقرير قائمة الأسعار والمخزون (نظام العمودين)</p>
             </div>
             <div style="text-align: left;">
-                <p style="margin: 0; font-size: 12px;">تاريخ الاستخراج: ${new Date().toLocaleDateString('ar-EG')}</p>
-                <p style="margin: 5px 0 0 0; font-size: 10px; color: #999;">Mizan Online Pro</p>
+                <p style="margin: 0; font-size: 10px;">التاريخ: ${new Date().toLocaleDateString('ar-EG')}</p>
+                <p style="margin: 3px 0 0 0; font-size: 9px; color: #999;">مخزن: ${pdfExportOptions.warehouseId === 'ALL' ? 'الكل' : warehouses.find(w => w.id === pdfExportOptions.warehouseId)?.name}</p>
             </div>
         </div>
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr style="background: #f3f4f6;">
-                    <th style="border: 1px solid #ddd; padding: 10px; text-align: center; width: 40px;">#</th>
-                    <th style="border: 1px solid #ddd; padding: 10px; text-align: right;">اسم الصنف</th>
-                    <th style="border: 1px solid #ddd; padding: 10px; text-align: center;">الكود</th>
-                    <th style="border: 1px solid #ddd; padding: 10px; text-align: center;">سعر البيع</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${dataToPdf.map((p, i) => `
-                    <tr>
-                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-size: 11px;">${i+1}</td>
-                        <td style="border: 1px solid #ddd; padding: 8px; font-weight: bold;">${p.name}</td>
-                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-family: monospace;">${p.code || '---'}</td>
-                        <td style="border: 1px solid #ddd; padding: 8px; text-align: center; font-weight: 900;">${currency}${p.selling_price?.toLocaleString()}</td>
+        
+        <div style="column-count: 2; column-gap: 20px; column-rule: 1px dashed #eee;">
+            <table style="width: 100%; border-collapse: collapse; page-break-inside: auto;">
+                <thead>
+                    <tr style="background: #f8fafc; border-bottom: 2px solid #333;">
+                        <th style="padding: 6px; text-align: right; font-size: 10px; border: 1px solid #ddd;">الصنف</th>
+                        <th style="padding: 6px; text-align: center; font-size: 10px; border: 1px solid #ddd; width: 60px;">السعر</th>
+                        <th style="padding: 6px; text-align: center; font-size: 10px; border: 1px solid #ddd; width: 50px;">الكود</th>
                     </tr>
-                `).join('')}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    ${dataToPdf.map((p) => `
+                        <tr style="border-bottom: 1px solid #eee; break-inside: avoid;">
+                            <td style="padding: 5px; font-size: 10px; font-weight: bold; border: 1px solid #f1f1f1;">${p.name}</td>
+                            <td style="padding: 5px; text-align: center; font-size: 10px; font-weight: 900; color: #2563eb; border: 1px solid #f1f1f1;">${p.selling_price?.toLocaleString()}</td>
+                            <td style="padding: 5px; text-align: center; font-size: 8px; color: #999; font-family: monospace; border: 1px solid #f1f1f1;">${p.code || '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; text-align: center; font-size: 9px; color: #bbb;">
+            تم التوليد بواسطة Mizan Online Pro - إجمالي الأصناف: ${dataToPdf.length}
+        </div>
     `;
 
     document.body.appendChild(reportContainer);
@@ -321,12 +330,27 @@ const Inventory: React.FC = () => {
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Inventory_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+        // التعامل مع الصفحات المتعددة إذا لزم الأمر
+        let heightLeft = pdfHeight;
+        let position = 0;
+        let pageHeight = pdf.internal.pageSize.getHeight();
+
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft >= 0) {
+            position = heightLeft - pdfHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+            heightLeft -= pageHeight;
+        }
         
-        toast.success("تم تصدير ملف PDF بنجاح", { id: toastId });
+        pdf.save(`Inventory_Condensed_${new Date().toISOString().split('T')[0]}.pdf`);
+        
+        toast.success("تم تصدير ملف PDF بنظام العمودين بنجاح", { id: toastId });
         setIsPdfModalOpen(false);
     } catch (err) {
+        console.error(err);
         toast.error("حدث خطأ أثناء إنشاء الملف", { id: toastId });
     } finally {
         document.body.removeChild(reportContainer);
@@ -442,7 +466,7 @@ const Inventory: React.FC = () => {
                 <div className="p-8 space-y-6">
                     <div className="p-4 bg-red-50 rounded-2xl border border-red-100 mb-2">
                         <p className="text-[10px] text-red-600 font-black uppercase mb-1">محتوى التقرير:</p>
-                        <p className="text-xs font-bold text-red-800 flex items-center gap-2"><CheckCircle2 className="w-3 h-3" /> اسم الصنف + الكود + سعر البيع</p>
+                        <p className="text-xs font-bold text-red-800 flex items-center gap-2"><CheckCircle2 className="w-3 h-3" /> اسم الصنف + الكود + سعر البيع (نظام العمودين)</p>
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">تحديد المخزن للمطابقة</label>
