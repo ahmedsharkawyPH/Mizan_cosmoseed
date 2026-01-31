@@ -42,9 +42,9 @@ export default function PurchaseInvoice({ type }: Props) {
 
   const productRef = useRef<SearchableSelectRef>(null);
   const costRef = useRef<HTMLInputElement>(null);
-  const marginRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const bonusRef = useRef<HTMLInputElement>(null); 
+  const marginRef = useRef<HTMLInputElement>(null);
   const sellRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -64,7 +64,6 @@ export default function PurchaseInvoice({ type }: Props) {
         }
     }
 
-    // آلية تحديث قائمة الأصناف في حال حدوث مزامنة في الخلفية
     const checkSync = setInterval(() => {
         if (db.isFullyLoaded) {
             setProducts(db.getProductsWithBatches());
@@ -126,20 +125,26 @@ export default function PurchaseInvoice({ type }: Props) {
   useEffect(() => {
     if (selProd && editingIndex === null) {
       const p = products.find(x => x.id === selProd);
-      if (p && p.batches.length > 0) {
-        const lastBatch = p.batches[p.batches.length-1];
-        setCost(lastBatch.purchase_price);
-        setSell(lastBatch.selling_price);
-        if (lastBatch.purchase_price > 0) {
-            const currentMargin = ((lastBatch.selling_price / lastBatch.purchase_price) - 1) * 100;
-            setMargin(parseFloat(currentMargin.toFixed(1)));
+      if (p) {
+        // نأخذ الأسعار الافتراضية من بطاقة الصنف أو آخر تشغيلة
+        let initialCost = p.purchase_price || 0;
+        let initialSell = p.selling_price || 0;
+        
+        if (p.batches.length > 0) {
+          const lastBatch = p.batches[p.batches.length-1];
+          initialCost = lastBatch.purchase_price;
+          initialSell = lastBatch.selling_price;
         }
-      } else if (p) {
-        setCost(p.purchase_price || 0);
-        setSell(p.selling_price || 0);
-        setMargin(0);
+        
+        setCost(initialCost);
+        setSell(initialSell);
+        if (initialCost > 0) {
+            setMargin(parseFloat((((initialSell / initialCost) - 1) * 100).toFixed(1)));
+        } else {
+            setMargin(0);
+        }
       }
-      setTimeout(() => costRef.current?.focus(), 50);
+      setTimeout(() => costRef.current?.focus(), 100);
     }
   }, [selProd, products, editingIndex]);
 
@@ -150,10 +155,6 @@ export default function PurchaseInvoice({ type }: Props) {
     }
     if (Number(qty) <= 0 && Number(bonus) <= 0) {
         toast.error("الكمية أو البونص يجب أن تكون أكبر من صفر");
-        return;
-    }
-    if (!selectedWarehouse) {
-        toast.error("يرجى اختيار المستودع");
         return;
     }
 
@@ -270,7 +271,7 @@ export default function PurchaseInvoice({ type }: Props) {
                     <>
                         <div className="md:col-span-2">
                             <label className="block text-xs font-black text-slate-400 mb-1 flex items-center gap-2">
-                                <Hash className="w-3 h-3" /> رقم الفاتورة التلقائي
+                                <Hash className="w-3 h-3" /> رقم الفاتورة
                             </label>
                             <div className="bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-slate-500 font-black text-center">
                                 {id ? db.getPurchaseInvoices().find(i => i.id === id)?.invoice_number : 'تلقائي'}
@@ -278,21 +279,21 @@ export default function PurchaseInvoice({ type }: Props) {
                         </div>
                         <div className="md:col-span-3">
                             <label htmlFor="purchase_document_no_input" className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-orange-400" /> رقم المستند (فاتورة المورد)
+                                <FileText className="w-4 h-4 text-orange-400" /> رقم مستند المورد
                             </label>
                             <input 
                                 id="purchase_document_no_input"
                                 name="document_number"
                                 type="text" 
                                 className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-orange-500 bg-orange-50/20 focus:bg-white"
-                                placeholder="الرقم الورقي للفاتورة"
+                                placeholder="رقم الفاتورة الورقية"
                                 value={documentNo}
                                 onChange={e => setDocumentNo(e.target.value)}
                             />
                         </div>
                         <div className="md:col-span-2">
                             <label htmlFor="purchase_manual_date_input" className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
-                                <Calendar className="w-4 h-4 text-slate-400" /> تاريخ الشراء
+                                <Calendar className="w-4 h-4 text-slate-400" /> التاريخ
                             </label>
                             <input 
                                 id="purchase_manual_date_input"
@@ -312,12 +313,12 @@ export default function PurchaseInvoice({ type }: Props) {
             <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="font-black text-slate-700 flex items-center gap-2">
                     {editingIndex !== null ? <Edit className="w-5 h-5 text-orange-500" /> : <TrendingUp className="w-5 h-5 text-blue-500" />}
-                    {editingIndex !== null ? 'تعديل الصنف المحدد' : 'إضافة صنف للفاتورة'}
+                    {editingIndex !== null ? 'تعديل الصنف' : 'إضافة أصناف'}
                 </h3>
                 <div className="flex items-center gap-3">
                     {editingIndex !== null && (
                         <button onClick={cancelEdit} className="text-red-500 hover:text-red-700 text-xs font-black flex items-center gap-1 px-3 py-1 bg-red-50 rounded-lg transition-colors border border-red-100">
-                             إلغاء التعديل
+                             إلغاء
                         </button>
                     )}
                     <div className="flex items-center gap-2">
@@ -343,60 +344,44 @@ export default function PurchaseInvoice({ type }: Props) {
                       disabled={!selectedSupplier}
                       className="w-full"
                   />
-
                   {selProd && lastPurchasesIntelligence.length > 0 && (
-                      <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                          <div className="flex items-center gap-2 mb-2 text-blue-600">
-                              <History className="w-4 h-4" />
-                              <span className="text-[10px] font-black uppercase tracking-tight">سجل المشتريات السابقة (آخر 3 أسعار)</span>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                              {lastPurchasesIntelligence.map((p, idx) => (
-                                  <div key={idx} className="bg-slate-50 border-2 border-slate-100 rounded-2xl p-4 shadow-sm hover:border-blue-200 hover:bg-white transition-all group">
-                                      <div className="flex justify-between items-start mb-2">
-                                          <div className="text-xl font-black text-blue-700">{currency}{p.price.toLocaleString()}</div>
-                                          <div className="bg-slate-200 text-slate-500 text-[8px] px-1.5 py-0.5 rounded font-mono group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
-                                              {new Date(p.date).toLocaleDateString('ar-EG')}
-                                          </div>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 truncate">
-                                          <div className="p-1 bg-slate-200 rounded group-hover:bg-blue-50 transition-colors">
-                                            <Truck className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
-                                          </div>
-                                          {p.supplierName}
-                                      </div>
-                                  </div>
-                              ))}
-                          </div>
+                      <div className="mt-2 flex gap-4 animate-in fade-in">
+                          <span className="text-[10px] font-bold text-slate-400">آخر أسعار شراء:</span>
+                          {lastPurchasesIntelligence.map((p, i) => (
+                              <span key={i} className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-black border border-blue-100">
+                                {currency}{p.price.toLocaleString()} ({p.supplierName})
+                              </span>
+                          ))}
                       </div>
                   )}
               </div>
 
+              {/* صف الإدخال المرتب حسب طلب المستخدم */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                  <div className="md:col-span-3 lg:col-span-2">
-                      <label htmlFor="purchase_cost_input" className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('pur.cost')}</label>
-                      <input id="purchase_cost_input" name="cost_price" ref={costRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold outline-none focus:border-blue-500 transition-all" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+                  <div className="md:col-span-2">
+                      <label htmlFor="purchase_cost_input" className="text-[10px] font-black text-slate-400 uppercase mb-1 block">سعر التكلفة</label>
+                      <input id="purchase_cost_input" name="cost_price" ref={costRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold outline-none focus:border-blue-500 transition-all" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && qtyRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
                   </div>
-                  <div className="md:col-span-2 lg:col-span-2">
-                      <label htmlFor="purchase_margin_input" className="text-[10px] font-black text-blue-500 uppercase mb-1 block">ربح %</label>
-                      <input id="purchase_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border border-blue-200 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => setMargin(Number(e.target.value))} />
-                  </div>
-                  <div className="md:col-span-2 lg:col-span-2">
-                      <label htmlFor="purchase_qty_input" className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('stock.qty')}</label>
+                  <div className="md:col-span-2">
+                      <label htmlFor="purchase_qty_input" className="text-[10px] font-black text-slate-400 uppercase mb-1 block">الكمية</label>
                       <input id="purchase_qty_input" name="quantity" ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-blue-500 transition-all" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} disabled={!selProd} placeholder="1" />
                   </div>
-                  <div className="md:col-span-2 lg:col-span-2">
-                      <label htmlFor="purchase_bonus_input" className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص </label>
-                      <input id="purchase_bonus_input" name="bonus_quantity" ref={bonusRef} type="number" className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-orange-500 transition-all bg-orange-50/10" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="0" />
+                  <div className="md:col-span-2">
+                      <label htmlFor="purchase_bonus_input" className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص</label>
+                      <input id="purchase_bonus_input" name="bonus_quantity" ref={bonusRef} type="number" className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-orange-500 transition-all bg-orange-50/10" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} placeholder="0" />
                   </div>
-                  <div className="md:col-span-3 lg:col-span-2">
-                      <label htmlFor="purchase_sell_price_input" className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">سعر البيع المقترح</label>
+                  <div className="md:col-span-2">
+                      <label htmlFor="purchase_margin_input" className="text-[10px] font-black text-indigo-600 uppercase mb-1 block">الربح %</label>
+                      <input id="purchase_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border-2 border-indigo-100 p-2.5 rounded-xl font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500 bg-indigo-50/20" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="%" />
+                  </div>
+                  <div className="md:col-span-2">
+                      <label htmlFor="purchase_sell_price_input" className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">سعر البيع</label>
                       <input id="purchase_sell_price_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
                   </div>
-                  <div className="md:col-span-12 lg:col-span-2">
+                  <div className="md:col-span-2">
                       <button id="purchase_add_btn" name="add_to_cart" onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>
-                          {editingIndex !== null ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-                          {editingIndex !== null ? 'تحديث' : 'إضافة'}
+                          {editingIndex !== null ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                          {editingIndex !== null ? 'تعديل' : 'إضافة'}
                       </button>
                   </div>
               </div>
@@ -404,61 +389,45 @@ export default function PurchaseInvoice({ type }: Props) {
           </div>
 
           <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
-             <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-2 font-black text-slate-600">
-                <CheckCircle2 className="w-5 h-5 text-emerald-500" /> الأصناف المضافة للجدول
-             </div>
              <div className="overflow-x-auto">
                 <table className="w-full text-sm text-right">
                    <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[10px] border-b border-slate-100">
                       <tr>
-                         <th className="px-4 py-4 text-center"># المسلسل</th>
+                         <th className="px-4 py-4 text-center">#</th>
                          <th className="px-4 py-4">اسم الصنف</th>
                          <th className="px-4 py-4 text-center">الكمية</th>
                          <th className="px-4 py-4 text-center">البونص</th>
                          <th className="px-4 py-4 text-center">سعر الشراء</th>
                          <th className="px-4 py-4 text-center">سعر البيع</th>
                          <th className="px-4 py-4 text-left">الإجمالي</th>
-                         <th className="px-4 py-4 text-center">الإجراء</th>
+                         <th className="px-4 py-4 text-center">إجراء</th>
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-slate-50">
                       {cart.map((item, idx) => (
                          <tr key={idx} className={`hover:bg-slate-50 transition-colors font-bold ${editingIndex === idx ? 'bg-orange-50' : ''}`}>
-                            <td className="px-4 py-4 text-center">
-                               <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 text-slate-900 font-black text-xs border border-slate-200">
-                                  {item.serial_number || idx + 1}
-                               </span>
-                            </td>
-                            <td className="px-4 py-4">
-                                <div className="text-slate-800">{products.find(x => x.id === item.product_id)?.name}</div>
-                                <div className="text-[9px] text-slate-400 font-mono">#{products.find(x => x.id === item.product_id)?.code}</div>
-                            </td>
-                            <td className="px-4 py-4 text-center">
-                               <span className="px-3 py-1 bg-slate-50 text-slate-700 rounded-lg border border-slate-100">{item.quantity}</span>
-                            </td>
+                            <td className="px-4 py-4 text-center text-slate-400 text-xs">{idx + 1}</td>
+                            <td className="px-4 py-4 text-slate-800">{products.find(x => x.id === item.product_id)?.name}</td>
+                            <td className="px-4 py-4 text-center">{item.quantity}</td>
                             <td className="px-4 py-4 text-center">
                                {item.bonus_quantity > 0 ? (
-                                   <span className="px-3 py-1 bg-orange-50 text-orange-600 rounded-lg border border-orange-100">+{item.bonus_quantity}</span>
-                               ) : (
-                                   <span className="text-slate-300">-</span>
-                               )}
+                                   <span className="text-orange-600">+{item.bonus_quantity}</span>
+                               ) : "-"}
                             </td>
                             <td className="px-4 py-4 text-center text-slate-600">{currency}{item.cost_price.toLocaleString()}</td>
                             <td className="px-4 py-4 text-center text-emerald-600">{currency}{item.selling_price.toLocaleString()}</td>
-                            <td className="px-4 py-4 text-left text-slate-900 font-black">
-                               {currency}{(item.quantity * item.cost_price).toLocaleString()}
-                            </td>
+                            <td className="px-4 py-4 text-left font-black">{currency}{(item.quantity * item.cost_price).toLocaleString()}</td>
                             <td className="px-4 py-4 text-center">
                                <div className="flex justify-center gap-2">
-                                  <button onClick={() => handleEditItem(idx)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-all" title="تعديل"><Edit className="w-4 h-4" /></button>
-                                  <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-all" title="حذف"><Trash2 className="w-4 h-4" /></button>
+                                  <button onClick={() => handleEditItem(idx)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="تعديل"><Edit className="w-4 h-4" /></button>
+                                  <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="p-1.5 text-red-400 hover:bg-red-50 rounded" title="حذف"><Trash2 className="w-4 h-4" /></button>
                                </div>
                             </td>
                          </tr>
                       ))}
                       {cart.length === 0 && (
                           <tr>
-                              <td colSpan={8} className="p-10 text-center text-slate-300 font-bold italic">لا توجد أصناف في الجدول بعد</td>
+                              <td colSpan={8} className="p-10 text-center text-slate-300 font-bold">لا توجد أصناف مضافة بعد</td>
                           </tr>
                       )}
                    </tbody>
@@ -474,12 +443,12 @@ export default function PurchaseInvoice({ type }: Props) {
             
             <div className="space-y-4">
                 <div className="bg-blue-50/50 p-6 rounded-2xl border-2 border-blue-100">
-                    <div className="text-xs text-blue-500 font-black uppercase mb-1">إجمالي قيمة المشتريات</div>
+                    <div className="text-xs text-blue-500 font-black uppercase mb-1">إجمالي الفاتورة</div>
                     <div className="text-4xl font-black text-blue-700">{currency}{totalAmount.toLocaleString()}</div>
                 </div>
 
                 <div>
-                    <label htmlFor="purchase_cash_paid_input" className="block text-xs font-black text-slate-400 uppercase mb-2">المبلغ المسدد نقداً (كاش)</label>
+                    <label htmlFor="purchase_cash_paid_input" className="block text-xs font-black text-slate-400 uppercase mb-2">المسدد نقداً (كاش)</label>
                     <input 
                         id="purchase_cash_paid_input"
                         name="paid_amount"
@@ -496,11 +465,10 @@ export default function PurchaseInvoice({ type }: Props) {
                 </div>
 
                 <div className="pt-4">
-                    <button id="purchase_finalize_btn" name="finalize_invoice" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
+                    <button id="purchase_finalize_btn" name="finalize_invoice" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3">
                         <Save className="w-6 h-6" />
-                        {id ? 'حفظ التعديلات النهائية' : 'حفظ الفاتورة النهائية'}
+                        {id ? 'حفظ التعديلات' : 'حفظ الفاتورة'}
                     </button>
-                    <p className="text-[10px] text-center text-slate-400 font-bold mt-4">سيتم تحديث أرصدة المخازن وحساب المورد فور الحفظ</p>
                 </div>
             </div>
         </div>
@@ -508,3 +476,4 @@ export default function PurchaseInvoice({ type }: Props) {
     </div>
   );
 }
+
