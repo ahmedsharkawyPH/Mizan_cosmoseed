@@ -36,9 +36,36 @@ class Database {
   dailyClosings: DailyClosing[] = [];
   pendingAdjustments: PendingAdjustment[] = [];
   isFullyLoaded: boolean = false;
+  
+  // عداد العمليات الجارية ونظام المستمعين
+  public activeOperations: number = 0;
+  private syncListeners: ((isBusy: boolean) => void)[] = [];
 
   constructor() {
     this.loadFromLocalCache();
+  }
+
+  // تسجيل مستمع للتغيرات في حالة المزامنة
+  onSyncStateChange(callback: (isBusy: boolean) => void) {
+    this.syncListeners.push(callback);
+    return () => {
+      this.syncListeners = this.syncListeners.filter(l => l !== callback);
+    };
+  }
+
+  private notifySyncState() {
+    const isBusy = this.activeOperations > 0;
+    this.syncListeners.forEach(l => l(isBusy));
+  }
+
+  private incrementOp() {
+    this.activeOperations++;
+    this.notifySyncState();
+  }
+
+  private decrementOp() {
+    this.activeOperations = Math.max(0, this.activeOperations - 1);
+    this.notifySyncState();
   }
 
   async init() {
@@ -70,18 +97,18 @@ class Database {
         } else { finished = true; }
       } catch (err) {
         console.error(`Fetch error for ${tableName}:`, err);
-        finished = true; // Stop on error to prevent infinite loop
+        finished = true;
       }
     }
     return allData;
   }
 
-  // المزامنة الذكية: تمنع مسح البيانات المحلية إذا كانت السحابة غير مستقرة
   async syncFromCloud() {
     if (!isSupabaseConfigured) return;
     
     try {
         console.log("Deep sync started...");
+        this.incrementOp();
         const [p, b, c, s, inv, pinv, tx, wh, po] = await Promise.all([
             this.fetchFullTable<Product>('products'),
             this.fetchFullTable<Batch>('batches'),
@@ -94,7 +121,6 @@ class Database {
             this.fetchFullTable<PurchaseOrder>('purchase_orders')
         ]);
 
-        // ضمان عدم استبدال البيانات ببيانات فارغة إذا فشل الجلب (Crucial fix for 'Unknown Product')
         if (p && p.length > 0) this.products = p;
         if (b && b.length > 0) this.batches = b;
         if (c && c.length > 0) this.customers = c;
@@ -135,6 +161,8 @@ class Database {
         console.log("Deep sync finished.");
     } catch (error) {
         console.error("Deep Cloud Sync Failed:", error);
+    } finally {
+        this.decrementOp();
     }
   }
 
@@ -220,19 +248,23 @@ class Database {
       .reduce((sum, t) => sum + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
   }
 
-  // المحاولات المتعددة للحفظ في السحابة مع تحسين توافق الأنواع
   private async retryCloudOp(op: () => PromiseLike<any>, retries = 3): Promise<boolean> {
-    for (let i = 0; i < retries; i++) {
-        try {
-            const { error } = await op();
-            if (!error) return true;
-            console.warn(`Retry ${i+1} failed...`);
-        } catch (e) {
-            console.error(`Attempt ${i+1} exception:`, e);
+    this.incrementOp();
+    try {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const { error } = await op();
+                if (!error) return true;
+                console.warn(`Retry ${i+1} failed...`);
+            } catch (e) {
+                console.error(`Attempt ${i+1} exception:`, e);
+            }
+            await new Promise(r => setTimeout(r, 1000 * (i + 1)));
         }
-        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        return false;
+    } finally {
+        this.decrementOp();
     }
-    return false;
   }
 
   async addProduct(pData: any, bData: any) {
@@ -302,6 +334,7 @@ class Database {
   }
 
   async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, additional_discount: number, creator?: { id: string, name: string }): Promise<{ success: boolean; id?: string; message?: string }> {
+    this.incrementOp();
     try {
       const total_before_discount = items.reduce((sum, item) => {
         const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
@@ -333,7 +366,6 @@ class Database {
         type: is_return ? 'RETURN' : 'SALE'
       };
 
-      // الحفظ السحابي أولاً لضمان عدم الفقدان
       if (isSupabaseConfigured) {
           const { error } = await supabase.rpc('process_sales_invoice', {
               p_invoice: invoice,
@@ -360,6 +392,8 @@ class Database {
     } catch (e: any) {
       console.error("Cloud Save Failed:", e);
       return { success: false, message: 'فشل الحفظ في السحابة. يرجى التحقق من الإنترنت.' };
+    } finally {
+      this.decrementOp();
     }
   }
 
@@ -420,6 +454,7 @@ class Database {
       
       if (isSupabaseConfigured) {
           try {
+              this.incrementOp();
               await supabase.from('system_settings').upsert({ 
                   id: 'global_settings',
                   company_name: this.settings.companyName,
@@ -429,6 +464,8 @@ class Database {
               await supabase.from('settings').upsert({ id: 1, companyname: this.settings.companyName, currency: this.settings.currency });
           } catch (e) {
               console.error("Failed to sync settings:", e);
+          } finally {
+              this.decrementOp();
           }
       }
       this.saveToLocalCache(); 
@@ -493,6 +530,7 @@ class Database {
   }
 
   async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean, docNo?: string, date?: string): Promise<{ success: boolean; message?: string }> {
+    this.incrementOp();
     try {
       const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
       const enrichedItems = items.map((item, idx) => ({ ...item, serial_number: idx + 1 }));
@@ -561,6 +599,8 @@ class Database {
       return { success: true };
     } catch (e: any) {
       return { success: false, message: 'فشل المزامنة السحابية. يرجى التحقق من الاتصال.' };
+    } finally {
+      this.decrementOp();
     }
   }
 
@@ -689,11 +729,16 @@ class Database {
   }
 
   async saveDailyClosing(data: any) {
-      const closing: DailyClosing = { ...data, id: Date.now().toString(), updated_at: new Date().toISOString() };
-      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('daily_closings').insert(closing));
-      this.dailyClosings.push(closing);
-      this.saveToLocalCache();
-      return true;
+      this.incrementOp();
+      try {
+        const closing: DailyClosing = { ...data, id: Date.now().toString(), updated_at: new Date().toISOString() };
+        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('daily_closings').insert(closing));
+        this.dailyClosings.push(closing);
+        this.saveToLocalCache();
+        return true;
+      } finally {
+        this.decrementOp();
+      }
   }
 
   getNextTransactionRef(type: CashTransactionType) {
@@ -743,9 +788,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  /**
-   * Fix: Implement clearAllOrders method to clear purchase order drafts.
-   */
   async clearAllOrders() {
     this.purchaseOrders = [];
     if (isSupabaseConfigured) {
@@ -761,9 +803,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  /**
-   * Fix: Implement clearWarehouseStock to zero out quantities in a specific warehouse.
-   */
   async clearWarehouseStock(warehouseId: string) {
     this.batches.forEach(b => {
       if (b.warehouse_id === warehouseId) {
@@ -776,9 +815,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  /**
-   * Fix: Implement getABCAnalysis for inventory reports.
-   */
   getABCAnalysis() {
     const productRevenue: Record<string, { name: string; revenue: number }> = {};
     
@@ -815,9 +851,6 @@ class Database {
     return { classifiedProducts };
   }
 
-  /**
-   * Fix: Implement getInventoryValuationReport for inventory reports.
-   */
   getInventoryValuationReport() {
     return this.products.map(p => {
       const pBatches = this.batches.filter(b => b.product_id === p.id);

@@ -46,19 +46,32 @@ function App() {
 
   useEffect(() => {
     const init = async () => {
-        // تأخير بسيط اختيارياً لجعل الشاشة الترحيبية قابلة للقراءة في حال كانت السرعة عالية جداً
         const startTime = Date.now();
         await db.init();
         const endTime = Date.now();
         const duration = endTime - startTime;
         
-        // ضمان بقاء الشاشة لثانيتين على الأقل لإظهار التحية
         if (duration < 2000) {
             await new Promise(resolve => setTimeout(resolve, 2000 - duration));
         }
         setIsDbReady(true);
     };
     init();
+  }, []);
+
+  // إضافة حماية الخروج (Exit Guard)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        if (db.activeOperations > 0) {
+            const msg = "هناك عمليات مزامنة سحابية جارية. هل أنت متأكد من رغبتك في الإغلاق؟ قد تفقد بعض البيانات غير المحفوظة.";
+            e.preventDefault();
+            e.returnValue = msg; 
+            return msg;
+        }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   if (!isDbReady) {

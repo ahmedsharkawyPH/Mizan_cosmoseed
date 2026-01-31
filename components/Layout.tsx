@@ -8,8 +8,7 @@ import {
   Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, 
   Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, 
   LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList, RefreshCw, CheckCircle2,
-  // Add missing Wallet import
-  AlertCircle, ListChecks, RotateCcw, Coins, Boxes, Wallet
+  AlertCircle, ListChecks, RotateCcw, Coins, Boxes, Wallet, Save
 } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
@@ -24,10 +23,19 @@ export default function Layout() {
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const [dbFullLoaded, setDbFullLoaded] = useState(db.isFullyLoaded);
+  const [isSaving, setIsSaving] = useState(db.activeOperations > 0);
   const [closingsVersion, setClosingsVersion] = useState(0); 
   
   const user = authService.getCurrentUser();
   const settings = db.getSettings();
+
+  // تتبع حالة المزامنة اللحظية
+  useEffect(() => {
+    const unsub = db.onSyncStateChange((isBusy) => {
+        setIsSaving(isBusy);
+    });
+    return unsub;
+  }, []);
 
   const getLocalDate = (date: Date) => {
     const offset = date.getTimezoneOffset();
@@ -121,12 +129,11 @@ export default function Layout() {
       <aside className={`fixed inset-y-0 z-30 w-64 bg-slate-900 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 flex flex-col ${isRTL() ? 'right-0' : 'left-0'} ${isRTL() ? (isSidebarOpen ? 'translate-x-0' : 'translate-x-full') : (isSidebarOpen ? 'translate-x-0' : '-translate-x-full')}`}>
         <div className="flex items-center justify-between h-16 px-6 bg-slate-950 shrink-0">
           <span className="text-xl font-bold tracking-tight text-white">{settings.companyName || APP_NAME}</span>
-          <button onClick={() => setIsCommandOpen(false)} className="lg:hidden text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
         </div>
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto custom-scrollbar">
           {sidebarItems.map((item: any) => {
             if (!authService.hasPermission(item.perm)) return null;
-            if (item.roles && user && !item.roles.includes(user.role)) return null;
             if (item.children) {
                 const isOpen = openMenu === item.key;
                 return (
@@ -187,14 +194,31 @@ export default function Layout() {
           </button>
         </div>
       </aside>
+
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className={`${isPreviousDayUnclosed ? 'bg-red-600 text-white shadow-red-200' : 'bg-white text-slate-800'} shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0 transition-all duration-500 z-10`}>
+        {/* شريط حالة الحفظ السحابي (التحذير) */}
+        {isSaving && (
+          <div className="bg-orange-600 text-white py-2 px-6 flex items-center justify-center gap-3 animate-pulse z-[60] shadow-lg">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            <span className="text-xs font-black uppercase tracking-widest">
+              جاري حفظ البيانات في السحابة.. يرجى عدم إغلاق المتصفح لضمان سلامة العمليات.
+            </span>
+            <AlertCircle className="w-4 h-4" />
+          </div>
+        )}
+
+        <header className={`${isPreviousDayUnclosed && !isSaving ? 'bg-red-600 text-white shadow-red-200' : isSaving ? 'bg-slate-50 text-slate-800' : 'bg-white text-slate-800'} shadow-sm h-16 flex items-center justify-between px-6 lg:px-8 shrink-0 transition-all duration-500 z-10`}>
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-lg lg:hidden ${isPreviousDayUnclosed ? 'text-white hover:bg-red-700' : 'text-slate-500 hover:bg-slate-100'}`}>
+            <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-lg lg:hidden ${isPreviousDayUnclosed && !isSaving ? 'text-white hover:bg-red-700' : 'text-slate-500 hover:bg-slate-100'}`}>
               <Menu className="w-6 h-6" />
             </button>
             <div className="flex items-center gap-2">
-              {!dbFullLoaded ? ( 
+              {isSaving ? (
+                <div className="flex items-center gap-2 px-3 py-1 bg-orange-50 border border-orange-200 text-orange-700 rounded-full">
+                  <Save className="w-3 h-3 animate-bounce" />
+                  <span className="text-[10px] font-black uppercase tracking-tighter">جاري الحفظ...</span>
+                </div>
+              ) : !dbFullLoaded ? ( 
                 <div className={`flex items-center gap-2 px-3 py-1 rounded-full border animate-pulse ${isPreviousDayUnclosed ? 'bg-red-700 border-red-500 text-white' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
                   <RefreshCw className="w-3 h-3 animate-spin" />
                   <span className="text-[10px] font-bold whitespace-nowrap uppercase">Syncing...</span>
@@ -205,7 +229,7 @@ export default function Layout() {
                   <span className="text-[10px] font-bold hidden group-hover:block transition-all">البيانات مكتملة</span>
                 </div> 
               )}
-              {isPreviousDayUnclosed && ( 
+              {isPreviousDayUnclosed && !isSaving && ( 
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-white/20 rounded-full border border-white/30 text-[10px] font-black uppercase tracking-widest animate-pulse cursor-pointer hover:bg-white/30 transition-colors" onClick={() => navigate('/daily-closing')}>
                   <AlertTriangle className="w-3 h-3" /> {missingClosings.length} أيام لم تقفل
                 </div> 
@@ -214,12 +238,12 @@ export default function Layout() {
           </div>
           <div className="flex-1 flex justify-center max-w-lg mx-auto">
             <div className="relative w-full hidden md:block">
-              <Search className={`absolute left-3 top-2.5 h-4 w-4 ${isPreviousDayUnclosed ? 'text-white/70' : 'text-slate-400'}`} />
-              <input readOnly onClick={() => setIsCommandOpen(true)} className={`w-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none cursor-pointer transition-colors font-medium ${isPreviousDayUnclosed ? 'bg-white/10 border-white/20 text-white placeholder-white/60 hover:bg-white/20' : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100'}`} placeholder={`${t('cust.search')} (Ctrl+K)`} />
+              <Search className={`absolute left-3 top-2.5 h-4 w-4 ${isPreviousDayUnclosed && !isSaving ? 'text-white/70' : 'text-slate-400'}`} />
+              <input readOnly onClick={() => setIsCommandOpen(true)} className={`w-full pl-10 pr-4 py-2 border rounded-xl text-sm focus:outline-none cursor-pointer transition-colors font-medium ${isPreviousDayUnclosed && !isSaving ? 'bg-white/10 border-white/20 text-white placeholder-white/60 hover:bg-white/20' : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100'}`} placeholder={`${t('cust.search')} (Ctrl+K)`} />
             </div>
           </div>
           <div className="flex items-center gap-4 ltr:ml-auto rtl:mr-auto">
-            <div className={`text-xs font-bold hidden sm:block ${isPreviousDayUnclosed ? 'text-white/80' : 'text-slate-400'}`}>{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+            <div className={`text-xs font-bold hidden sm:block ${isPreviousDayUnclosed && !isSaving ? 'text-white/80' : 'text-slate-400'}`}>{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
           </div>
         </header>
         <main className="flex-1 overflow-auto bg-slate-50 p-4 lg:p-8 custom-scrollbar">
