@@ -220,8 +220,8 @@ class Database {
       .reduce((sum, t) => sum + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
   }
 
-  // المحاولات المتعددة للحفظ في السحابة
-  private async retryCloudOp(op: () => Promise<any>, retries = 3): Promise<boolean> {
+  // المحاولات المتعددة للحفظ في السحابة مع تحسين توافق الأنواع
+  private async retryCloudOp(op: () => PromiseLike<any>, retries = 3): Promise<boolean> {
     for (let i = 0; i < retries; i++) {
         try {
             const { error } = await op();
@@ -240,8 +240,8 @@ class Database {
       const b: Batch = { ...bData, id: `b-${Date.now()}`, product_id: p.id, status: BatchStatus.ACTIVE, batch_number: bData.batch_number || 'INITIAL' };
       
       if (isSupabaseConfigured) {
-          await this.retryCloudOp(() => supabase.from('products').insert(p));
-          await this.retryCloudOp(() => supabase.from('batches').insert(b));
+          await this.retryCloudOp(async () => await supabase.from('products').insert(p));
+          await this.retryCloudOp(async () => await supabase.from('batches').insert(b));
       }
       
       this.products.push(p);
@@ -253,7 +253,7 @@ class Database {
     const p = this.products.find(x => x.id === id);
     if (p) {
       Object.assign(p, data);
-      if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('products').update(data).eq('id', id));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('products').update(data).eq('id', id));
       this.saveToLocalCache();
     }
     return true;
@@ -261,7 +261,7 @@ class Database {
 
   async deleteProduct(id: string) {
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(() => supabase.from('products').delete().eq('id', id));
+        await this.retryCloudOp(async () => await supabase.from('products').delete().eq('id', id));
     }
     this.products = this.products.filter(p => p.id !== id);
     this.batches = this.batches.filter(b => b.product_id !== id);
@@ -276,7 +276,7 @@ class Database {
       current_balance: data.opening_balance || 0 
     };
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(() => supabase.from('customers').insert(customer));
+        await this.retryCloudOp(async () => await supabase.from('customers').insert(customer));
     }
     this.customers.push(customer);
     this.saveToLocalCache();
@@ -285,7 +285,7 @@ class Database {
 
   async deleteCustomer(id: string) {
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(() => supabase.from('customers').delete().eq('id', id));
+        await this.retryCloudOp(async () => await supabase.from('customers').delete().eq('id', id));
     }
     this.customers = this.customers.filter(c => c.id !== id);
     this.saveToLocalCache();
@@ -294,7 +294,7 @@ class Database {
   async addCashTransaction(data: any) {
       const tx = { ...data, id: Date.now().toString(), date: data.date || new Date().toISOString() };
       if (isSupabaseConfigured) {
-          await this.retryCloudOp(() => supabase.from('cash_transactions').insert(tx));
+          await this.retryCloudOp(async () => await supabase.from('cash_transactions').insert(tx));
       }
       this.cashTransactions.push(tx);
       await this.recalculateAllBalances();
@@ -371,8 +371,8 @@ class Database {
       if (batch) batch.quantity += (inv.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity));
     });
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(() => supabase.from('invoices').delete().eq('id', id));
-        await this.retryCloudOp(() => supabase.from('cash_transactions').delete().eq('reference_id', id).eq('category', 'CUSTOMER_PAYMENT'));
+        await this.retryCloudOp(async () => await supabase.from('invoices').delete().eq('id', id));
+        await this.retryCloudOp(async () => await supabase.from('cash_transactions').delete().eq('reference_id', id).eq('category', 'CUSTOMER_PAYMENT'));
     }
     this.invoices = this.invoices.filter(i => i.id !== id);
     this.cashTransactions = this.cashTransactions.filter(t => !(t.reference_id === id && t.category === 'CUSTOMER_PAYMENT'));
@@ -404,8 +404,8 @@ class Database {
           };
           
           if (isSupabaseConfigured) {
-              await this.retryCloudOp(() => supabase.from('cash_transactions').insert(tx));
-              await this.retryCloudOp(() => supabase.from('customers').update({ current_balance: cust.current_balance }).eq('id', cust.id));
+              await this.retryCloudOp(async () => await supabase.from('cash_transactions').insert(tx));
+              await this.retryCloudOp(async () => await supabase.from('customers').update({ current_balance: cust.current_balance }).eq('id', cust.id));
           }
           
           this.cashTransactions.push(tx);
@@ -439,13 +439,13 @@ class Database {
     const customer = this.customers.find(c => c.id === id);
     if (customer) {
       Object.assign(customer, data);
-      if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('customers').update(data).eq('id', id));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('customers').update(data).eq('id', id));
       await this.recalculateAllBalances();
     }
   }
   async addSupplier(data: any) {
     const supplier: Supplier = { ...data, id: Date.now().toString(), current_balance: data.opening_balance || 0 };
-    if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('suppliers').insert(supplier));
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').insert(supplier));
     this.suppliers.push(supplier);
     this.saveToLocalCache();
     return supplier;
@@ -454,18 +454,18 @@ class Database {
     const supplier = this.suppliers.find(s => s.id === id);
     if (supplier) {
       Object.assign(supplier, data);
-      if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('suppliers').update(data).eq('id', id));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').update(data).eq('id', id));
       await this.recalculateAllBalances();
     }
   }
   async deleteSupplier(id: string) {
-    if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('suppliers').delete().eq('id', id));
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').delete().eq('id', id));
     this.suppliers = this.suppliers.filter(s => s.id !== id);
     this.saveToLocalCache();
   }
   async addWarehouse(name: string) { 
     const w = { id: `w-${Date.now()}`, name, is_default: false };
-    if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('warehouses').insert(w));
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').insert(w));
     this.warehouses.push(w); 
     this.saveToLocalCache(); 
   }
@@ -474,7 +474,7 @@ class Database {
       const w = this.warehouses.find(x => x.id === id);
       if (w) {
           w.name = name;
-          if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('warehouses').update({ name }).eq('id', id));
+          if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').update({ name }).eq('id', id));
           this.saveToLocalCache();
       }
   }
@@ -484,7 +484,7 @@ class Database {
     if (!w || w.is_default) return { success: false, message: 'لا يمكن حذف المستودع الرئيسي' };
     
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(() => supabase.from('warehouses').delete().eq('id', id));
+        await this.retryCloudOp(async () => await supabase.from('warehouses').delete().eq('id', id));
     }
     
     this.warehouses = this.warehouses.filter(x => x.id !== id);
@@ -536,7 +536,7 @@ class Database {
           };
           this.batches.push(batch);
         }
-        if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('batches').upsert(batch));
+        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('batches').upsert(batch));
       }
 
       this.purchaseInvoices.push(invoice);
@@ -552,7 +552,7 @@ class Database {
           notes: `سداد فاتورة مشتريات #${invoice.invoice_number}`,
           ref_number: `PPAY-${Date.now().toString().slice(-4)}`
         };
-        if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('cash_transactions').insert(tx));
+        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('cash_transactions').insert(tx));
         this.cashTransactions.push(tx);
       }
 
@@ -573,8 +573,8 @@ class Database {
       if (batch) batch.quantity += (inv.type === 'PURCHASE' ? -totalQtyToRemove : totalQtyToRemove);
     });
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(() => supabase.from('purchase_invoices').delete().eq('id', id));
-        await this.retryCloudOp(() => supabase.from('cash_transactions').delete().eq('reference_id', id).eq('category', 'SUPPLIER_PAYMENT'));
+        await this.retryCloudOp(async () => await supabase.from('purchase_invoices').delete().eq('id', id));
+        await this.retryCloudOp(async () => await supabase.from('cash_transactions').delete().eq('reference_id', id).eq('category', 'SUPPLIER_PAYMENT'));
     }
     this.purchaseInvoices = this.purchaseInvoices.filter(i => i.id !== id);
     this.cashTransactions = this.cashTransactions.filter(t => !(t.reference_id === id && t.category === 'SUPPLIER_PAYMENT'));
@@ -586,20 +586,20 @@ class Database {
     const rep = this.representatives.find(r => r.id === id);
     if (rep) {
         Object.assign(rep, data);
-        if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('representatives').update(data).eq('id', id));
+        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').update(data).eq('id', id));
         this.saveToLocalCache();
     }
   }
 
   async addRepresentative(data: any) {
     const rep: Representative = { ...data, id: Date.now().toString() };
-    if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('representatives').insert(rep));
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').insert(rep));
     this.representatives.push(rep);
     this.saveToLocalCache();
   }
 
   async deleteRepresentative(id: string) {
-    if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('representatives').delete().eq('id', id));
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').delete().eq('id', id));
     this.representatives = this.representatives.filter(r => r.id !== id);
     this.saveToLocalCache();
   }
@@ -611,7 +611,7 @@ class Database {
           date: new Date().toISOString(),
           status: 'PENDING'
       }));
-      if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('pending_adjustments').insert(pAds));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('pending_adjustments').insert(pAds));
       this.pendingAdjustments.push(...pAds);
       this.saveToLocalCache();
   }
@@ -623,10 +623,10 @@ class Database {
           const batch = product?.batches.find(b => b.warehouse_id === adj.warehouse_id);
           if (batch) {
               batch.quantity = adj.actual_qty;
-              if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('batches').update({ quantity: batch.quantity }).eq('id', batch.id));
+              if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('batches').update({ quantity: batch.quantity }).eq('id', batch.id));
           }
           adj.status = 'APPROVED';
-          if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('pending_adjustments').update({ status: 'APPROVED' }).eq('id', id));
+          if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('pending_adjustments').update({ status: 'APPROVED' }).eq('id', id));
           this.saveToLocalCache();
           return true;
       }
@@ -637,7 +637,7 @@ class Database {
       const adj = this.pendingAdjustments.find(a => a.id === id);
       if (adj) {
           adj.status = 'REJECTED';
-          if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id));
+          if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('pending_adjustments').update({ status: 'REJECTED' }).eq('id', id));
           this.saveToLocalCache();
           return true;
       }
@@ -653,7 +653,7 @@ class Database {
           status: 'PENDING',
           items
       };
-      if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('purchase_orders').insert(order));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('purchase_orders').insert(order));
       this.purchaseOrders.push(order);
       this.saveToLocalCache();
       return { success: true };
@@ -663,7 +663,7 @@ class Database {
       const order = this.purchaseOrders.find(o => o.id === id);
       if (order) {
           order.status = status;
-          if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('purchase_orders').update({ status }).eq('id', id));
+          if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('purchase_orders').update({ status }).eq('id', id));
           this.saveToLocalCache();
       }
   }
@@ -690,7 +690,7 @@ class Database {
 
   async saveDailyClosing(data: any) {
       const closing: DailyClosing = { ...data, id: Date.now().toString(), updated_at: new Date().toISOString() };
-      if (isSupabaseConfigured) await this.retryCloudOp(() => supabase.from('daily_closings').insert(closing));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('daily_closings').insert(closing));
       this.dailyClosings.push(closing);
       this.saveToLocalCache();
       return true;
@@ -771,7 +771,7 @@ class Database {
       }
     });
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(() => supabase.from('batches').update({ quantity: 0 }).eq('warehouse_id', warehouseId));
+        await this.retryCloudOp(async () => await supabase.from('batches').update({ quantity: 0 }).eq('warehouse_id', warehouseId));
     }
     this.saveToLocalCache();
   }
