@@ -45,12 +45,16 @@ class Database {
     this.loadFromLocalCache();
   }
 
-  // مولد معرفات فريد وقوي لتجنب تعارض 409
+  // مولد معرفات فريد وقوي جداً لتجنب تعارض 409
   private generateId(prefix: string = ''): string {
-    const randomStr = Math.random().toString(36).substring(2, 8);
-    const timestamp = Date.now().toString(36);
-    const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().split('-')[0] : randomStr;
-    return `${prefix}${timestamp}-${uuid}`;
+    const randomPart = Math.random().toString(36).substring(2, 10);
+    const timePart = Date.now().toString(36);
+    // محاولة استخدام ميزة التشفير في المتصفح لفرادة مطلقة
+    const cryptoPart = typeof crypto !== 'undefined' && crypto.randomUUID 
+        ? crypto.randomUUID().split('-')[0] 
+        : Math.floor(Math.random() * 1000000).toString(36);
+    
+    return `${prefix}${timePart}-${randomPart}-${cryptoPart}`;
   }
 
   // تسجيل مستمع للتغيرات في حالة المزامنة
@@ -256,55 +260,79 @@ class Database {
       .reduce((sum, t) => sum + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
   }
 
-  private async retryCloudOp(op: () => PromiseLike<any>, retries = 3): Promise<boolean> {
+  private async retryCloudOp(op: () => PromiseLike<any>, retries = 3): Promise<{success: boolean, message?: string}> {
     this.incrementOp();
     try {
         for (let i = 0; i < retries; i++) {
             try {
                 const { error } = await op();
-                if (!error) return true;
-                // If conflict, we might want to stop retrying depending on the app logic, 
-                // but usually retry logic is for connection issues.
-                if (error.code === '23505') {
-                  console.error("Conflict detected in Cloud DB, stopping retries.");
-                  return false;
+                if (!error) return { success: true };
+                
+                // معالجة تعارض السجلات (Unique Violation)
+                if (error.code === '23505' || error.status === 409) {
+                  return { success: false, message: 'DUPLICATE' };
                 }
-                console.warn(`Retry ${i+1} failed...`);
-            } catch (e) {
+                
+                console.warn(`Retry ${i+1} failed for cloud operation...`);
+            } catch (e: any) {
+                if (e.status === 409) return { success: false, message: 'DUPLICATE' };
                 console.error(`Attempt ${i+1} exception:`, e);
             }
             await new Promise(r => setTimeout(r, 1000 * (i + 1)));
         }
-        return false;
+        return { success: false, message: 'TIMEOUT' };
     } finally {
         this.decrementOp();
     }
   }
 
-  async addProduct(pData: any, bData: any) {
-      // استخدام معرفات قوية لتجنب التعارض
+  async addProduct(pData: any, bData: any): Promise<{ success: boolean; message?: string }> {
+      // 1. التحقق من وجود الكود محلياً قبل أي شيء
+      if (pData.code && this.products.some(p => p.code === pData.code)) {
+          return { success: false, message: 'كود الصنف مسجل مسبقاً لصنف آخر' };
+      }
+
       const p: Product = { ...pData, id: this.generateId('p-') };
-      const b: Batch = { ...bData, id: this.generateId('b-'), product_id: p.id, status: BatchStatus.ACTIVE, batch_number: bData.batch_number || 'INITIAL' };
+      const b: Batch = { 
+          ...bData, 
+          id: this.generateId('b-'), 
+          product_id: p.id, 
+          status: BatchStatus.ACTIVE, 
+          batch_number: bData.batch_number || 'INITIAL' 
+      };
       
       if (isSupabaseConfigured) {
-          // استخدام upsert بدلاً من insert لتفادي انهيار البرنامج عند التعارض
-          await this.retryCloudOp(async () => await supabase.from('products').upsert(p));
-          await this.retryCloudOp(async () => await supabase.from('batches').upsert(b));
+          const resP = await this.retryCloudOp(async () => await supabase.from('products').upsert(p));
+          if (!resP.success) {
+              return { success: false, message: resP.message === 'DUPLICATE' ? 'هذا الصنف أو الكود موجود بالفعل في قاعدة البيانات السحابية' : 'فشل الاتصال بالسحابة، يرجى المحاولة لاحقاً' };
+          }
+
+          const resB = await this.retryCloudOp(async () => await supabase.from('batches').upsert(b));
+          if (!resB.success) {
+              // إذا نجح المنتج وفشل الباتش، نقوم بمسح المنتج لضمان سلامة البيانات (اختياري)
+              return { success: false, message: 'حدث خطأ أثناء حفظ أرصدة المخزن' };
+          }
       }
       
       this.products.push(p);
       this.batches.push(b);
       this.saveToLocalCache();
+      return { success: true };
   }
 
   async updateProduct(id: string, data: Partial<Product>) {
     const p = this.products.find(x => x.id === id);
     if (p) {
+      // تحقق من الكود المكرر عند التحديث
+      if (data.code && data.code !== p.code && this.products.some(x => x.code === data.code)) {
+          return { success: false, message: 'الكود الجديد مسجل مسبقاً' };
+      }
+
       Object.assign(p, data);
       if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('products').update(data).eq('id', id));
       this.saveToLocalCache();
     }
-    return true;
+    return { success: true };
   }
 
   async deleteProduct(id: string) {

@@ -44,6 +44,7 @@ const Inventory: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [viewingCardProduct, setViewingCardProduct] = useState<any | null>(null);
@@ -138,24 +139,45 @@ const Inventory: React.FC = () => {
 
   const handleSaveProduct = async () => {
       if (!quickAddForm.name) return toast.error("اسم الصنف مطلوب");
-      if (editingProduct) {
-          await db.updateProduct(editingProduct.id, { name: quickAddForm.name, code: quickAddForm.code, purchase_price: quickAddForm.purchase_price, selling_price: quickAddForm.selling_price });
-          toast.success("تم تحديث الصنف بنجاح");
-      } else {
-          const pData = { name: quickAddForm.name, code: quickAddForm.code };
-          const bData = { 
-              quantity: quickAddForm.initial_qty, 
-              purchase_price: quickAddForm.purchase_price, 
-              selling_price: quickAddForm.selling_price,
-              warehouse_id: quickAddForm.warehouse_id || warehouses[0]?.id
-          };
-          await db.addProduct(pData, bData);
-          toast.success("تم إضافة الصنف بنجاح");
+      
+      setIsSubmitting(true);
+      try {
+          if (editingProduct) {
+              const res = await db.updateProduct(editingProduct.id, { 
+                  name: quickAddForm.name, 
+                  code: quickAddForm.code, 
+                  purchase_price: quickAddForm.purchase_price, 
+                  selling_price: quickAddForm.selling_price 
+              });
+              if (res.success) {
+                  toast.success("تم تحديث الصنف بنجاح");
+                  setIsAddModalOpen(false);
+              } else {
+                  toast.error(res.message || "فشل التحديث");
+              }
+          } else {
+              const pData = { name: quickAddForm.name, code: quickAddForm.code };
+              const bData = { 
+                  quantity: quickAddForm.initial_qty, 
+                  purchase_price: quickAddForm.purchase_price, 
+                  selling_price: quickAddForm.selling_price,
+                  warehouse_id: quickAddForm.warehouse_id || warehouses[0]?.id
+              };
+              const result = await db.addProduct(pData, bData);
+              if (result.success) {
+                  toast.success("تم إضافة الصنف بنجاح");
+                  setIsAddModalOpen(false);
+                  setQuickAddForm({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
+              } else {
+                  toast.error(result.message || "فشل حفظ الصنف");
+              }
+          }
+          loadProducts();
+      } catch (e) {
+          toast.error("حدث خطأ غير متوقع");
+      } finally {
+          setIsSubmitting(false);
       }
-      setIsAddModalOpen(false);
-      setEditingProduct(null);
-      setQuickAddForm({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
-      loadProducts();
   };
 
   const handleEdit = (p: any) => {
@@ -253,14 +275,11 @@ const Inventory: React.FC = () => {
 
   /**
    * دالة معالجة تصدير PDF المطورة
-   * تقوم بتقسيم البيانات إلى مجموعات (Chunks) وتصوير كل صفحة مستقلة لتجنب انهيار الذاكرة (Memory Crash)
-   * وتستخدم JPEG لضمان عدم حدوث خطأ Corruption
    */
   const handleExportPdf = async () => {
     setIsPdfGenerating(true);
     const toastId = toast.loading("جاري تحضير تقرير PDF...");
     
-    // 1. فلترة وترتيب البيانات
     let allData = products.filter(p => {
         const pBatches = p.batches || [];
         const filteredBatches = pdfExportOptions.warehouseId === 'ALL' ? pBatches : pBatches.filter((b: any) => b.warehouse_id === pdfExportOptions.warehouseId);
@@ -277,8 +296,7 @@ const Inventory: React.FC = () => {
         return;
     }
 
-    // 2. إعدادات التقسيم
-    const itemsPerPage = 160; // 80 سطر في كل عمود (عمودين)
+    const itemsPerPage = 160; 
     const chunks: any[][] = [];
     for (let i = 0; i < allData.length; i += itemsPerPage) {
         chunks.push(allData.slice(i, i + itemsPerPage));
@@ -290,11 +308,8 @@ const Inventory: React.FC = () => {
     try {
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
-            
-            // تحديث التوست لإظهار التقدم
             toast.loading(`جاري معالجة الصفحة ${i + 1} من ${chunks.length}...`, { id: toastId });
 
-            // إنشاء حاوية مؤقتة للصفحة الحالية
             const pageDiv = document.createElement('div');
             pageDiv.style.width = '210mm';
             pageDiv.style.padding = '10mm';
@@ -302,7 +317,7 @@ const Inventory: React.FC = () => {
             pageDiv.style.direction = 'rtl';
             pageDiv.style.fontFamily = 'Cairo, sans-serif';
             pageDiv.style.position = 'fixed';
-            pageDiv.style.top = '-10000px'; // بعيداً عن الشاشة
+            pageDiv.style.top = '-10000px'; 
             
             pageDiv.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 15px;">
@@ -340,7 +355,6 @@ const Inventory: React.FC = () => {
 
             document.body.appendChild(pageDiv);
 
-            // تحويل الصفحة إلى صورة (JPEG بدقة عالية)
             const canvas = await html2canvas(pageDiv, { 
                 scale: 1.5, 
                 useCORS: true, 
@@ -348,13 +362,13 @@ const Inventory: React.FC = () => {
                 backgroundColor: '#ffffff'
             });
             
-            const imgData = canvas.toDataURL('image/jpeg', 0.9); // استخدام JPEG
+            const imgData = canvas.toDataURL('image/jpeg', 0.9); 
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
             if (i > 0) pdf.addPage();
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
 
-            document.body.removeChild(pageDiv); // حذف من DOM فوراً لتحرير الذاكرة
+            document.body.removeChild(pageDiv); 
         }
 
         pdf.save(`Inventory_Pro_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -626,7 +640,14 @@ const Inventory: React.FC = () => {
                           <input type="number" className="w-full border-2 border-slate-100 p-3 rounded-2xl outline-none focus:border-emerald-500 font-black text-emerald-600 transition-all" value={quickAddForm.selling_price} onChange={e => setQuickAddForm({...quickAddForm, selling_price: parseFloat(e.target.value) || 0})} />
                       </div>
                       <div className="col-span-2 pt-4">
-                          <button onClick={handleSaveProduct} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 transition-all active:scale-95">حفظ بيانات الصنف</button>
+                          <button 
+                            onClick={handleSaveProduct} 
+                            disabled={isSubmitting}
+                            className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            {isSubmitting ? <Loader2 className="w-6 h-6 animate-spin" /> : null}
+                            {isSubmitting ? "جاري الحفظ..." : "حفظ بيانات الصنف"}
+                          </button>
                       </div>
                   </div>
               </div>
