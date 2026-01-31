@@ -137,6 +137,30 @@ const Inventory: React.FC = () => {
     setCurrentPage(1);
   }, [searchQuery, selectedWarehouseFilter, hideZeroStock, showLowStock, showOutOfStock]);
 
+  // دالة فتح نافذة الإضافة مع توليد الكود تلقائياً
+  const handleOpenAdd = () => {
+      setEditingProduct(null);
+      
+      // البحث عن أكبر كود رقمي لتوليد الكود التالي
+      const allProds = db.getProductsWithBatches();
+      const numericCodes = allProds
+          .map(p => parseInt(p.code || ''))
+          .filter(c => !isNaN(c));
+      
+      const maxCode = numericCodes.length > 0 ? Math.max(...numericCodes) : 1000;
+      const nextCode = (maxCode + 1).toString();
+
+      setQuickAddForm({ 
+          name: '', 
+          code: nextCode, 
+          purchase_price: 0, 
+          selling_price: 0, 
+          initial_qty: 0, 
+          warehouse_id: warehouses[0]?.id || '' 
+      });
+      setIsAddModalOpen(true);
+  };
+
   const handleSaveProduct = async () => {
       if (!quickAddForm.name) return toast.error("اسم الصنف مطلوب");
       
@@ -167,7 +191,6 @@ const Inventory: React.FC = () => {
               if (result.success) {
                   toast.success("تم إضافة الصنف بنجاح");
                   setIsAddModalOpen(false);
-                  setQuickAddForm({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
               } else {
                   toast.error(result.message || "فشل حفظ الصنف");
               }
@@ -273,9 +296,6 @@ const Inventory: React.FC = () => {
       setIsExportModalOpen(false);
   };
 
-  /**
-   * دالة معالجة تصدير PDF المطورة
-   */
   const handleExportPdf = async () => {
     setIsPdfGenerating(true);
     const toastId = toast.loading("جاري تحضير تقرير PDF...");
@@ -390,7 +410,7 @@ const Inventory: React.FC = () => {
            <div className="flex flex-wrap gap-2">
              <button onClick={() => setIsPdfModalOpen(true)} className="bg-red-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-red-700 transition-all active:scale-95"><FileText className="w-5 h-5" /> تصدير PDF</button>
              <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all active:scale-95"><FileSpreadsheet className="w-5 h-5" /> تصدير إكسيل</button>
-             <button id="btn_new_product" name="btn_new_product" onClick={() => { setEditingProduct(null); setIsAddModalOpen(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><PlusCircle className="w-5 h-5" /> {t('stock.new')}</button>
+             <button id="btn_new_product" name="btn_new_product" onClick={handleOpenAdd} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all"><PlusCircle className="w-5 h-5" /> {t('stock.new')}</button>
            </div>
         </div>
 
