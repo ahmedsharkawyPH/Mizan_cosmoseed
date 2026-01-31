@@ -19,7 +19,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const currency = db.getSettings().currency;
   const isReturn = type === 'RETURN';
   
-  const [suppliers] = useState(db.getSuppliers());
+  const [suppliers, setSuppliers] = useState(db.getSuppliers());
   const [products, setProducts] = useState(db.getProductsWithBatches());
   const [warehouses] = useState(db.getWarehouses());
   
@@ -63,6 +63,15 @@ export default function PurchaseInvoice({ type }: Props) {
             setIsLoadingInvoice(false);
         }
     }
+
+    // آلية تحديث قائمة الأصناف في حال حدوث مزامنة في الخلفية
+    const checkSync = setInterval(() => {
+        if (db.isFullyLoaded) {
+            setProducts(db.getProductsWithBatches());
+            setSuppliers(db.getSuppliers());
+        }
+    }, 2000);
+    return () => clearInterval(checkSync);
   }, [id, warehouses]);
 
   const lastPurchasesIntelligence = useMemo(() => {
@@ -125,9 +134,9 @@ export default function PurchaseInvoice({ type }: Props) {
             const currentMargin = ((lastBatch.selling_price / lastBatch.purchase_price) - 1) * 100;
             setMargin(parseFloat(currentMargin.toFixed(1)));
         }
-      } else {
-        setCost(0);
-        setSell(0);
+      } else if (p) {
+        setCost(p.purchase_price || 0);
+        setSell(p.selling_price || 0);
         setMargin(0);
       }
       setTimeout(() => costRef.current?.focus(), 50);
@@ -248,7 +257,7 @@ export default function PurchaseInvoice({ type }: Props) {
             <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
                 <div className="md:col-span-5">
                     <SearchableSelect 
-                        id="pur_supplier_select"
+                        id="purchase_supplier_select_input"
                         name="supplier_id"
                         label={t('pur.select_supplier')} 
                         placeholder="ابحث عن المورد..." 
@@ -268,10 +277,12 @@ export default function PurchaseInvoice({ type }: Props) {
                             </div>
                         </div>
                         <div className="md:col-span-3">
-                            <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+                            <label htmlFor="purchase_document_no_input" className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
                                 <FileText className="w-4 h-4 text-orange-400" /> رقم المستند (فاتورة المورد)
                             </label>
                             <input 
+                                id="purchase_document_no_input"
+                                name="document_number"
                                 type="text" 
                                 className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-orange-500 bg-orange-50/20 focus:bg-white"
                                 placeholder="الرقم الورقي للفاتورة"
@@ -280,10 +291,12 @@ export default function PurchaseInvoice({ type }: Props) {
                             />
                         </div>
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
+                            <label htmlFor="purchase_manual_date_input" className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-2">
                                 <Calendar className="w-4 h-4 text-slate-400" /> تاريخ الشراء
                             </label>
                             <input 
+                                id="purchase_manual_date_input"
+                                name="manual_date"
                                 type="date" 
                                 className="w-full border p-2.5 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 focus:bg-white"
                                 value={manualDate}
@@ -308,8 +321,8 @@ export default function PurchaseInvoice({ type }: Props) {
                         </button>
                     )}
                     <div className="flex items-center gap-2">
-                      <label className="text-xs font-black text-slate-400">المخزن:</label>
-                      <select className="text-xs border p-1.5 rounded-lg font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                      <label htmlFor="purchase_warehouse_select_input" className="text-xs font-black text-slate-400">المخزن:</label>
+                      <select id="purchase_warehouse_select_input" name="warehouse_id" className="text-xs border p-1.5 rounded-lg font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
                           {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                       </select>
                     </div>
@@ -319,6 +332,8 @@ export default function PurchaseInvoice({ type }: Props) {
             <div className="space-y-5">
               <div className="w-full">
                   <SearchableSelect 
+                      id="purchase_product_select_input"
+                      name="product_id"
                       ref={productRef} 
                       label={t('inv.product')} 
                       placeholder="ابحث عن الصنف بالاسم أو الكود..." 
@@ -359,27 +374,27 @@ export default function PurchaseInvoice({ type }: Props) {
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                   <div className="md:col-span-3 lg:col-span-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('pur.cost')}</label>
-                      <input ref={costRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold outline-none focus:border-blue-500 transition-all" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+                      <label htmlFor="purchase_cost_input" className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('pur.cost')}</label>
+                      <input id="purchase_cost_input" name="cost_price" ref={costRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold outline-none focus:border-blue-500 transition-all" value={cost || ''} onChange={e => handleCostChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
                   </div>
                   <div className="md:col-span-2 lg:col-span-2">
-                      <label className="text-[10px] font-black text-blue-500 uppercase mb-1 block">ربح %</label>
-                      <input ref={marginRef} type="number" className="w-full border border-blue-200 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => setMargin(Number(e.target.value))} />
+                      <label htmlFor="purchase_margin_input" className="text-[10px] font-black text-blue-500 uppercase mb-1 block">ربح %</label>
+                      <input id="purchase_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border border-blue-200 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500" value={margin || ''} onChange={e => setMargin(Number(e.target.value))} />
                   </div>
                   <div className="md:col-span-2 lg:col-span-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('stock.qty')}</label>
-                      <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-blue-500 transition-all" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} disabled={!selProd} placeholder="1" />
+                      <label htmlFor="purchase_qty_input" className="text-[10px] font-black text-slate-400 uppercase mb-1 block">{t('stock.qty')}</label>
+                      <input id="purchase_qty_input" name="quantity" ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-blue-500 transition-all" value={qty || ''} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && bonusRef.current?.focus()} disabled={!selProd} placeholder="1" />
                   </div>
                   <div className="md:col-span-2 lg:col-span-2">
-                      <label className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص </label>
-                      <input ref={bonusRef} type="number" className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-orange-500 transition-all bg-orange-50/10" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="0" />
+                      <label htmlFor="purchase_bonus_input" className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص </label>
+                      <input id="purchase_bonus_input" name="bonus_quantity" ref={bonusRef} type="number" className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-orange-500 transition-all bg-orange-50/10" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="0" />
                   </div>
                   <div className="md:col-span-3 lg:col-span-2">
-                      <label className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">سعر البيع المقترح</label>
-                      <input ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
+                      <label htmlFor="purchase_sell_price_input" className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">سعر البيع المقترح</label>
+                      <input id="purchase_sell_price_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
                   </div>
                   <div className="md:col-span-12 lg:col-span-2">
-                      <button onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>
+                      <button id="purchase_add_btn" name="add_to_cart" onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>
                           {editingIndex !== null ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
                           {editingIndex !== null ? 'تحديث' : 'إضافة'}
                       </button>
@@ -464,8 +479,10 @@ export default function PurchaseInvoice({ type }: Props) {
                 </div>
 
                 <div>
-                    <label className="block text-xs font-black text-slate-400 uppercase mb-2">المبلغ المسدد نقداً (كاش)</label>
+                    <label htmlFor="purchase_cash_paid_input" className="block text-xs font-black text-slate-400 uppercase mb-2">المبلغ المسدد نقداً (كاش)</label>
                     <input 
+                        id="purchase_cash_paid_input"
+                        name="paid_amount"
                         type="number" 
                         className="w-full border-2 border-slate-100 p-4 rounded-2xl font-black text-2xl text-emerald-600 bg-emerald-50/20 focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all" 
                         value={cashPaid || ''} 
@@ -479,7 +496,7 @@ export default function PurchaseInvoice({ type }: Props) {
                 </div>
 
                 <div className="pt-4">
-                    <button onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
+                    <button id="purchase_finalize_btn" name="finalize_invoice" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-slate-200 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
                         <Save className="w-6 h-6" />
                         {id ? 'حفظ التعديلات النهائية' : 'حفظ الفاتورة النهائية'}
                     </button>

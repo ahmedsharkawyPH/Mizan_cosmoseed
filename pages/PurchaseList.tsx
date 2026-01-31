@@ -14,8 +14,8 @@ export default function PurchaseList() {
   const navigate = useNavigate();
   const currency = db.getSettings().currency;
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
-  const [suppliers] = useState(db.getSuppliers());
-  const [products] = useState(db.getProductsWithBatches());
+  const [suppliers, setSuppliers] = useState(db.getSuppliers());
+  const [products, setProducts] = useState(db.getProductsWithBatches());
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'PURCHASE' | 'RETURN'>('ALL');
   
@@ -27,12 +27,25 @@ export default function PurchaseList() {
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
   const [conversionInvoice, setConversionInvoice] = useState<PurchaseInvoice | null>(null);
 
-  const loadInvoices = () => {
+  // تحديث البيانات مع ضمان جلب الأصناف
+  const loadData = () => {
     setInvoices(db.getPurchaseInvoices());
+    setProducts(db.getProductsWithBatches());
+    setSuppliers(db.getSuppliers());
   };
 
   useEffect(() => {
-    loadInvoices();
+    loadData();
+    // آلية تحديث تلقائي في حال كانت البيانات قيد المزامنة من السحابة
+    const checkInterval = setInterval(() => {
+        if (db.isFullyLoaded) {
+            loadData();
+            if (db.getProductsWithBatches().length > 0) {
+              clearInterval(checkInterval);
+            }
+        }
+    }, 1000);
+    return () => clearInterval(checkInterval);
   }, []);
 
   const filtered = useMemo(() => {
@@ -72,12 +85,21 @@ export default function PurchaseList() {
     if (window.confirm("تحذير: هل أنت متأكد من حذف هذه الفاتورة؟ سيتم سحب الكميات من المخازن وتعديل رصيد المورد والخزينة تلقائياً.")) {
         await db.deletePurchaseInvoice(id);
         toast.success("تم حذف الفاتورة وعكس حركاتها بنجاح");
-        loadInvoices();
+        loadData();
     }
   };
 
-  const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || 'غير معروف';
-  const getProductName = (id: string) => products.find(p => p.id === id)?.name || 'صنف غير معروف';
+  const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || '...';
+  
+  // إصلاح مشكلة الصنف غير المعروف عبر التأكد من القائمة
+  const getProductName = (id: string) => {
+      const product = products.find(p => p.id === id);
+      if (product) return product.name;
+      
+      // محاولة أخيرة: الجلب المباشر من الداتا بيز في حال لم يتم تحديث الـ state
+      const directProduct = db.getProductsWithBatches().find(p => p.id === id);
+      return directProduct ? directProduct.name : 'جاري التحميل...';
+  };
 
   // Conversion Actions
   const goToReturn = () => {
@@ -111,6 +133,8 @@ export default function PurchaseList() {
             <div className="relative group flex-1 md:flex-none">
                 <Search className="absolute right-3 top-3 h-5 w-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                 <input 
+                    id="purchase_search_main"
+                    name="purchase_search"
                     type="text" 
                     placeholder="رقم الفاتورة أو المورد..." 
                     className="pr-10 pl-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full md:w-64 outline-none shadow-sm transition-shadow font-bold"
@@ -221,10 +245,11 @@ export default function PurchaseList() {
                 </div>
 
                 <form onSubmit={handleJumpPage} className="flex items-center gap-3">
-                    <label htmlFor="jump_page_input" className="text-xs font-black text-slate-400 uppercase tracking-tighter">الذهاب لصفحة:</label>
+                    <label htmlFor="purchase_jump_page_input" className="text-xs font-black text-slate-400 uppercase tracking-tighter">الذهاب لصفحة:</label>
                     <div className="relative">
                         <input 
-                            id="jump_page_input"
+                            id="purchase_jump_page_input"
+                            name="jump_page"
                             type="number"
                             min="1"
                             max={totalPages}
