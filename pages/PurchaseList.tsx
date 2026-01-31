@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { PurchaseInvoice } from '../types';
 import { t } from '../utils/t';
-import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2, RefreshCcw, ShoppingCart, RotateCcw, AlertCircle, ArrowRightLeft } from 'lucide-react';
+import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2, RefreshCcw, ShoppingCart, RotateCcw, AlertCircle, ArrowRightLeft, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 // @ts-ignore
 import toast from 'react-hot-toast';
@@ -26,6 +26,7 @@ export default function PurchaseList() {
   // Modals State
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
   const [conversionInvoice, setConversionInvoice] = useState<PurchaseInvoice | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<PurchaseInvoice | null>(null);
 
   // تحديث البيانات مع ضمان جلب الأصناف
   const loadData = () => {
@@ -81,12 +82,13 @@ export default function PurchaseList() {
       }
   };
 
-  const handleDeleteInvoice = async (id: string) => {
-    if (window.confirm("تحذير: هل أنت متأكد من حذف هذه الفاتورة؟ سيتم سحب الكميات من المخازن وتعديل رصيد المورد والخزينة تلقائياً.")) {
-        await db.deletePurchaseInvoice(id);
-        toast.success("تم حذف الفاتورة وعكس حركاتها بنجاح");
-        loadData();
-    }
+  const confirmDelete = async (updateInventory: boolean, updateBalance: boolean) => {
+    if (!invoiceToDelete) return;
+    
+    await db.deletePurchaseInvoice(invoiceToDelete.id, updateInventory, updateBalance);
+    toast.success(updateInventory ? "تم حذف الفاتورة وتحديث المخزون والحسابات" : "تم حذف الفاتورة من السجلات فقط");
+    setInvoiceToDelete(null);
+    loadData();
   };
 
   const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || '...';
@@ -194,7 +196,7 @@ export default function PurchaseList() {
                                     <button onClick={() => navigate(`/purchases/edit/${inv.id}`)} className="p-2 border border-slate-100 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white shadow-sm transition-all" title="تعديل">
                                         <Edit className="w-4 h-4" />
                                     </button>
-                                    <button onClick={() => handleDeleteInvoice(inv.id)} className="p-2 border border-slate-100 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 shadow-sm transition-all" title="حذف">
+                                    <button onClick={() => setInvoiceToDelete(inv)} className="p-2 border border-slate-100 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 shadow-sm transition-all" title="حذف">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
@@ -271,6 +273,73 @@ export default function PurchaseList() {
             </div>
         )}
       </div>
+
+      {/* --- Delete Confirmation Modal --- */}
+      {invoiceToDelete && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border-2 border-red-100 animate-in zoom-in duration-200">
+                  <div className="p-8 bg-red-50 text-red-700 flex flex-col items-center text-center">
+                      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                          <Trash2 className="w-10 h-10 text-red-600" />
+                      </div>
+                      <h3 className="text-2xl font-black mb-2">تأكيد حذف الفاتورة</h3>
+                      <p className="text-sm font-bold text-red-600/70">يرجى اختيار نوع الحذف المطلوب للفاتورة المختارة</p>
+                  </div>
+
+                  <div className="p-8 space-y-6">
+                      <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-3">
+                          <div className="flex justify-between items-center text-sm font-black text-slate-500">
+                              <span>رقم الفاتورة:</span>
+                              <span className="text-slate-800 font-mono">{invoiceToDelete.invoice_number}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm font-black text-slate-500">
+                              <span>المورد:</span>
+                              <span className="text-slate-800">{getSupplierName(invoiceToDelete.supplier_id)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm font-black text-slate-500">
+                              <span>إجمالي الفاتورة:</span>
+                              <span className="text-red-600 text-lg">{currency}{invoiceToDelete.total_amount.toLocaleString()}</span>
+                          </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4">
+                          <button 
+                              onClick={() => confirmDelete(true, true)}
+                              className="flex items-center gap-4 p-5 rounded-2xl border-2 border-red-200 bg-red-50/30 hover:bg-red-50 hover:border-red-500 transition-all group text-right"
+                          >
+                              <div className="p-3 rounded-xl bg-red-100 text-red-600 group-hover:scale-110 transition-transform">
+                                  <RefreshCcw className="w-6 h-6" />
+                              </div>
+                              <div className="flex-1">
+                                  <div className="font-black text-red-800">حذف مع التأثير (الأرصدة والمخزون)</div>
+                                  <p className="text-[10px] text-red-600/70 font-bold">سيتم خصم الكميات من المخازن وتعديل رصيد المورد.</p>
+                              </div>
+                          </button>
+
+                          <button 
+                              onClick={() => confirmDelete(false, false)}
+                              className="flex items-center gap-4 p-5 rounded-2xl border-2 border-slate-200 hover:border-blue-500 hover:bg-blue-50 transition-all group text-right"
+                          >
+                              <div className="p-3 rounded-xl bg-blue-100 text-blue-600 group-hover:scale-110 transition-transform">
+                                  <FileMinus className="w-6 h-6" />
+                              </div>
+                              <div className="flex-1">
+                                  <div className="font-black text-slate-800">حذف السجل فقط (دون تأثير)</div>
+                                  <p className="text-[10px] text-slate-400 font-bold">سيتم مسح الفاتورة من السجل فقط، ولن يتغير رصيد المورد أو المخزون.</p>
+                              </div>
+                          </button>
+                      </div>
+
+                      <button 
+                          onClick={() => setInvoiceToDelete(null)}
+                          className="w-full py-4 text-slate-400 font-black hover:text-slate-600 hover:bg-slate-50 rounded-2xl transition-all"
+                      >
+                          إلغاء التراجع
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* --- Conversion Smart Modal --- */}
       {conversionInvoice && (
@@ -402,3 +471,8 @@ export default function PurchaseList() {
     </div>
   );
 }
+
+// أيقونة الحذف من سجلات فقط للاستخدام داخل الزر
+const FileMinus = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+);

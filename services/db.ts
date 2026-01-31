@@ -604,21 +604,30 @@ class Database {
     }
   }
 
-  async deletePurchaseInvoice(id: string) {
+  async deletePurchaseInvoice(id: string, updateInventory: boolean = true, updateBalance: boolean = true) {
     const inv = this.purchaseInvoices.find(i => i.id === id);
     if (!inv) return;
-    inv.items.forEach(item => {
-      const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
-      const totalQtyToRemove = item.quantity + (item.bonus_quantity || 0);
-      if (batch) batch.quantity += (inv.type === 'PURCHASE' ? -totalQtyToRemove : totalQtyToRemove);
-    });
+
+    if (updateInventory) {
+      inv.items.forEach(item => {
+        const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
+        const totalQtyToRemove = item.quantity + (item.bonus_quantity || 0);
+        if (batch) batch.quantity += (inv.type === 'PURCHASE' ? -totalQtyToRemove : totalQtyToRemove);
+      });
+    }
+
     if (isSupabaseConfigured) {
         await this.retryCloudOp(async () => await supabase.from('purchase_invoices').delete().eq('id', id));
         await this.retryCloudOp(async () => await supabase.from('cash_transactions').delete().eq('reference_id', id).eq('category', 'SUPPLIER_PAYMENT'));
     }
+
     this.purchaseInvoices = this.purchaseInvoices.filter(i => i.id !== id);
     this.cashTransactions = this.cashTransactions.filter(t => !(t.reference_id === id && t.category === 'SUPPLIER_PAYMENT'));
-    await this.recalculateAllBalances();
+    
+    if (updateBalance) {
+      await this.recalculateAllBalances();
+    }
+    
     this.saveToLocalCache();
   }
 
