@@ -35,7 +35,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
   const [qty, setQty] = useState(1);
-  const [bonus, setBonus] = useState(0); // Bonus state added
+  const [bonus, setBonus] = useState(0); 
   const [cost, setCost] = useState(0);
   const [margin, setMargin] = useState(0); 
   const [sell, setSell] = useState(0);
@@ -44,7 +44,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const costRef = useRef<HTMLInputElement>(null);
   const marginRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
-  const bonusRef = useRef<HTMLInputElement>(null); // Bonus ref added
+  const bonusRef = useRef<HTMLInputElement>(null); 
   const sellRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -65,7 +65,6 @@ export default function PurchaseInvoice({ type }: Props) {
     }
   }, [id, warehouses]);
 
-  // منطق جلب آخر 3 أسعار شراء للصنف المختار
   const lastPurchasesIntelligence = useMemo(() => {
     if (!selProd) return [];
     const allInvoices = db.getPurchaseInvoices();
@@ -157,7 +156,8 @@ export default function PurchaseInvoice({ type }: Props) {
       bonus_quantity: Number(bonus),
       cost_price: Number(cost),
       selling_price: Number(sell),
-      expiry_date: '2099-12-31'
+      expiry_date: '2099-12-31',
+      serial_number: editingIndex !== null ? cart[editingIndex].serial_number : cart.length + 1
     };
     
     if (editingIndex !== null) {
@@ -329,7 +329,6 @@ export default function PurchaseInvoice({ type }: Props) {
                       className="w-full"
                   />
 
-                  {/* ذكاء الأسعار - يعرض آخر 3 أسعار شراء على شكل بطاقات */}
                   {selProd && lastPurchasesIntelligence.length > 0 && (
                       <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
                           <div className="flex items-center gap-2 mb-2 text-blue-600">
@@ -397,7 +396,7 @@ export default function PurchaseInvoice({ type }: Props) {
                 <table className="w-full text-sm text-right">
                    <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[10px] border-b border-slate-100">
                       <tr>
-                         <th className="px-4 py-4 text-center">مسلسل</th>
+                         <th className="px-4 py-4 text-center"># المسلسل</th>
                          <th className="px-4 py-4">اسم الصنف</th>
                          <th className="px-4 py-4 text-center">الكمية</th>
                          <th className="px-4 py-4 text-center">البونص</th>
@@ -410,13 +409,17 @@ export default function PurchaseInvoice({ type }: Props) {
                    <tbody className="divide-y divide-slate-50">
                       {cart.map((item, idx) => (
                          <tr key={idx} className={`hover:bg-slate-50 transition-colors font-bold ${editingIndex === idx ? 'bg-orange-50' : ''}`}>
-                            <td className="px-4 py-4 text-center text-slate-400 font-mono">{idx + 1}</td>
+                            <td className="px-4 py-4 text-center">
+                               <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 text-slate-900 font-black text-xs border border-slate-200">
+                                  {item.serial_number || idx + 1}
+                               </span>
+                            </td>
                             <td className="px-4 py-4">
                                 <div className="text-slate-800">{products.find(x => x.id === item.product_id)?.name}</div>
                                 <div className="text-[9px] text-slate-400 font-mono">#{products.find(x => x.id === item.product_id)?.code}</div>
                             </td>
                             <td className="px-4 py-4 text-center">
-                               <span className="px-3 py-1 bg-slate-100 rounded-lg text-slate-700">{item.quantity}</span>
+                               <span className="px-3 py-1 bg-slate-50 text-slate-700 rounded-lg border border-slate-100">{item.quantity}</span>
                             </td>
                             <td className="px-4 py-4 text-center">
                                {item.bonus_quantity > 0 ? (

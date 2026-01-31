@@ -120,6 +120,7 @@ export interface PurchaseInvoice {
 }
 
 export interface PurchaseItem {
+  serial_number?: number; // الحقل الجديد لتخزين الترتيب
   product_id: string;
   warehouse_id: string; 
   batch_number: string; 

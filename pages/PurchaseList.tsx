@@ -340,6 +340,7 @@ export default function PurchaseList() {
                           <table className="w-full text-sm border-collapse min-w-[600px]">
                               <thead>
                                   <tr className="bg-slate-50 border-b border-slate-100 text-[10px] text-slate-500 uppercase font-black">
+                                      <th className="p-4 text-center"># المسلسل</th>
                                       <th className="p-4 text-right">الصنف</th>
                                       <th className="p-4 text-center">الكمية</th>
                                       <th className="p-4 text-center">سعر التكلفة</th>
@@ -347,8 +348,13 @@ export default function PurchaseList() {
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-50">
-                                  {selectedInvoice.items.map((item, idx) => (
+                                  {selectedInvoice.items.sort((a,b) => (a.serial_number || 0) - (b.serial_number || 0)).map((item, idx) => (
                                       <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                          <td className="p-4 text-center">
+                                              <span className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-500 font-black text-[10px]">
+                                                  {item.serial_number || idx + 1}
+                                              </span>
+                                          </td>
                                           <td className="p-4 font-black text-slate-800">{getProductName(item.product_id)}</td>
                                           <td className="p-4 text-center font-black text-slate-700 bg-slate-50/30">{item.quantity}</td>
                                           <td className="p-4 text-center font-bold text-slate-600">{currency}{item.cost_price.toLocaleString()}</td>
@@ -358,7 +364,7 @@ export default function PurchaseList() {
                               </tbody>
                               <tfoot className="border-t-4 border-slate-100">
                                   <tr>
-                                      <td colSpan={3} className="p-4 text-left font-black text-slate-500 uppercase text-xs">إجمالي قيمة الفاتورة</td>
+                                      <td colSpan={4} className="p-4 text-left font-black text-slate-500 uppercase text-xs">إجمالي قيمة الفاتورة</td>
                                       <td className="p-4 text-left font-black text-2xl text-blue-600">{currency}{selectedInvoice.total_amount.toLocaleString()}</td>
                                   </tr>
                               </tfoot>

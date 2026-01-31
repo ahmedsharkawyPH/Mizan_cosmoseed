@@ -435,7 +435,7 @@ class Database {
                   company_logo: this.settings.companyLogo,
                   company_address: this.settings.companyAddress,
                   company_phone: this.settings.companyPhone,
-                  low_stock_threshold: this.settings.lowStockThreshold,
+                  low_stock_threshold: this.settings.low_stock_threshold,
                   updated_at: new Date().toISOString()
               });
 
@@ -533,6 +533,13 @@ class Database {
   async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean, docNo?: string, date?: string): Promise<{ success: boolean; message?: string }> {
     try {
       const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
+      
+      // ترقيم الأصناف تلقائياً عند الحفظ لضمان سلامة الرقم المسلسل
+      const enrichedItems = items.map((item, idx) => ({
+          ...item,
+          serial_number: idx + 1
+      }));
+
       const invoice: PurchaseInvoice = {
         id: Date.now().toString(),
         invoice_number: `PUR-${Date.now().toString().slice(-6)}`,
@@ -542,12 +549,12 @@ class Database {
         total_amount,
         paid_amount: cashPaid,
         type: isReturn ? 'RETURN' : 'PURCHASE',
-        items
+        items: enrichedItems
       };
 
       if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(invoice);
 
-      for (const item of items) {
+      for (const item of enrichedItems) {
         let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
         const totalQtyToAdd = item.quantity + (item.bonus_quantity || 0); // Include bonus in stock
 
@@ -606,7 +613,7 @@ class Database {
       if (batch) batch.quantity += (inv.type === 'PURCHASE' ? -totalQtyToRemove : totalQtyToRemove);
     });
     if (isSupabaseConfigured) {
-        await supabase.from('purchase_invoices').delete().eq('id', id);
+        await supabase.from('invoices').delete().eq('id', id);
         await supabase.from('cash_transactions').delete().eq('reference_id', id).eq('category', 'SUPPLIER_PAYMENT');
     }
     this.purchaseInvoices = this.purchaseInvoices.filter(i => i.id !== id);
