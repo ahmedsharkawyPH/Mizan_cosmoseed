@@ -46,6 +46,9 @@ export default function PurchaseInvoice({ type }: Props) {
   const bonusRef = useRef<HTMLInputElement>(null); 
   const marginRef = useRef<HTMLInputElement>(null);
   const sellRef = useRef<HTMLInputElement>(null);
+  
+  // مرجع لتتبع آخر صنف تم معالجته لمنع تكرار الـ Focus
+  const lastProcessedProdId = useRef<string>('');
 
   useEffect(() => {
     const def = warehouses.find(w => w.is_default);
@@ -123,10 +126,10 @@ export default function PurchaseInvoice({ type }: Props) {
   };
 
   useEffect(() => {
-    if (selProd && editingIndex === null) {
+    // التغيير هنا: نتأكد أن الصنف المختار هو صنف جديد فعلاً ولم نقم بعمل Focus له من قبل
+    if (selProd && editingIndex === null && selProd !== lastProcessedProdId.current) {
       const p = products.find(x => x.id === selProd);
       if (p) {
-        // نأخذ الأسعار الافتراضية من بطاقة الصنف أو آخر تشغيلة
         let initialCost = p.purchase_price || 0;
         let initialSell = p.selling_price || 0;
         
@@ -143,8 +146,12 @@ export default function PurchaseInvoice({ type }: Props) {
         } else {
             setMargin(0);
         }
+        
+        lastProcessedProdId.current = selProd;
+        setTimeout(() => costRef.current?.focus(), 100);
       }
-      setTimeout(() => costRef.current?.focus(), 100);
+    } else if (!selProd) {
+      lastProcessedProdId.current = '';
     }
   }, [selProd, products, editingIndex]);
 
@@ -187,6 +194,7 @@ export default function PurchaseInvoice({ type }: Props) {
     setCost(0);
     setMargin(0);
     setSell(0);
+    lastProcessedProdId.current = ''; // تصفير المرجع بعد الإضافة
     
     setTimeout(() => productRef.current?.focus(), 100);
   };
@@ -195,6 +203,7 @@ export default function PurchaseInvoice({ type }: Props) {
       const item = cart[index];
       setEditingIndex(index);
       setSelProd(item.product_id);
+      lastProcessedProdId.current = item.product_id; // نمنع الـ Focus التلقائي لأنه وضع تعديل
       setQty(item.quantity);
       setBonus(item.bonus_quantity || 0);
       setCost(item.cost_price);
@@ -214,6 +223,7 @@ export default function PurchaseInvoice({ type }: Props) {
       setCost(0);
       setMargin(0);
       setSell(0);
+      lastProcessedProdId.current = '';
   };
 
   const save = async () => {
@@ -476,4 +486,3 @@ export default function PurchaseInvoice({ type }: Props) {
     </div>
   );
 }
-

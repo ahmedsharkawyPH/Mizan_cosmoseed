@@ -70,6 +70,9 @@ export default function NewInvoice() {
   const discountRef = useRef<HTMLInputElement>(null);
   const cashRef = useRef<HTMLInputElement>(null);
 
+  // تتبع الصنف المختار لمنع سرقة التركيز
+  const lastProcessedProdId = useRef<string>('');
+
   const currency = db.getSettings().currency;
 
   useEffect(() => {
@@ -178,15 +181,19 @@ export default function NewInvoice() {
   }, [selectedProduct, availableBatch, currentProduct]);
 
   useEffect(() => {
-      if (currentProduct) {
+      // تعديل هنا لمنع سرقة التركيز عند التحديث الدوري
+      if (selectedProduct && selectedProduct !== lastProcessedProdId.current) {
           setManualPrice(currentSellingPrice);
           setShowLastCost(false);
+          lastProcessedProdId.current = selectedProduct;
           setTimeout(() => {
               if (invoiceConfig.enableManualPrice) priceRef.current?.focus();
               else qtyRef.current?.focus();
           }, 50);
+      } else if (!selectedProduct) {
+          lastProcessedProdId.current = '';
       }
-  }, [currentProduct, currentSellingPrice, invoiceConfig.enableManualPrice]);
+  }, [selectedProduct, currentSellingPrice, invoiceConfig.enableManualPrice]);
 
   const addItemToCart = () => {
     if (!currentProduct) return;
@@ -222,6 +229,7 @@ export default function NewInvoice() {
     setManualPrice(0);
     setShowLastCost(false);
     setShowPriceWarning(false);
+    lastProcessedProdId.current = ''; // تصفير المرجع بعد الإضافة
     setTimeout(() => productRef.current?.focus(), 50);
   };
 
