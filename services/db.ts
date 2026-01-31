@@ -45,6 +45,14 @@ class Database {
     this.loadFromLocalCache();
   }
 
+  // مولد معرفات فريد وقوي لتجنب تعارض 409
+  private generateId(prefix: string = ''): string {
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    const timestamp = Date.now().toString(36);
+    const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().split('-')[0] : randomStr;
+    return `${prefix}${timestamp}-${uuid}`;
+  }
+
   // تسجيل مستمع للتغيرات في حالة المزامنة
   onSyncStateChange(callback: (isBusy: boolean) => void) {
     this.syncListeners.push(callback);
@@ -255,6 +263,12 @@ class Database {
             try {
                 const { error } = await op();
                 if (!error) return true;
+                // If conflict, we might want to stop retrying depending on the app logic, 
+                // but usually retry logic is for connection issues.
+                if (error.code === '23505') {
+                  console.error("Conflict detected in Cloud DB, stopping retries.");
+                  return false;
+                }
                 console.warn(`Retry ${i+1} failed...`);
             } catch (e) {
                 console.error(`Attempt ${i+1} exception:`, e);
@@ -268,12 +282,14 @@ class Database {
   }
 
   async addProduct(pData: any, bData: any) {
-      const p: Product = { ...pData, id: Date.now().toString() };
-      const b: Batch = { ...bData, id: `b-${Date.now()}`, product_id: p.id, status: BatchStatus.ACTIVE, batch_number: bData.batch_number || 'INITIAL' };
+      // استخدام معرفات قوية لتجنب التعارض
+      const p: Product = { ...pData, id: this.generateId('p-') };
+      const b: Batch = { ...bData, id: this.generateId('b-'), product_id: p.id, status: BatchStatus.ACTIVE, batch_number: bData.batch_number || 'INITIAL' };
       
       if (isSupabaseConfigured) {
-          await this.retryCloudOp(async () => await supabase.from('products').insert(p));
-          await this.retryCloudOp(async () => await supabase.from('batches').insert(b));
+          // استخدام upsert بدلاً من insert لتفادي انهيار البرنامج عند التعارض
+          await this.retryCloudOp(async () => await supabase.from('products').upsert(p));
+          await this.retryCloudOp(async () => await supabase.from('batches').upsert(b));
       }
       
       this.products.push(p);
@@ -304,11 +320,11 @@ class Database {
   async addCustomer(data: any) {
     const customer: Customer = { 
       ...data, 
-      id: Date.now().toString(), 
+      id: this.generateId('c-'), 
       current_balance: data.opening_balance || 0 
     };
     if (isSupabaseConfigured) {
-        await this.retryCloudOp(async () => await supabase.from('customers').insert(customer));
+        await this.retryCloudOp(async () => await supabase.from('customers').upsert(customer));
     }
     this.customers.push(customer);
     this.saveToLocalCache();
@@ -324,9 +340,9 @@ class Database {
   }
 
   async addCashTransaction(data: any) {
-      const tx = { ...data, id: Date.now().toString(), date: data.date || new Date().toISOString() };
+      const tx = { ...data, id: this.generateId('tx-'), date: data.date || new Date().toISOString() };
       if (isSupabaseConfigured) {
-          await this.retryCloudOp(async () => await supabase.from('cash_transactions').insert(tx));
+          await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
       }
       this.cashTransactions.push(tx);
       await this.recalculateAllBalances();
@@ -349,7 +365,7 @@ class Database {
       const previous_balance = customer?.current_balance || 0;
 
       const invoice: Invoice = {
-        id: Date.now().toString(),
+        id: this.generateId('inv-'),
         invoice_number: `INV-${Date.now().toString().slice(-6)}`,
         customer_id,
         created_by: creator?.id,
@@ -426,7 +442,7 @@ class Database {
       const cust = this.customers.find(c => c.id === inv?.customer_id);
       if (inv && cust) {
           const tx: CashTransaction = {
-              id: Date.now().toString(),
+              id: this.generateId('pay-'),
               type: inv.type === 'SALE' ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
               category: 'CUSTOMER_PAYMENT',
               reference_id: invoiceId,
@@ -438,7 +454,7 @@ class Database {
           };
           
           if (isSupabaseConfigured) {
-              await this.retryCloudOp(async () => await supabase.from('cash_transactions').insert(tx));
+              await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
               await this.retryCloudOp(async () => await supabase.from('customers').update({ current_balance: cust.current_balance }).eq('id', cust.id));
           }
           
@@ -481,8 +497,8 @@ class Database {
     }
   }
   async addSupplier(data: any) {
-    const supplier: Supplier = { ...data, id: Date.now().toString(), current_balance: data.opening_balance || 0 };
-    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').insert(supplier));
+    const supplier: Supplier = { ...data, id: this.generateId('s-'), current_balance: data.opening_balance || 0 };
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').upsert(supplier));
     this.suppliers.push(supplier);
     this.saveToLocalCache();
     return supplier;
@@ -501,8 +517,8 @@ class Database {
     this.saveToLocalCache();
   }
   async addWarehouse(name: string) { 
-    const w = { id: `w-${Date.now()}`, name, is_default: false };
-    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').insert(w));
+    const w = { id: this.generateId('wh-'), name, is_default: false };
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').upsert(w));
     this.warehouses.push(w); 
     this.saveToLocalCache(); 
   }
@@ -536,7 +552,7 @@ class Database {
       const enrichedItems = items.map((item, idx) => ({ ...item, serial_number: idx + 1 }));
 
       const invoice: PurchaseInvoice = {
-        id: Date.now().toString(),
+        id: this.generateId('pur-'),
         invoice_number: `PUR-${Date.now().toString().slice(-6)}`,
         document_number: docNo,
         supplier_id,
@@ -548,7 +564,7 @@ class Database {
       };
 
       if (isSupabaseConfigured) {
-          const { error } = await supabase.from('purchase_invoices').insert(invoice);
+          const { error } = await supabase.from('purchase_invoices').upsert(invoice);
           if (error) throw error;
       }
 
@@ -562,7 +578,7 @@ class Database {
           batch.selling_price = item.selling_price;
         } else {
           batch = {
-            id: `b-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            id: this.generateId('b-'),
             product_id: item.product_id,
             warehouse_id: item.warehouse_id,
             batch_number: item.batch_number,
@@ -580,7 +596,7 @@ class Database {
       this.purchaseInvoices.push(invoice);
       if (cashPaid > 0) {
         const tx: CashTransaction = {
-          id: `tx-${Date.now()}`,
+          id: this.generateId('tx-'),
           type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
           category: 'SUPPLIER_PAYMENT',
           reference_id: invoice.id,
@@ -590,7 +606,7 @@ class Database {
           notes: `سداد فاتورة مشتريات #${invoice.invoice_number}`,
           ref_number: `PPAY-${Date.now().toString().slice(-4)}`
         };
-        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('cash_transactions').insert(tx));
+        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
         this.cashTransactions.push(tx);
       }
 
@@ -641,8 +657,8 @@ class Database {
   }
 
   async addRepresentative(data: any) {
-    const rep: Representative = { ...data, id: Date.now().toString() };
-    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').insert(rep));
+    const rep: Representative = { ...data, id: this.generateId('rep-') };
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').upsert(rep));
     this.representatives.push(rep);
     this.saveToLocalCache();
   }
@@ -656,11 +672,11 @@ class Database {
   async submitStockTake(adjustments: any[]) {
       const pAds = adjustments.map(a => ({
           ...a,
-          id: `adj-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          id: this.generateId('adj-'),
           date: new Date().toISOString(),
           status: 'PENDING'
       }));
-      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('pending_adjustments').insert(pAds));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('pending_adjustments').upsert(pAds));
       this.pendingAdjustments.push(...pAds);
       this.saveToLocalCache();
   }
@@ -695,14 +711,14 @@ class Database {
 
   async createPurchaseOrder(supplier_id: string, items: any[]) {
       const order: PurchaseOrder = {
-          id: Date.now().toString(),
+          id: this.generateId('ord-'),
           order_number: `ORD-${Date.now().toString().slice(-6)}`,
           supplier_id,
           date: new Date().toISOString(),
           status: 'PENDING',
           items
       };
-      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('purchase_orders').insert(order));
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('purchase_orders').upsert(order));
       this.purchaseOrders.push(order);
       this.saveToLocalCache();
       return { success: true };
@@ -740,8 +756,8 @@ class Database {
   async saveDailyClosing(data: any) {
       this.incrementOp();
       try {
-        const closing: DailyClosing = { ...data, id: Date.now().toString(), updated_at: new Date().toISOString() };
-        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('daily_closings').insert(closing));
+        const closing: DailyClosing = { ...data, id: this.generateId('dc-'), updated_at: new Date().toISOString() };
+        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('daily_closings').upsert(closing));
         this.dailyClosings.push(closing);
         this.saveToLocalCache();
         return true;
