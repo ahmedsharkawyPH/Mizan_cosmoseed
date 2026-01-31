@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
 import { PurchaseItem, PurchaseInvoice as IPurchaseInvoice } from '../types';
-import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock, History, Truck } from 'lucide-react';
+import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock, History, Truck, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 // @ts-ignore
@@ -40,6 +40,10 @@ export default function PurchaseInvoice({ type }: Props) {
   const [margin, setMargin] = useState(0); 
   const [sell, setSell] = useState(0);
 
+  // States for Quick Add Product
+  const [isAddProdModalOpen, setIsAddProdModalOpen] = useState(false);
+  const [newProdForm, setNewProdForm] = useState({ name: '', code: '', purchase_price: 0, selling_price: 0 });
+
   const productRef = useRef<SearchableSelectRef>(null);
   const costRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
@@ -47,7 +51,6 @@ export default function PurchaseInvoice({ type }: Props) {
   const marginRef = useRef<HTMLInputElement>(null);
   const sellRef = useRef<HTMLInputElement>(null);
   
-  // مرجع لتتبع آخر صنف تم معالجته لمنع تكرار الـ Focus
   const lastProcessedProdId = useRef<string>('');
 
   useEffect(() => {
@@ -126,7 +129,6 @@ export default function PurchaseInvoice({ type }: Props) {
   };
 
   useEffect(() => {
-    // التغيير هنا: نتأكد أن الصنف المختار هو صنف جديد فعلاً ولم نقم بعمل Focus له من قبل
     if (selProd && editingIndex === null && selProd !== lastProcessedProdId.current) {
       const p = products.find(x => x.id === selProd);
       if (p) {
@@ -194,7 +196,7 @@ export default function PurchaseInvoice({ type }: Props) {
     setCost(0);
     setMargin(0);
     setSell(0);
-    lastProcessedProdId.current = ''; // تصفير المرجع بعد الإضافة
+    lastProcessedProdId.current = ''; 
     
     setTimeout(() => productRef.current?.focus(), 100);
   };
@@ -203,7 +205,7 @@ export default function PurchaseInvoice({ type }: Props) {
       const item = cart[index];
       setEditingIndex(index);
       setSelProd(item.product_id);
-      lastProcessedProdId.current = item.product_id; // نمنع الـ Focus التلقائي لأنه وضع تعديل
+      lastProcessedProdId.current = item.product_id; 
       setQty(item.quantity);
       setBonus(item.bonus_quantity || 0);
       setCost(item.cost_price);
@@ -224,6 +226,22 @@ export default function PurchaseInvoice({ type }: Props) {
       setMargin(0);
       setSell(0);
       lastProcessedProdId.current = '';
+  };
+
+  const handleQuickAddProduct = async () => {
+      if (!newProdForm.name) return toast.error("اسم الصنف مطلوب");
+      const pData = { name: newProdForm.name, code: newProdForm.code };
+      const bData = { 
+          quantity: 0, 
+          purchase_price: newProdForm.purchase_price, 
+          selling_price: newProdForm.selling_price,
+          warehouse_id: selectedWarehouse || warehouses[0]?.id
+      };
+      await db.addProduct(pData, bData);
+      toast.success("تم إضافة الصنف بنجاح");
+      setProducts(db.getProductsWithBatches()); 
+      setIsAddProdModalOpen(false);
+      setNewProdForm({ name: '', code: '', purchase_price: 0, selling_price: 0 });
   };
 
   const save = async () => {
@@ -341,32 +359,43 @@ export default function PurchaseInvoice({ type }: Props) {
             </div>
             
             <div className="space-y-5">
-              <div className="w-full">
-                  <SearchableSelect 
-                      id="purchase_product_select_input"
-                      name="product_id"
-                      ref={productRef} 
-                      label={t('inv.product')} 
-                      placeholder="ابحث عن الصنف بالاسم أو الكود..." 
-                      options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} 
-                      value={selProd} 
-                      onChange={setSelProd} 
+              <div className="w-full flex items-end gap-2">
+                  <div className="flex-1">
+                    <SearchableSelect 
+                        id="purchase_product_select_input"
+                        name="product_id"
+                        ref={productRef} 
+                        label={t('inv.product')} 
+                        placeholder="ابحث عن الصنف بالاسم أو الكود..." 
+                        options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} 
+                        value={selProd} 
+                        onChange={setSelProd} 
+                        disabled={!selectedSupplier}
+                        className="w-full"
+                    />
+                  </div>
+                  <button 
+                      type="button" 
+                      onClick={() => setIsAddProdModalOpen(true)}
+                      className="mb-1 p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                      title="إضافة صنف جديد للقاعدة"
                       disabled={!selectedSupplier}
-                      className="w-full"
-                  />
-                  {selProd && lastPurchasesIntelligence.length > 0 && (
-                      <div className="mt-2 flex gap-4 animate-in fade-in">
-                          <span className="text-[10px] font-bold text-slate-400">آخر أسعار شراء:</span>
-                          {lastPurchasesIntelligence.map((p, i) => (
-                              <span key={i} className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-black border border-blue-100">
-                                {currency}{p.price.toLocaleString()} ({p.supplierName})
-                              </span>
-                          ))}
-                      </div>
-                  )}
+                  >
+                      <PackagePlus className="w-5 h-5" />
+                  </button>
               </div>
+              
+              {selProd && lastPurchasesIntelligence.length > 0 && (
+                  <div className="mt-2 flex gap-4 animate-in fade-in">
+                      <span className="text-[10px] font-bold text-slate-400">آخر أسعار شراء:</span>
+                      {lastPurchasesIntelligence.map((p, i) => (
+                          <span key={i} className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-black border border-blue-100">
+                            {currency}{p.price.toLocaleString()} ({p.supplierName})
+                          </span>
+                      ))}
+                  </div>
+              )}
 
-              {/* صف الإدخال المرتب حسب طلب المستخدم */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                   <div className="md:col-span-2">
                       <label htmlFor="purchase_cost_input" className="text-[10px] font-black text-slate-400 uppercase mb-1 block">سعر التكلفة</label>
@@ -483,6 +512,60 @@ export default function PurchaseInvoice({ type }: Props) {
             </div>
         </div>
       </div>
+
+      {/* --- Quick Add Product Modal --- */}
+      {isAddProdModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 animate-in zoom-in duration-200">
+                  <div className="p-6 bg-blue-600 text-white flex justify-between items-center">
+                      <h3 className="text-xl font-black flex items-center gap-3"><PackagePlus className="w-6 h-6" /> تعريف صنف جديد</h3>
+                      <button onClick={() => setIsAddProdModalOpen(false)} className="p-2 hover:bg-white/20 rounded-full transition-colors"><X className="w-6 h-6" /></button>
+                  </div>
+                  <div className="p-8 space-y-5">
+                      <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">اسم الصنف</label>
+                          <input 
+                              type="text" 
+                              className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-blue-500 outline-none" 
+                              value={newProdForm.name} 
+                              onChange={e => setNewProdForm({...newProdForm, name: e.target.value})} 
+                              autoFocus
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">الكود / Barcode</label>
+                          <input 
+                              type="text" 
+                              className="w-full border-2 border-slate-100 p-3 rounded-xl font-mono focus:border-blue-500 outline-none" 
+                              value={newProdForm.code} 
+                              onChange={e => setNewProdForm({...newProdForm, code: e.target.value})} 
+                          />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">سعر التكلفة</label>
+                              <input 
+                                  type="number" 
+                                  className="w-full border-2 border-slate-100 p-3 rounded-xl font-black text-red-600" 
+                                  value={newProdForm.purchase_price || ''} 
+                                  onChange={e => setNewProdForm({...newProdForm, purchase_price: Number(e.target.value)})} 
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">سعر البيع</label>
+                              <input 
+                                  type="number" 
+                                  className="w-full border-2 border-slate-100 p-3 rounded-xl font-black text-emerald-600" 
+                                  value={newProdForm.selling_price || ''} 
+                                  onChange={e => setNewProdForm({...newProdForm, selling_price: Number(e.target.value)})} 
+                              />
+                          </div>
+                      </div>
+                      <button onClick={handleQuickAddProduct} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-600 transition-all active:scale-95">حفظ وإضافة للفاتورة</button>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 }
