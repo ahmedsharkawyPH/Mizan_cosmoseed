@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo, useId } from 'react';
-import { Search, ChevronDown, Check, Zap } from 'lucide-react';
+import { Search, ChevronDown, Check, Zap, History, X } from 'lucide-react';
 import { ArabicSmartSearch } from '../utils/search';
 
 interface Option {
@@ -23,17 +23,20 @@ interface SearchableSelectProps {
   name?: string;
   minSearchChars?: number;
   disabled?: boolean;
+  persistSearch?: boolean; // خاصية جديدة للحفاظ على النص بعد الاختيار
 }
 
 export interface SearchableSelectRef {
   focus: () => void;
+  setInputValue: (val: string) => void;
 }
 
 const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(({ 
-  options, value, onChange, placeholder, label, className, autoFocus, onComplete, id, name, minSearchChars = 0, disabled = false
+  options, value, onChange, placeholder, label, className, autoFocus, onComplete, id, name, minSearchChars = 0, disabled = false, persistSearch = false
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -43,9 +46,18 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const internalId = id || `searchable-${generatedId}`;
   const internalName = name || internalId;
 
+  // تحميل سجل البحث من التخزين المحلي
+  useEffect(() => {
+    const savedHistory = localStorage.getItem(`search_hist_${internalId}`);
+    if (savedHistory) setHistory(JSON.parse(savedHistory));
+  }, [internalId]);
+
   useImperativeHandle(ref, () => ({
     focus: () => {
       inputRef.current?.focus();
+    },
+    setInputValue: (val: string) => {
+      setSearchTerm(val);
     }
   }));
 
@@ -59,8 +71,17 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
     }));
 
     const results = ArabicSmartSearch.smartSearch(searchableItems, searchTerm);
-    return results.slice(0, 1000); 
+    return results.slice(0, 100); 
   }, [options, searchTerm, isOpen]);
+
+  // دالة حفظ كلمة البحث في السجل
+  const addToHistory = (term: string) => {
+    if (!term || term.trim().length < 2) return;
+    const cleanTerm = term.trim();
+    const newHistory = [cleanTerm, ...history.filter(h => h !== cleanTerm)].slice(0, 5);
+    setHistory(newHistory);
+    localStorage.setItem(`search_hist_${internalId}`, JSON.stringify(newHistory));
+  };
 
   useEffect(() => {
     if (isOpen && listRef.current && filteredOptions.length > 0) {
@@ -76,26 +97,28 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
   useEffect(() => {
     if (!value) {
-      if (!isOpen) setSearchTerm('');
+      if (!isOpen && !persistSearch) setSearchTerm('');
     } else {
       const selected = options.find(o => o.value === value);
       if (selected && !isOpen) {
         setSearchTerm(selected.label);
       }
     }
-  }, [value, options, isOpen]);
+  }, [value, options, isOpen, persistSearch]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
-        const selected = options.find(o => o.value === value);
-        setSearchTerm(selected ? selected.label : '');
+        if (!persistSearch) {
+          const selected = options.find(o => o.value === value);
+          setSearchTerm(selected ? selected.label : '');
+        }
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [value, options]);
+  }, [value, options, persistSearch]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return;
@@ -130,10 +153,28 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
   const selectOption = (opt: Option) => {
     if (!opt || opt.disabled) return;
+    
+    // حفظ كلمة البحث الحالية قبل تغييرها لاسم الصنف
+    if (searchTerm && searchTerm !== opt.label) {
+        addToHistory(searchTerm);
+    }
+
     onChange(opt.value);
-    setSearchTerm(opt.label);
+    
+    if (persistSearch) {
+        // في وضع الحفاظ على البحث، لا نغير الـ Input ونتركه للاختيار التالي
+    } else {
+        setSearchTerm(opt.label);
+    }
+    
     setIsOpen(false);
     if (onComplete) onComplete();
+  };
+
+  const clearHistory = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setHistory([]);
+      localStorage.removeItem(`search_hist_${internalId}`);
   };
 
   return (
@@ -174,12 +215,35 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       </div>
 
       {isOpen && !disabled && (
-        <>
-          {filteredOptions.length > 0 && (
+        <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1">
+          
+          {/* قسم سجل البحث (History) */}
+          {history.length > 0 && !searchTerm && (
+              <div className="bg-slate-50/50 border-b border-slate-100">
+                  <div className="px-4 py-2 flex justify-between items-center">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">عمليات البحث الأخيرة</span>
+                      <button onClick={clearHistory} className="text-[9px] font-black text-red-400 hover:text-red-600 transition-colors uppercase">مسح الكل</button>
+                  </div>
+                  <div className="px-2 pb-2 flex flex-wrap gap-1.5">
+                      {history.map((term, i) => (
+                          <button 
+                            key={i} 
+                            onClick={() => setSearchTerm(term)}
+                            className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-all"
+                          >
+                              <History className="w-3 h-3" />
+                              {term}
+                          </button>
+                      ))}
+                  </div>
+              </div>
+          )}
+
+          {filteredOptions.length > 0 ? (
             <ul 
               ref={listRef}
               role="listbox"
-              className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto overflow-x-hidden scroll-smooth animate-in fade-in slide-in-from-top-1"
+              className="overflow-y-auto scroll-smooth"
             >
               {filteredOptions.map((opt: any, idx) => (
                 <li
@@ -208,14 +272,17 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                 </li>
               ))}
             </ul>
+          ) : (
+            searchTerm.length >= minSearchChars && searchTerm.trim() !== '' && (
+                <div className="p-8 text-center">
+                    <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Search className="w-6 h-6 text-slate-300" />
+                    </div>
+                    <p className="text-xs text-slate-400 font-bold">عفواً، لا توجد نتائج تطابق "{searchTerm}"</p>
+                </div>
+            )
           )}
-
-          {searchTerm.length >= minSearchChars && filteredOptions.length === 0 && searchTerm.trim() !== '' && (
-             <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl p-4 text-center text-xs text-slate-400 font-bold animate-in fade-in slide-in-from-top-1">
-               لا توجد نتائج مطابقة لبحثك
-             </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   );

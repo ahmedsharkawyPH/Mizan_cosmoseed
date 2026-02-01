@@ -70,7 +70,6 @@ export default function NewInvoice() {
   const discountRef = useRef<HTMLInputElement>(null);
   const cashRef = useRef<HTMLInputElement>(null);
 
-  // تتبع الصنف المختار لمنع سرقة التركيز
   const lastProcessedProdId = useRef<string>('');
 
   const currency = db.getSettings().currency;
@@ -81,7 +80,6 @@ export default function NewInvoice() {
     const def = db.getWarehouses().find(w => w.is_default);
     if(def) setSelectedWarehouse(def.id);
     
-    // Handle Prefilled Items (From Conversion Feature)
     if (location.state && (location.state as any).prefillItems) {
         setCart((location.state as any).prefillItems);
         toast.success("تم استيراد الأصناف من فاتورة المشتريات");
@@ -181,7 +179,6 @@ export default function NewInvoice() {
   }, [selectedProduct, availableBatch, currentProduct]);
 
   useEffect(() => {
-      // تعديل هنا لمنع سرقة التركيز عند التحديث الدوري
       if (selectedProduct && selectedProduct !== lastProcessedProdId.current) {
           setManualPrice(currentSellingPrice);
           setShowLastCost(false);
@@ -199,7 +196,6 @@ export default function NewInvoice() {
     if (!currentProduct) return;
     const finalPrice = invoiceConfig.enableManualPrice ? Number(manualPrice) : Number(currentSellingPrice);
     
-    // Check for Price Warning
     if (!isReturnMode && finalPrice < lastPurchasePrice) {
         setShowPriceWarning(true);
         setConfirmationInput('');
@@ -229,7 +225,7 @@ export default function NewInvoice() {
     setManualPrice(0);
     setShowLastCost(false);
     setShowPriceWarning(false);
-    lastProcessedProdId.current = ''; // تصفير المرجع بعد الإضافة
+    lastProcessedProdId.current = ''; 
     setTimeout(() => productRef.current?.focus(), 50);
   };
 
@@ -357,6 +353,7 @@ export default function NewInvoice() {
                     onChange={setSelectedProduct} 
                     minSearchChars={1} 
                     disabled={!selectedCustomer} 
+                    persistSearch={true}
                 />
               </div>
               <div className="col-span-12 md:col-span-3">
@@ -539,7 +536,6 @@ export default function NewInvoice() {
           </div>
       )}
 
-      {/* --- Price Warning Persistent Modal --- */}
       {showPriceWarning && (
           <div className="fixed inset-0 z-[300] flex items-center justify-center bg-red-950/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
               <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden border-4 border-red-500 animate-in zoom-in duration-300">
