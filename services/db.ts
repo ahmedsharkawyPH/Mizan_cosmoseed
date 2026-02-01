@@ -407,9 +407,27 @@ class Database {
       const customer = this.customers.find(c => c.id === customer_id);
       const previous_balance = customer?.current_balance || 0;
 
+      // توليد رقم فاتورة مبيعات متسلسل احترافي
+      const prefix = is_return ? 'SRET' : 'INV';
+      const now = new Date();
+      const year = now.getFullYear().toString().slice(-2);
+      const month = (now.getMonth() + 1).toString().padStart(2, '0');
+      const pattern = `${prefix}-${year}${month}-`;
+      
+      const sameMonthInvoices = this.invoices.filter(inv => inv.invoice_number?.startsWith(pattern));
+      let nextSeq = 1;
+      if (sameMonthInvoices.length > 0) {
+          const sequences = sameMonthInvoices.map(inv => {
+              const parts = inv.invoice_number.split('-');
+              return parseInt(parts[parts.length - 1]) || 0;
+          });
+          nextSeq = Math.max(...sequences) + 1;
+      }
+      const invoice_number = `${pattern}${nextSeq.toString().padStart(4, '0')}`;
+
       const invoice: Invoice = {
         id: this.generateId('inv-'),
-        invoice_number: `INV-${Date.now().toString().slice(-6)}`,
+        invoice_number,
         customer_id,
         created_by: creator?.id,
         created_by_name: creator?.name,
@@ -594,9 +612,27 @@ class Database {
       const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
       const enrichedItems = items.map((item, idx) => ({ ...item, serial_number: idx + 1 }));
 
+      // توليد رقم فاتورة مشتريات متسلسل احترافي
+      const prefix = isReturn ? 'PRET' : 'PUR';
+      const today = new Date();
+      const year = today.getFullYear().toString().slice(-2);
+      const month = (today.getMonth() + 1).toString().padStart(2, '0');
+      const pattern = `${prefix}-${year}${month}-`;
+      
+      const sameMonthInvoices = this.purchaseInvoices.filter(inv => inv.invoice_number?.startsWith(pattern));
+      let nextSeq = 1;
+      if (sameMonthInvoices.length > 0) {
+          const sequences = sameMonthInvoices.map(inv => {
+              const parts = inv.invoice_number.split('-');
+              return parseInt(parts[parts.length - 1]) || 0;
+          });
+          nextSeq = Math.max(...sequences) + 1;
+      }
+      const invoice_number = `${pattern}${nextSeq.toString().padStart(4, '0')}`;
+
       const invoice: PurchaseInvoice = {
         id: this.generateId('pur-'),
-        invoice_number: `PUR-${Date.now().toString().slice(-6)}`,
+        invoice_number,
         document_number: docNo,
         supplier_id,
         date: date ? new Date(date).toISOString() : new Date().toISOString(),
