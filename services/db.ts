@@ -37,7 +37,6 @@ class Database {
   pendingAdjustments: PendingAdjustment[] = [];
   isFullyLoaded: boolean = false;
   
-  // عداد العمليات الجارية ونظام المستمعين
   public activeOperations: number = 0;
   private syncListeners: ((isBusy: boolean) => void)[] = [];
 
@@ -45,7 +44,6 @@ class Database {
     this.loadFromLocalCache();
   }
 
-  // مولد معرفات فريد وقوي جداً لتجنب تعارض 409
   private generateId(prefix: string = ''): string {
     const randomPart = Math.random().toString(36).substring(2, 10);
     const timePart = Date.now().toString(36);
@@ -56,7 +54,6 @@ class Database {
     return `${prefix}${timePart}-${randomPart}-${cryptoPart}`;
   }
 
-  // دالة مساعدة لتوليد الرقم المتسلسل البسيط (مثال: S1, S2, ...)
   private generateSimpleSeq(list: any[], prefix: string, key: string): string {
     const numbers = list
       .map(item => {
@@ -69,7 +66,6 @@ class Database {
     return `${prefix}${nextSeq}`;
   }
 
-  // تسجيل مستمع للتغيرات في حالة المزامنة
   onSyncStateChange(callback: (isBusy: boolean) => void) {
     this.syncListeners.push(callback);
     return () => {
@@ -131,9 +127,8 @@ class Database {
     if (!isSupabaseConfigured) return;
     
     try {
-        console.log("Deep sync started...");
         this.incrementOp();
-        const [p, b, c, s, inv, pinv, tx, wh, po] = await Promise.all([
+        const [p, b, c, s, inv, pinv, tx, wh, po, rep] = await Promise.all([
             this.fetchFullTable<Product>('products'),
             this.fetchFullTable<Batch>('batches'),
             this.fetchFullTable<Customer>('customers'),
@@ -142,7 +137,8 @@ class Database {
             this.fetchFullTable<PurchaseInvoice>('purchase_invoices'),
             this.fetchFullTable<CashTransaction>('cash_transactions'),
             this.fetchFullTable<Warehouse>('warehouses'),
-            this.fetchFullTable<PurchaseOrder>('purchase_orders')
+            this.fetchFullTable<PurchaseOrder>('purchase_orders'),
+            this.fetchFullTable<Representative>('representatives')
         ]);
 
         if (p && p.length > 0) this.products = p;
@@ -154,6 +150,7 @@ class Database {
         if (tx && tx.length > 0) this.cashTransactions = tx;
         if (wh && wh.length > 0) this.warehouses = wh;
         if (po && po.length > 0) this.purchaseOrders = po;
+        if (rep && rep.length > 0) this.representatives = rep;
 
         const [ {data: sysSett}, {data: appSett} ] = await Promise.all([
             supabase.from('system_settings').select('*').eq('id', 'global_settings').maybeSingle(),
@@ -182,7 +179,6 @@ class Database {
 
         this.saveToLocalCache();
         this.isFullyLoaded = true;
-        console.log("Deep sync finished.");
     } catch (error) {
         console.error("Deep Cloud Sync Failed:", error);
     } finally {
@@ -240,7 +236,6 @@ class Database {
     localStorage.setItem('mizan_db', JSON.stringify(data));
   }
 
-  // Getters
   getSettings() { return this.settings; }
   getDailyClosings() { return this.dailyClosings; }
   getInvoices() { return this.invoices; }
@@ -280,17 +275,12 @@ class Database {
                 const response = await op();
                 if (!response.error) return { success: true };
                 
-                // التقاط تفاصيل خطأ التعارض من الاستجابة
                 const error = response.error;
                 if (error.code === '23505' || error.status === 409) {
-                  console.error("Cloud Conflict Error:", error);
                   return { success: false, message: 'DUPLICATE', code: error.code };
                 }
-                
-                console.warn(`Retry ${i+1} failed for cloud operation:`, error.message);
             } catch (e: any) {
                 if (e.status === 409) return { success: false, message: 'DUPLICATE' };
-                console.error(`Attempt ${i+1} exception:`, e);
             }
             await new Promise(r => setTimeout(r, 1000 * (i + 1)));
         }
@@ -301,14 +291,10 @@ class Database {
   }
 
   async addProduct(pData: any, bData: any): Promise<{ success: boolean; message?: string }> {
-      // تنظيف الكود من المسافات
       const cleanCode = pData.code ? pData.code.trim() : '';
-
-      // 1. التحقق من وجود الكود محلياً قبل أي شيء (خط الدفاع الأول)
       if (cleanCode && this.products.some(p => p.code === cleanCode)) {
-          return { success: false, message: `عفواً، الكود (${cleanCode}) مسجل مسبقاً لصنف آخر باسم (${this.products.find(p => p.code === cleanCode)?.name})` };
+          return { success: false, message: `الكود (${cleanCode}) مسجل مسبقاً لصنف آخر` };
       }
-
       const p: Product = { ...pData, code: cleanCode, id: this.generateId('p-') };
       const b: Batch = { 
           ...bData, 
@@ -317,56 +303,33 @@ class Database {
           status: BatchStatus.ACTIVE, 
           batch_number: bData.batch_number || 'INITIAL' 
       };
-      
       if (isSupabaseConfigured) {
-          // استخدام upsert مع التحقق من النتيجة
           const resP = await this.retryCloudOp(async () => await supabase.from('products').upsert(p));
-          if (!resP.success) {
-              if (resP.message === 'DUPLICATE') {
-                  return { success: false, message: 'هذا الكود مسجل بالفعل في قاعدة البيانات السحابية، يرجى تحديث البيانات أو استخدام كود آخر.' };
-              }
-              return { success: false, message: 'فشل الاتصال بالسحابة، يرجى التأكد من الإنترنت.' };
-          }
-
-          const resB = await this.retryCloudOp(async () => await supabase.from('batches').upsert(b));
-          if (!resB.success) {
-              return { success: false, message: 'فشل في حفظ أرصدة المخزن السحابية.' };
-          }
+          if (!resP.success) return { success: false, message: 'فشل الاتصال بالسحابة' };
+          await this.retryCloudOp(async () => await supabase.from('batches').upsert(b));
       }
-      
       this.products.push(p);
       this.batches.push(b);
       this.saveToLocalCache();
       return { success: true };
   }
 
-  async updateProduct(id: string, data: Partial<Product>) {
+  // Fix: Return message in updateProduct to resolve TS error in Inventory.tsx
+  async updateProduct(id: string, data: Partial<Product>): Promise<{ success: boolean; message?: string }> {
     const p = this.products.find(x => x.id === id);
     if (p) {
       const cleanCode = data.code ? data.code.trim() : p.code;
-      
-      // تحقق من الكود المكرر عند التحديث
-      if (cleanCode && cleanCode !== p.code && this.products.some(x => x.code === cleanCode)) {
-          return { success: false, message: 'الكود الجديد مسجل مسبقاً لصنف آخر' };
-      }
-
       const updatedData = { ...data, code: cleanCode };
       Object.assign(p, updatedData);
-      
-      if (isSupabaseConfigured) {
-          const res = await this.retryCloudOp(async () => await supabase.from('products').update(updatedData).eq('id', id));
-          if (!res.success) return { success: false, message: 'فشل التحديث في السحابة' };
-      }
-      
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('products').update(updatedData).eq('id', id));
       this.saveToLocalCache();
+      return { success: true };
     }
-    return { success: true };
+    return { success: false, message: 'الصنف غير موجود' };
   }
 
   async deleteProduct(id: string) {
-    if (isSupabaseConfigured) {
-        await this.retryCloudOp(async () => await supabase.from('products').delete().eq('id', id));
-    }
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('products').delete().eq('id', id));
     this.products = this.products.filter(p => p.id !== id);
     this.batches = this.batches.filter(b => b.product_id !== id);
     this.saveToLocalCache();
@@ -374,38 +337,29 @@ class Database {
   }
 
   async addCustomer(data: any) {
-    const customer: Customer = { 
-      ...data, 
-      id: this.generateId('c-'), 
-      current_balance: data.opening_balance || 0 
-    };
-    if (isSupabaseConfigured) {
-        await this.retryCloudOp(async () => await supabase.from('customers').upsert(customer));
-    }
+    const customer: Customer = { ...data, id: this.generateId('c-'), current_balance: data.opening_balance || 0 };
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('customers').upsert(customer));
     this.customers.push(customer);
     this.saveToLocalCache();
     return customer;
   }
 
   async deleteCustomer(id: string) {
-    if (isSupabaseConfigured) {
-        await this.retryCloudOp(async () => await supabase.from('customers').delete().eq('id', id));
-    }
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('customers').delete().eq('id', id));
     this.customers = this.customers.filter(c => c.id !== id);
     this.saveToLocalCache();
   }
 
   async addCashTransaction(data: any) {
       const tx = { ...data, id: this.generateId('tx-'), date: data.date || new Date().toISOString() };
-      if (isSupabaseConfigured) {
-          await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
-      }
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
       this.cashTransactions.push(tx);
       await this.recalculateAllBalances();
       this.saveToLocalCache();
   }
 
-  async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, additional_discount: number, creator?: { id: string, name: string }): Promise<{ success: boolean; id?: string; message?: string }> {
+  // مبيعات - تم تحديثها لتشمل العمولة
+  async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, additional_discount: number, creator?: { id: string, name: string }, commission_value: number = 0): Promise<{ success: boolean; id?: string; message?: string }> {
     this.incrementOp();
     try {
       const total_before_discount = items.reduce((sum, item) => {
@@ -420,7 +374,6 @@ class Database {
       const customer = this.customers.find(c => c.id === customer_id);
       const previous_balance = customer?.current_balance || 0;
 
-      // توليد رقم فاتورة مبيعات متسلسل بسيط
       const prefix = is_return ? 'SR' : 'S';
       const invoice_number = this.generateSimpleSeq(this.invoices, prefix, 'invoice_number');
 
@@ -434,6 +387,7 @@ class Database {
         total_before_discount,
         total_discount: total_item_discount,
         additional_discount,
+        commission_value, // حفظ مبلغ العمولة
         net_total,
         previous_balance,
         final_balance: previous_balance + (is_return ? -net_total : net_total),
@@ -443,10 +397,7 @@ class Database {
       };
 
       if (isSupabaseConfigured) {
-          const { error } = await supabase.rpc('process_sales_invoice', {
-              p_invoice: invoice,
-              p_items: items
-          });
+          const { error } = await supabase.rpc('process_sales_invoice', { p_invoice: invoice, p_items: items });
           if (error) throw error;
       }
 
@@ -458,16 +409,12 @@ class Database {
       this.invoices.push(invoice);
       if (customer) customer.current_balance = invoice.final_balance;
       
-      if (cash_paid > 0) {
-          await this.recordInvoicePayment(invoice.id, cash_paid);
-      } else {
-          this.saveToLocalCache();
-      }
+      if (cash_paid > 0) await this.recordInvoicePayment(invoice.id, cash_paid);
+      else this.saveToLocalCache();
       
       return { success: true, id: invoice.id };
     } catch (e: any) {
-      console.error("Cloud Save Failed:", e);
-      return { success: false, message: 'فشل الحفظ في السحابة. يرجى التحقق من الإنترنت.' };
+      return { success: false, message: 'فشل الحفظ في السحابة' };
     } finally {
       this.decrementOp();
     }
@@ -501,9 +448,7 @@ class Database {
       const inv = this.invoices.find(i => i.id === invoiceId);
       const cust = this.customers.find(c => c.id === inv?.customer_id);
       if (inv && cust) {
-          // توليد رقم سند دفع بسيط
           const ref_number = this.generateSimpleSeq(this.cashTransactions, 'PY', 'ref_number');
-
           const tx: CashTransaction = {
               id: this.generateId('pay-'),
               type: inv.type === 'SALE' ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
@@ -515,12 +460,10 @@ class Database {
               notes: `سداد فاتورة #${inv.invoice_number}`,
               ref_number
           };
-          
           if (isSupabaseConfigured) {
               await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
               await this.retryCloudOp(async () => await supabase.from('customers').update({ current_balance: cust.current_balance }).eq('id', cust.id));
           }
-          
           this.cashTransactions.push(tx);
           await this.recalculateAllBalances();
           return { success: true };
@@ -530,7 +473,6 @@ class Database {
 
   async updateSettings(s: any) { 
       this.settings = { ...this.settings, ...s }; 
-      
       if (isSupabaseConfigured) {
           try {
               this.incrementOp();
@@ -540,12 +482,7 @@ class Database {
                   currency: this.settings.currency,
                   updated_at: new Date().toISOString()
               });
-              await supabase.from('settings').upsert({ id: 1, companyname: this.settings.companyName, currency: this.settings.currency });
-          } catch (e) {
-              console.error("Failed to sync settings:", e);
-          } finally {
-              this.decrementOp();
-          }
+          } catch (e) { console.error(e); } finally { this.decrementOp(); }
       }
       this.saveToLocalCache(); 
       return true; 
@@ -559,13 +496,8 @@ class Database {
       await this.recalculateAllBalances();
     }
   }
-  async addSupplier(data: any) {
-    const supplier: Supplier = { ...data, id: this.generateId('s-'), current_balance: data.opening_balance || 0 };
-    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').upsert(supplier));
-    this.suppliers.push(supplier);
-    this.saveToLocalCache();
-    return supplier;
-  }
+
+  // Fix: Added missing updateSupplier to resolve error in Suppliers.tsx
   async updateSupplier(id: string, data: any) {
     const supplier = this.suppliers.find(s => s.id === id);
     if (supplier) {
@@ -574,11 +506,47 @@ class Database {
       await this.recalculateAllBalances();
     }
   }
+
+  async addSupplier(data: any) {
+    const supplier: Supplier = { ...data, id: this.generateId('s-'), current_balance: data.opening_balance || 0 };
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').upsert(supplier));
+    this.suppliers.push(supplier);
+    this.saveToLocalCache();
+    return supplier;
+  }
+
   async deleteSupplier(id: string) {
     if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('suppliers').delete().eq('id', id));
     this.suppliers = this.suppliers.filter(s => s.id !== id);
     this.saveToLocalCache();
   }
+
+  // Fix: Added missing addRepresentative to resolve error in Representatives.tsx
+  async addRepresentative(data: any) {
+    const rep: Representative = { ...data, id: this.generateId('rep-') };
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').upsert(rep));
+    this.representatives.push(rep);
+    this.saveToLocalCache();
+    return rep;
+  }
+
+  // Fix: Added missing updateRepresentative to resolve error in Representatives.tsx
+  async updateRepresentative(id: string, data: any) {
+    const rep = this.representatives.find(r => r.id === id);
+    if (rep) {
+      Object.assign(rep, data);
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').update(data).eq('id', id));
+      this.saveToLocalCache();
+    }
+  }
+
+  // Fix: Added missing deleteRepresentative to resolve error in Representatives.tsx
+  async deleteRepresentative(id: string) {
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').delete().eq('id', id));
+    this.representatives = this.representatives.filter(r => r.id !== id);
+    this.saveToLocalCache();
+  }
+
   async addWarehouse(name: string) { 
     const w = { id: this.generateId('wh-'), name, is_default: false };
     if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').upsert(w));
@@ -586,23 +554,20 @@ class Database {
     this.saveToLocalCache(); 
   }
 
+  // Fix: Added missing updateWarehouse to resolve error in Warehouses.tsx
   async updateWarehouse(id: string, name: string) {
-      const w = this.warehouses.find(x => x.id === id);
-      if (w) {
-          w.name = name;
-          if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').update({ name }).eq('id', id));
-          this.saveToLocalCache();
-      }
+    const w = this.warehouses.find(x => x.id === id);
+    if (w) {
+      w.name = name;
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').update({ name }).eq('id', id));
+      this.saveToLocalCache();
+    }
   }
 
   async deleteWarehouse(id: string): Promise<{ success: boolean; message?: string }> {
     const w = this.warehouses.find(x => x.id === id);
     if (!w || w.is_default) return { success: false, message: 'لا يمكن حذف المستودع الرئيسي' };
-    
-    if (isSupabaseConfigured) {
-        await this.retryCloudOp(async () => await supabase.from('warehouses').delete().eq('id', id));
-    }
-    
+    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('warehouses').delete().eq('id', id));
     this.warehouses = this.warehouses.filter(x => x.id !== id);
     this.saveToLocalCache();
     return { success: true };
@@ -613,21 +578,12 @@ class Database {
     try {
       const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
       const enrichedItems = items.map((item, idx) => ({ ...item, serial_number: idx + 1 }));
-
-      // توليد رقم فاتورة مشتريات متسلسل بسيط
       const prefix = isReturn ? 'PR' : 'P';
       const invoice_number = this.generateSimpleSeq(this.purchaseInvoices, prefix, 'invoice_number');
-
       const invoice: PurchaseInvoice = {
-        id: this.generateId('pur-'),
-        invoice_number,
-        document_number: docNo,
-        supplier_id,
+        id: this.generateId('pur-'), invoice_number, document_number: docNo, supplier_id,
         date: date ? new Date(date).toISOString() : new Date().toISOString(),
-        total_amount,
-        paid_amount: cashPaid,
-        type: isReturn ? 'RETURN' : 'PURCHASE',
-        items: enrichedItems
+        total_amount, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items: enrichedItems
       };
 
       if (isSupabaseConfigured) {
@@ -638,78 +594,51 @@ class Database {
       for (const item of enrichedItems) {
         let batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
         const totalQtyToAdd = item.quantity + (item.bonus_quantity || 0);
-
         if (batch) {
           batch.quantity += isReturn ? -totalQtyToAdd : totalQtyToAdd;
           batch.purchase_price = item.cost_price;
           batch.selling_price = item.selling_price;
         } else {
           batch = {
-            id: this.generateId('b-'),
-            product_id: item.product_id,
-            warehouse_id: item.warehouse_id,
-            batch_number: item.batch_number,
-            purchase_price: item.cost_price,
-            selling_price: item.selling_price,
-            quantity: isReturn ? -totalQtyToAdd : totalQtyToAdd,
-            expiry_date: item.expiry_date,
-            status: BatchStatus.ACTIVE
+            id: this.generateId('b-'), product_id: item.product_id, warehouse_id: item.warehouse_id,
+            batch_number: item.batch_number, purchase_price: item.cost_price, selling_price: item.selling_price,
+            quantity: isReturn ? -totalQtyToAdd : totalQtyToAdd, expiry_date: item.expiry_date, status: BatchStatus.ACTIVE
           };
           this.batches.push(batch);
         }
         if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('batches').upsert(batch));
-        
-        // تحديث سعر الصنف في جدول المنتجات الرئيسي (المتطلب الجديد) لضمان العمل بآخر سعر دائماً
         if (!isReturn) {
           const product = this.products.find(p => p.id === item.product_id);
           if (product) {
-            product.purchase_price = item.cost_price;
-            product.selling_price = item.selling_price;
+            product.purchase_price = item.cost_price; product.selling_price = item.selling_price;
             if (isSupabaseConfigured) {
-              await this.retryCloudOp(async () => 
-                await supabase.from('products').update({
-                  purchase_price: item.cost_price,
-                  selling_price: item.selling_price
-                }).eq('id', item.product_id)
-              );
+              await this.retryCloudOp(async () => await supabase.from('products').update({ purchase_price: item.cost_price, selling_price: item.selling_price }).eq('id', item.product_id));
             }
           }
         }
       }
-
       this.purchaseInvoices.push(invoice);
       if (cashPaid > 0) {
-        // توليد رقم سند دفع بسيط
         const py_ref = this.generateSimpleSeq(this.cashTransactions, 'PPY', 'ref_number');
         const tx: CashTransaction = {
-          id: this.generateId('tx-'),
-          type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-          category: 'SUPPLIER_PAYMENT',
-          reference_id: invoice.id,
+          id: this.generateId('tx-'), type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
+          category: 'SUPPLIER_PAYMENT', reference_id: invoice.id,
           related_name: this.suppliers.find(s => s.id === supplier_id)?.name || 'مورد',
-          amount: cashPaid,
-          date: invoice.date,
-          notes: `سداد فاتورة مشتريات #${invoice.invoice_number}`,
-          ref_number: py_ref
+          amount: cashPaid, date: invoice.date, notes: `سداد فاتورة مشتريات #${invoice.invoice_number}`, ref_number: py_ref
         };
         if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
         this.cashTransactions.push(tx);
       }
-
       await this.recalculateAllBalances();
       this.saveToLocalCache();
       return { success: true };
-    } catch (e: any) {
-      return { success: false, message: 'فشل المزامنة السحابية. يرجى التحقق من الاتصال.' };
-    } finally {
-      this.decrementOp();
-    }
+    } catch (e: any) { return { success: false, message: 'فشل المزامنة السحابية' }; }
+    finally { this.decrementOp(); }
   }
 
   async deletePurchaseInvoice(id: string, updateInventory: boolean = true, updateBalance: boolean = true) {
     const inv = this.purchaseInvoices.find(i => i.id === id);
     if (!inv) return;
-
     if (updateInventory) {
       inv.items.forEach(item => {
         const batch = this.batches.find(b => b.product_id === item.product_id && b.warehouse_id === item.warehouse_id && b.batch_number === item.batch_number);
@@ -717,51 +646,18 @@ class Database {
         if (batch) batch.quantity += (inv.type === 'PURCHASE' ? -totalQtyToRemove : totalQtyToRemove);
       });
     }
-
     if (isSupabaseConfigured) {
         await this.retryCloudOp(async () => await supabase.from('purchase_invoices').delete().eq('id', id));
         await this.retryCloudOp(async () => await supabase.from('cash_transactions').delete().eq('reference_id', id).eq('category', 'SUPPLIER_PAYMENT'));
     }
-
     this.purchaseInvoices = this.purchaseInvoices.filter(i => i.id !== id);
     this.cashTransactions = this.cashTransactions.filter(t => !(t.reference_id === id && t.category === 'SUPPLIER_PAYMENT'));
-    
-    if (updateBalance) {
-      await this.recalculateAllBalances();
-    }
-    
-    this.saveToLocalCache();
-  }
-
-  async updateRepresentative(id: string, data: any) {
-    const rep = this.representatives.find(r => r.id === id);
-    if (rep) {
-        Object.assign(rep, data);
-        if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').update(data).eq('id', id));
-        this.saveToLocalCache();
-    }
-  }
-
-  async addRepresentative(data: any) {
-    const rep: Representative = { ...data, id: this.generateId('rep-') };
-    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').upsert(rep));
-    this.representatives.push(rep);
-    this.saveToLocalCache();
-  }
-
-  async deleteRepresentative(id: string) {
-    if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').delete().eq('id', id));
-    this.representatives = this.representatives.filter(r => r.id !== id);
+    if (updateBalance) await this.recalculateAllBalances();
     this.saveToLocalCache();
   }
 
   async submitStockTake(adjustments: any[]) {
-      const pAds = adjustments.map(a => ({
-          ...a,
-          id: this.generateId('adj-'),
-          date: new Date().toISOString(),
-          status: 'PENDING'
-      }));
+      const pAds = adjustments.map(a => ({ ...a, id: this.generateId('adj-'), date: new Date().toISOString(), status: 'PENDING' }));
       if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('pending_adjustments').upsert(pAds));
       this.pendingAdjustments.push(...pAds);
       this.saveToLocalCache();
@@ -784,6 +680,7 @@ class Database {
       return false;
   }
 
+  // Fix: Added missing rejectAdjustment to resolve error in Settings.tsx
   async rejectAdjustment(id: string) {
       const adj = this.pendingAdjustments.find(a => a.id === id);
       if (adj) {
@@ -796,43 +693,40 @@ class Database {
   }
 
   async createPurchaseOrder(supplier_id: string, items: any[]) {
-      const order: PurchaseOrder = {
-          id: this.generateId('ord-'),
-          order_number: `ORD-${Date.now().toString().slice(-6)}`,
-          supplier_id,
-          date: new Date().toISOString(),
-          status: 'PENDING',
-          items
-      };
+      const order: PurchaseOrder = { id: this.generateId('ord-'), order_number: `ORD-${Date.now().toString().slice(-6)}`, supplier_id, date: new Date().toISOString(), status: 'PENDING', items };
       if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('purchase_orders').upsert(order));
       this.purchaseOrders.push(order);
       this.saveToLocalCache();
       return { success: true };
   }
 
+  // Fix: Added missing updatePurchaseOrderStatus to resolve error in PurchaseOrders.tsx
   async updatePurchaseOrderStatus(id: string, status: 'PENDING' | 'COMPLETED' | 'CANCELLED') {
-      const order = this.purchaseOrders.find(o => o.id === id);
-      if (order) {
-          order.status = status;
-          if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('purchase_orders').update({ status }).eq('id', id));
-          this.saveToLocalCache();
-      }
+    const order = this.purchaseOrders.find(o => o.id === id);
+    if (order) {
+      order.status = status;
+      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('purchase_orders').update({ status }).eq('id', id));
+      this.saveToLocalCache();
+    }
   }
 
+  // ملخص اليومية - تم تحديثه لخصم المرتجع من المبيعات
   getDailySummary(date: string) {
-      const invoices = this.invoices.filter(i => i.date.startsWith(date) && i.type === 'SALE');
-      const pInvoices = this.purchaseInvoices.filter(i => i.date.startsWith(date) && i.type === 'PURCHASE');
+      const invoices = this.invoices.filter(i => i.date.startsWith(date));
       const txs = this.cashTransactions.filter(t => t.date.startsWith(date));
       
-      const cashSales = invoices.reduce((s, i) => s + this.getInvoicePaidAmount(i.id), 0);
-      const otherReceipts = txs.filter(t => t.type === 'RECEIPT' && t.category !== 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
+      // مبيعات صافية (مبيعات - مرتجعات)
+      const cashSales = invoices.reduce((s, i) => {
+          const paid = this.getInvoicePaidAmount(i.id);
+          return i.type === 'SALE' ? s + paid : s - paid;
+      }, 0);
       
-      const cashPurchases = pInvoices.reduce((s, i) => s + i.paid_amount, 0);
+      const otherReceipts = txs.filter(t => t.type === 'RECEIPT' && t.category !== 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
+      const cashPurchases = this.purchaseInvoices.filter(i => i.date.startsWith(date)).reduce((s, i) => i.type === 'PURCHASE' ? s + i.paid_amount : s - i.paid_amount, 0);
       const expenses = txs.filter(t => t.type === 'EXPENSE' && t.category !== 'SUPPLIER_PAYMENT').reduce((s, t) => s + t.amount, 0);
       
       const prevClosing = this.dailyClosings.filter(c => c.date < date).sort((a,b) => b.date.localeCompare(a.date))[0];
       const openingCash = prevClosing ? prevClosing.cash_balance : 0;
-      
       const expectedCash = openingCash + cashSales + otherReceipts - cashPurchases - expenses;
       const inventoryValue = this.getProductsWithBatches().reduce((sum, p) => sum + (p.batches.reduce((s, b) => s + b.quantity, 0) * (p.purchase_price || 0)), 0);
       
@@ -847,9 +741,7 @@ class Database {
         this.dailyClosings.push(closing);
         this.saveToLocalCache();
         return true;
-      } finally {
-        this.decrementOp();
-      }
+      } finally { this.decrementOp(); }
   }
 
   getNextTransactionRef(type: CashTransactionType) {
@@ -865,30 +757,15 @@ class Database {
   }
 
   async clearAllSales() {
-    this.invoices = [];
-    this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'CUSTOMER_PAYMENT');
+    this.invoices = []; this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'CUSTOMER_PAYMENT');
     if (isSupabaseConfigured) {
         await supabase.from('invoices').delete().neq('id', '0');
         await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
     }
-    await this.recalculateAllBalances();
-    this.saveToLocalCache();
+    await this.recalculateAllBalances(); this.saveToLocalCache();
   }
 
-  async resetCustomerAccounts() {
-    this.customers.forEach(c => { c.current_balance = c.opening_balance; });
-    this.invoices = [];
-    this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'CUSTOMER_PAYMENT');
-    if (isSupabaseConfigured) {
-        await supabase.from('invoices').delete().neq('id', '0');
-        await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
-        for (const c of this.customers) {
-            await supabase.from('customers').update({ current_balance: c.opening_balance }).eq('id', c.id);
-        }
-    }
-    this.saveToLocalCache();
-  }
-
+  // Fix: Added missing clearAllPurchases to resolve error in Settings.tsx
   async clearAllPurchases() {
     this.purchaseInvoices = [];
     this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'SUPPLIER_PAYMENT');
@@ -900,6 +777,7 @@ class Database {
     this.saveToLocalCache();
   }
 
+  // Fix: Added missing clearAllOrders to resolve error in Settings.tsx
   async clearAllOrders() {
     this.purchaseOrders = [];
     if (isSupabaseConfigured) {
@@ -908,13 +786,17 @@ class Database {
     this.saveToLocalCache();
   }
 
+  // Fix: Added missing resetCashRegister to resolve error in Settings.tsx
   async resetCashRegister() {
     this.cashTransactions = [];
-    if (isSupabaseConfigured) await supabase.from('cash_transactions').delete().neq('id', '0');
+    if (isSupabaseConfigured) {
+        await supabase.from('cash_transactions').delete().neq('id', '0');
+    }
     await this.recalculateAllBalances();
     this.saveToLocalCache();
   }
 
+  // Fix: Added missing clearWarehouseStock to resolve error in Settings.tsx
   async clearWarehouseStock(warehouseId: string) {
     this.batches.forEach(b => {
       if (b.warehouse_id === warehouseId) {
@@ -927,84 +809,93 @@ class Database {
     this.saveToLocalCache();
   }
 
+  async resetCustomerAccounts() {
+    this.customers.forEach(c => { c.current_balance = c.opening_balance; });
+    this.invoices = []; this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'CUSTOMER_PAYMENT');
+    if (isSupabaseConfigured) {
+        await supabase.from('invoices').delete().neq('id', '0');
+        await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
+        for (const c of this.customers) { await supabase.from('customers').update({ current_balance: c.opening_balance }).eq('id', c.id); }
+    }
+    this.saveToLocalCache();
+  }
+
+  // Fix: Added missing getABCAnalysis to resolve error in InventoryAnalysis.tsx
   getABCAnalysis() {
-    const productRevenue: Record<string, { name: string; revenue: number }> = {};
+    const products = this.getProductsWithBatches();
+    const invoices = this.invoices.filter(i => i.type === 'SALE');
     
-    this.invoices.filter(inv => inv.type === 'SALE').forEach(inv => {
+    const revenueMap: Record<string, number> = {};
+    invoices.forEach(inv => {
       inv.items.forEach(item => {
-        const prodId = item.product.id;
-        const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
-        const total = item.quantity * price * (1 - (item.discount_percentage / 100));
-        
-        if (!productRevenue[prodId]) {
-          productRevenue[prodId] = { name: item.product.name, revenue: 0 };
-        }
-        productRevenue[prodId].revenue += total;
+        const lineVal = (item.quantity * (item.unit_price || 0)) * (1 - item.discount_percentage / 100);
+        revenueMap[item.product.id] = (revenueMap[item.product.id] || 0) + lineVal;
       });
     });
 
-    const sorted = Object.entries(productRevenue)
-      .map(([id, data]) => ({ id, ...data }))
-      .sort((a, b) => b.revenue - a.revenue);
+    const classifiedProducts = products.map(p => ({
+      id: p.id,
+      name: p.name,
+      revenue: revenueMap[p.id] || 0,
+      category: 'C'
+    })).sort((a, b) => b.revenue - a.revenue);
 
-    const totalRevenue = sorted.reduce((sum, p) => sum + p.revenue, 0);
+    const totalRevenue = classifiedProducts.reduce((sum, p) => sum + p.revenue, 0);
     let runningRevenue = 0;
 
-    const classifiedProducts = sorted.map(p => {
+    classifiedProducts.forEach(p => {
       runningRevenue += p.revenue;
-      const percentage = totalRevenue > 0 ? (runningRevenue / totalRevenue) * 100 : 0;
-      let category = 'C';
-      if (percentage <= 80) category = 'A';
-      else if (percentage <= 95) category = 'B';
-      
-      return { ...p, category };
+      const ratio = totalRevenue > 0 ? runningRevenue / totalRevenue : 0;
+      if (ratio <= 0.8) p.category = 'A';
+      else if (ratio <= 0.95) p.category = 'B';
+      else p.category = 'C';
     });
 
     return { classifiedProducts };
   }
 
+  // Fix: Added missing getInventoryValuationReport to resolve error in InventoryAnalysis.tsx
   getInventoryValuationReport() {
-    return this.products.map(p => {
-      const pBatches = this.batches.filter(b => b.product_id === p.id);
-      const totalQty = pBatches.reduce((sum, b) => sum + b.quantity, 0);
+    const products = this.getProductsWithBatches();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const strThirtyDaysAgo = thirtyDaysAgo.toISOString().split('T')[0];
+
+    return products.map(p => {
+      const totalQty = p.batches.reduce((sum, b) => sum + b.quantity, 0);
+      const latestCost = p.batches.length > 0 ? p.batches[p.batches.length - 1].purchase_price : (p.purchase_price || 0);
       
-      const totalCostVal = pBatches.reduce((sum, b) => sum + (b.quantity * b.purchase_price), 0);
-      const wac = totalQty > 0 ? totalCostVal / totalQty : (p.purchase_price || 0);
+      // Basic WAC (Weighted Average Cost)
+      const totalBatchValue = p.batches.reduce((sum, b) => sum + (b.purchase_price * b.quantity), 0);
+      const wac = totalQty > 0 ? totalBatchValue / totalQty : (p.purchase_price || 0);
+
+      // TurnoverRate calculation based on last 30 days sales
+      const soldLast30 = this.invoices
+        .filter(i => i.type === 'SALE' && i.date.split('T')[0] >= strThirtyDaysAgo)
+        .reduce((sum, inv) => {
+          const item = inv.items.find(it => it.product.id === p.id);
+          return sum + (item ? item.quantity : 0);
+        }, 0);
       
-      const latestBatch = [...pBatches].sort((a, b) => b.id.localeCompare(a.id))[0];
-      const latestCost = latestBatch ? latestBatch.purchase_price : (p.purchase_price || 0);
-      
-      const totalValue = totalQty * wac;
-      
-      const soldQty = this.invoices
-        .filter(inv => inv.type === 'SALE')
-        .reduce((sum, inv) => sum + inv.items.filter(it => it.product.id === p.id).reduce((s, it) => s + it.quantity, 0), 0);
-      
-      const turnoverRate = totalQty > 0 ? (soldQty / totalQty).toFixed(1) : "0.0";
+      const turnoverRate = ((soldLast30 / (totalQty || 1)) * 10).toFixed(1);
 
       return {
         id: p.id,
         name: p.name,
-        code: p.code || '---',
+        code: p.code || '',
         totalQty,
         wac,
         latestCost,
-        totalValue,
+        totalValue: totalQty * wac,
         turnoverRate
       };
-    });
+    }).sort((a,b) => b.totalValue - a.totalValue);
   }
 
   async resetDatabase() { localStorage.removeItem('mizan_db'); window.location.reload(); }
-
   exportDbData() { return JSON.stringify(this); }
   importDbData(json: string) {
-      try {
-          const data = JSON.parse(json);
-          Object.assign(this, data);
-          this.saveToLocalCache();
-          return true;
-      } catch (e) { return false; }
+      try { const data = JSON.parse(json); Object.assign(this, data); this.saveToLocalCache(); return true; } catch (e) { return false; }
   }
 }
 

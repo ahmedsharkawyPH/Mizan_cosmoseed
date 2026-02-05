@@ -46,7 +46,12 @@ const Dashboard: React.FC = () => {
     const products = db.getProductsWithBatches();
     const customers = db.getCustomers();
     const cash = db.getCashBalance();
-    const totalSales = invoices.reduce((sum, inv) => sum + inv.net_total, 0);
+    
+    // تصحيح منطق حساب المبيعات (خصم المرتجع)
+    const totalSales = invoices.reduce((sum, inv) => 
+        inv.type === 'SALE' ? sum + inv.net_total : sum - inv.net_total, 0
+    );
+
     const lowStockThreshold = db.getSettings().lowStockThreshold;
     const lowStockCount = products.filter(p => p.batches.reduce((sum, b) => sum + b.quantity, 0) < lowStockThreshold).length;
     
@@ -54,10 +59,14 @@ const Dashboard: React.FC = () => {
       const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().split('T')[0];
     }).reverse();
     
-    const salesData = last7Days.map(date => ({
-      date: new Date(date).toLocaleDateString(undefined, {weekday: 'short'}),
-      sales: invoices.filter(i => i.date.startsWith(date)).reduce((sum, i) => sum + i.net_total, 0)
-    }));
+    const salesData = last7Days.map(date => {
+      const dayInvoices = invoices.filter(i => i.date.startsWith(date));
+      const dayNetSales = dayInvoices.reduce((sum, i) => i.type === 'SALE' ? sum + i.net_total : sum - i.net_total, 0);
+      return {
+        date: new Date(date).toLocaleDateString(undefined, {weekday: 'short'}),
+        sales: dayNetSales
+      };
+    });
 
     return { totalSales, customerCount: customers.length, lowStockCount, cash, salesData, lowStockThreshold };
   }, []);
@@ -88,7 +97,7 @@ const Dashboard: React.FC = () => {
                  {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
              </div>
              <button onClick={() => navigate('/settings')} className="text-xs text-slate-400 hover:text-blue-600 underline">
-                 Edit Company Info
+                 تعديل بيانات الشركة
              </button>
           </div>
       </div>
@@ -98,7 +107,7 @@ const Dashboard: React.FC = () => {
         <StatCard title={t('dash.total_sales')} value={`${currency}${stats.totalSales.toLocaleString()}`} icon={TrendingUp} color="bg-emerald-500" />
         <StatCard title={t('dash.cash_balance')} value={`${currency}${stats.cash.toLocaleString()}`} icon={Coins} color="bg-blue-600" />
         <StatCard title={t('dash.customers')} value={stats.customerCount.toString()} icon={Users} color="bg-indigo-500" />
-        <StatCard title={t('dash.low_stock')} value={stats.lowStockCount.toString()} icon={AlertTriangle} color="bg-amber-500" subtext={`< ${stats.lowStockThreshold} units`} />
+        <StatCard title={t('dash.low_stock')} value={stats.lowStockCount.toString()} icon={AlertTriangle} color="bg-amber-500" subtext={`أقل من ${stats.lowStockThreshold} قطعة`} />
       </div>
 
       {/* 2. Quick Actions Shortcuts */}
@@ -126,7 +135,7 @@ const Dashboard: React.FC = () => {
                 label={t('stock.new')} 
                 icon={PackagePlus} 
                 color="text-emerald-600" 
-                onClick={() => navigate('/inventory', { state: { openAdd: true } })} 
+                onClick={() => navigate('/inventory')} 
             />
             <QuickAction 
                 label={t('nav.cash')} 
@@ -149,10 +158,10 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Charts & Promos */}
+      {/* 3. Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white p-8 rounded-2xl shadow-card border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-800 mb-6">{t('dash.sales_trend')}</h3>
+          <h3 className="text-lg font-bold text-slate-800 mb-6">{t('dash.sales_trend')} (صافي المبيعات)</h3>
           <div className="h-80" dir="ltr">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={stats.salesData}>
@@ -184,7 +193,7 @@ const Dashboard: React.FC = () => {
                  </div>
                  <h3 className="text-2xl font-bold mb-3">{t('dash.insights')}</h3>
                  <p className="text-slate-300 mb-8 leading-relaxed text-sm">
-                     {t('dash.insights_desc')}
+                     يساعدك النظام على تتبع الأرباح، النواقص، وأداء المناديب بشكل لحظي لتحسين كفاءة العمل.
                  </p>
              </div>
              

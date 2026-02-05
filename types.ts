@@ -99,6 +99,7 @@ export interface Invoice {
   total_before_discount: number;
   total_discount: number; 
   additional_discount?: number; 
+  commission_value?: number; // الحقل الجديد للعمولة
   net_total: number;
   previous_balance: number;
   final_balance: number;
@@ -110,7 +111,7 @@ export interface Invoice {
 export interface PurchaseInvoice {
   id: string;
   invoice_number: string;
-  document_number?: string; // New field for supplier invoice number
+  document_number?: string; 
   supplier_id: string;
   date: string;
   total_amount: number;
@@ -120,12 +121,12 @@ export interface PurchaseInvoice {
 }
 
 export interface PurchaseItem {
-  serial_number?: number; // الحقل الجديد لتخزين الترتيب
+  serial_number?: number; 
   product_id: string;
   warehouse_id: string; 
   batch_number: string; 
   quantity: number;
-  bonus_quantity: number; // New Field added
+  bonus_quantity: number; 
   cost_price: number;
   selling_price: number;
   expiry_date: string;
@@ -210,18 +211,6 @@ export interface DailyClosing {
   closed_by?: string;
 }
 
-// Accounting Types
-export interface JournalEntry {
-    id: string;
-    date: string;
-    description: string;
-    reference: string;
-    debit: number;
-    credit: number;
-    account: string;
-}
-
-// Helper types for UI
 export interface ProductWithBatches extends Product {
   batches: Batch[];
 }

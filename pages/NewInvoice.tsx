@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks } from 'lucide-react';
+import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
@@ -30,6 +30,7 @@ export default function NewInvoice() {
   const [cashPayment, setCashPayment] = useState<number>(0);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
   const [additionalDiscountPercent, setAdditionalDiscountPercent] = useState<number>(0);
+  const [commissionValue, setCommissionValue] = useState<number>(0); // حقل العمولة الجديد
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -93,6 +94,7 @@ export default function NewInvoice() {
         if (invoice.items) setCart(invoice.items);
         if (invoice.type === 'RETURN') setIsReturnMode(true);
         if (invoice.additional_discount) setAdditionalDiscount(invoice.additional_discount);
+        if (invoice.commission_value) setCommissionValue(invoice.commission_value);
       }
     } else {
         setTimeout(() => customerRef.current?.focus(), 100);
@@ -136,9 +138,7 @@ export default function NewInvoice() {
           } else {
               setAdditionalDiscountPercent(0);
           }
-          setTimeout(() => {
-            productRef.current?.focus();
-          }, 100);
+          setTimeout(() => { productRef.current?.focus(); }, 100);
       }
   }, [selectedCustomer, customers, id]);
 
@@ -195,13 +195,11 @@ export default function NewInvoice() {
   const addItemToCart = () => {
     if (!currentProduct) return;
     const finalPrice = invoiceConfig.enableManualPrice ? Number(manualPrice) : Number(currentSellingPrice);
-    
     if (!isReturnMode && finalPrice < lastPurchasePrice) {
         setShowPriceWarning(true);
         setConfirmationInput('');
         return;
     }
-
     proceedToAddItem();
   };
 
@@ -231,11 +229,8 @@ export default function NewInvoice() {
 
   const updateCartItemValue = (idx: number, field: 'qty' | 'price', newVal: number) => {
     const newCart = [...cart];
-    if (field === 'qty') {
-        newCart[idx] = { ...newCart[idx], quantity: newVal };
-    } else {
-        newCart[idx] = { ...newCart[idx], unit_price: newVal };
-    }
+    if (field === 'qty') newCart[idx] = { ...newCart[idx], quantity: newVal };
+    else newCart[idx] = { ...newCart[idx], unit_price: newVal };
     setCart(newCart);
     setEditingIdx(null);
     setEditingField(null);
@@ -273,7 +268,7 @@ export default function NewInvoice() {
     try {
       const result = id 
         ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
-        : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined);
+        : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined, commissionValue);
       if (result.success) navigate('/invoices', result.id ? { state: { autoPrintId: result.id } } : undefined);
       else toast.error(result.message);
     } catch (e: any) {
@@ -315,16 +310,7 @@ export default function NewInvoice() {
       <div className="flex flex-col xl:flex-row gap-6 items-start">
         <div className="flex-1 flex flex-col space-y-6 w-full">
           <div className="bg-white p-4 rounded-2xl shadow-card border border-slate-100">
-             <SearchableSelect 
-                id="inv_customer_select"
-                name="customer_id"
-                ref={customerRef} 
-                label={t('inv.customer')} 
-                placeholder={t('cust.search')} 
-                options={customerOptions} 
-                value={selectedCustomer} 
-                onChange={setSelectedCustomer} 
-             />
+             <SearchableSelect id="inv_customer_select" name="customer_id" ref={customerRef} label={t('inv.customer')} placeholder={t('cust.search')} options={customerOptions} value={selectedCustomer} onChange={setSelectedCustomer} />
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-card border border-slate-100 relative">
@@ -342,19 +328,7 @@ export default function NewInvoice() {
             
             <div className="grid grid-cols-12 gap-4">
               <div className="col-span-12 md:col-span-9">
-                <SearchableSelect 
-                    id="inv_product_select"
-                    name="product_id"
-                    ref={productRef} 
-                    label={t('inv.product')} 
-                    placeholder={t('cust.search')} 
-                    options={productOptions} 
-                    value={selectedProduct} 
-                    onChange={setSelectedProduct} 
-                    minSearchChars={1} 
-                    disabled={!selectedCustomer} 
-                    persistSearch={true}
-                />
+                <SearchableSelect id="inv_product_select" name="product_id" ref={productRef} label={t('inv.product')} placeholder={t('cust.search')} options={productOptions} value={selectedProduct} onChange={setSelectedProduct} minSearchChars={1} disabled={!selectedCustomer} persistSearch={true} />
               </div>
               <div className="col-span-12 md:col-span-3">
                 <div className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
@@ -427,20 +401,7 @@ export default function NewInvoice() {
                       <td className="px-4 py-3 font-bold text-slate-800">{item.product.name}</td>
                       <td className="px-4 py-3 text-center">
                         {editingIdx === idx && editingField === 'qty' ? (
-                          <input 
-                            id={`inv_editing_qty_${idx}`}
-                            name={`editing_qty_${idx}`}
-                            autoFocus
-                            type="number"
-                            className="w-20 border-2 border-blue-500 rounded p-1 text-center font-bold"
-                            value={tempVal}
-                            onChange={(e) => setTempVal(parseInt(e.target.value) || 0)}
-                            onBlur={() => { setEditingIdx(null); setEditingField(null); }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') updateCartItemValue(idx, 'qty', tempVal);
-                              if (e.key === 'Escape') { setEditingIdx(null); setEditingField(null); }
-                            }}
-                          />
+                          <input id={`inv_editing_qty_${idx}`} name={`editing_qty_${idx}`} autoFocus type="number" className="w-20 border-2 border-blue-500 rounded p-1 text-center font-bold" value={tempVal} onChange={(e) => setTempVal(parseInt(e.target.value) || 0)} onBlur={() => { setEditingIdx(null); setEditingField(null); }} onKeyDown={(e) => { if (e.key === 'Enter') updateCartItemValue(idx, 'qty', tempVal); if (e.key === 'Escape') { setEditingIdx(null); setEditingField(null); } }} />
                         ) : (
                           <button id={`btn_edit_qty_${idx}`} name={`btn_edit_qty_${idx}`} onClick={() => { setEditingIdx(idx); setEditingField('qty'); setTempVal(item.quantity); }} className="font-bold text-slate-700 hover:text-blue-600 transition-colors px-2 py-1 rounded hover:bg-blue-50">
                             {item.quantity}{item.bonus_quantity > 0 && <span className="text-xs text-green-600 ml-1">+{item.bonus_quantity}</span>}
@@ -449,20 +410,7 @@ export default function NewInvoice() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {editingIdx === idx && editingField === 'price' ? (
-                           <input 
-                             id={`inv_editing_price_${idx}`}
-                             name={`editing_price_${idx}`}
-                             autoFocus
-                             type="number"
-                             className="w-24 border-2 border-orange-500 rounded p-1 text-center font-bold text-orange-700"
-                             value={tempVal}
-                             onChange={(e) => setTempVal(parseFloat(e.target.value) || 0)}
-                             onBlur={() => { setEditingIdx(null); setEditingField(null); }}
-                             onKeyDown={(e) => {
-                               if (e.key === 'Enter') updateCartItemValue(idx, 'price', tempVal);
-                               if (e.key === 'Escape') { setEditingIdx(null); setEditingField(null); }
-                             }}
-                           />
+                           <input id={`inv_editing_price_${idx}`} name={`editing_price_${idx}`} autoFocus type="number" className="w-24 border-2 border-orange-500 rounded p-1 text-center font-bold text-orange-700" value={tempVal} onChange={(e) => setTempVal(parseFloat(e.target.value) || 0)} onBlur={() => { setEditingIdx(null); setEditingField(null); }} onKeyDown={(e) => { if (e.key === 'Enter') updateCartItemValue(idx, 'price', tempVal); if (e.key === 'Escape') { setEditingIdx(null); setEditingField(null); } }} />
                         ) : (
                            <button id={`btn_edit_price_${idx}`} name={`btn_edit_price_${idx}`} onClick={() => { setEditingIdx(idx); setEditingField('price'); setTempVal(price); }} className="font-black text-blue-600 hover:bg-blue-50 px-3 py-1 rounded transition-colors">
                               {currency}{price.toLocaleString()}
@@ -495,6 +443,13 @@ export default function NewInvoice() {
                         <label htmlFor="inv_extra_disc_value" className="text-[10px] font-black text-slate-400 uppercase flex-1">{t('inv.additional_discount')} (مبلغ)</label>
                         <input id="inv_extra_disc_value" disabled={!selectedCustomer} name="extra_discount_value" type="number" className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-bold text-red-600 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50" value={additionalDiscount} onChange={e => setAdditionalDiscount(parseFloat(e.target.value) || 0)} />
                     </div>
+                    {/* حقل العمولة المطلوب */}
+                    {!isReturnMode && (
+                        <div className="flex items-center gap-2 border-t border-slate-100 pt-2">
+                            <label htmlFor="inv_commission_value" className="text-[10px] font-black text-slate-400 uppercase flex-1 flex items-center gap-1"><Coins className="w-3 h-3 text-amber-500" />العمولة (مبلغ)</label>
+                            <input id="inv_commission_value" disabled={!selectedCustomer} name="commission_value" type="number" className="w-24 border border-slate-200 rounded-lg p-1.5 text-center font-bold text-amber-600 focus:ring-2 focus:ring-amber-500 outline-none disabled:opacity-50" value={commissionValue} onChange={e => setCommissionValue(parseFloat(e.target.value) || 0)} />
+                        </div>
+                    )}
                 </div>
                 <div className="flex justify-between text-red-500 font-bold border-t pt-2 mt-2"><span>إجمالي الخصم</span><span>-{currency}{totals.totalAdditionalDiscount.toFixed(2)}</span></div>
                 <div className="flex justify-between text-2xl font-black border-t-2 border-slate-100 pt-3 mt-2"><span className="text-slate-800">{t('inv.net_total')}</span><span className="text-blue-600">{currency}{totals.net.toFixed(2)}</span></div>
@@ -542,38 +497,16 @@ export default function NewInvoice() {
                   <div className="bg-red-500 p-8 text-center text-white">
                       <AlertTriangle className="w-16 h-16 mx-auto mb-4 animate-bounce" />
                       <h2 className="text-2xl font-black mb-2">تحذير: بيع بأقل من التكلفة!</h2>
-                      <p className="text-red-100 font-bold">
-                          سعر البيع المحدد ({manualPrice} {currency}) أقل من سعر التكلفة ({lastPurchasePrice} {currency}).
-                      </p>
+                      <p className="text-red-100 font-bold">سعر البيع المحدد ({manualPrice} {currency}) أقل من سعر التكلفة ({lastPurchasePrice} {currency}).</p>
                   </div>
-                  
                   <div className="p-8 space-y-6">
                       <div className="text-center space-y-2">
                           <p className="text-slate-600 font-bold">للمتابعة بهذا السعر، يرجى كتابة كلمة <span className="text-red-600 font-black underline">موافق</span> في الحقل أدناه:</p>
-                          <input 
-                            type="text" 
-                            className="w-full border-2 border-slate-200 p-4 rounded-2xl text-center font-black text-xl focus:border-red-500 focus:ring-4 focus:ring-red-50 outline-none transition-all"
-                            placeholder="اكتب موافق هنا..."
-                            value={confirmationInput}
-                            onChange={(e) => setConfirmationInput(e.target.value)}
-                            autoFocus
-                          />
+                          <input type="text" className="w-full border-2 border-slate-200 p-4 rounded-2xl text-center font-black text-xl focus:border-red-500 focus:ring-4 focus:ring-red-50 outline-none transition-all" placeholder="اكتب موافق هنا..." value={confirmationInput} onChange={(e) => setConfirmationInput(e.target.value)} autoFocus />
                       </div>
-
                       <div className="flex gap-4">
-                          <button 
-                            onClick={() => setShowPriceWarning(false)} 
-                            className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black hover:bg-slate-200 transition-all"
-                          >
-                              تراجع (تعديل السعر)
-                          </button>
-                          <button 
-                            onClick={proceedToAddItem}
-                            disabled={confirmationInput !== 'موافق'}
-                            className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black shadow-xl shadow-red-200 hover:bg-red-700 transition-all disabled:opacity-20 disabled:shadow-none"
-                          >
-                              تأكيد الإضافة
-                          </button>
+                          <button onClick={() => setShowPriceWarning(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black hover:bg-slate-200 transition-all">تراجع</button>
+                          <button onClick={proceedToAddItem} disabled={confirmationInput !== 'موافق'} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black shadow-xl shadow-red-200 hover:bg-red-700 transition-all disabled:opacity-20 disabled:shadow-none">تأكيد الإضافة</button>
                       </div>
                   </div>
               </div>
