@@ -56,7 +56,7 @@ class Database {
     return `${prefix}${timePart}-${randomPart}-${cryptoPart}`;
   }
 
-  // دالة مساعدة لتوليد الرقم المتسلسل البسيط
+  // دالة مساعدة لتوليد الرقم المتسلسل البسيط (مثال: S1, S2, ...)
   private generateSimpleSeq(list: any[], prefix: string, key: string): string {
     const numbers = list
       .map(item => {
@@ -658,6 +658,23 @@ class Database {
           this.batches.push(batch);
         }
         if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('batches').upsert(batch));
+        
+        // تحديث سعر الصنف في جدول المنتجات الرئيسي (المتطلب الجديد) لضمان العمل بآخر سعر دائماً
+        if (!isReturn) {
+          const product = this.products.find(p => p.id === item.product_id);
+          if (product) {
+            product.purchase_price = item.cost_price;
+            product.selling_price = item.selling_price;
+            if (isSupabaseConfigured) {
+              await this.retryCloudOp(async () => 
+                await supabase.from('products').update({
+                  purchase_price: item.cost_price,
+                  selling_price: item.selling_price
+                }).eq('id', item.product_id)
+              );
+            }
+          }
+        }
       }
 
       this.purchaseInvoices.push(invoice);
