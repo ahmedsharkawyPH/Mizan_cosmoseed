@@ -56,6 +56,19 @@ class Database {
     return `${prefix}${timePart}-${randomPart}-${cryptoPart}`;
   }
 
+  // دالة مساعدة لتوليد الرقم المتسلسل البسيط
+  private generateSimpleSeq(list: any[], prefix: string, key: string): string {
+    const numbers = list
+      .map(item => {
+        const val = item[key] || '';
+        const match = val.match(new RegExp(`^${prefix}(\\d+)$`));
+        return match ? parseInt(match[1]) : 0;
+      })
+      .filter(n => n > 0);
+    const nextSeq = (numbers.length > 0 ? Math.max(...numbers) : 0) + 1;
+    return `${prefix}${nextSeq}`;
+  }
+
   // تسجيل مستمع للتغيرات في حالة المزامنة
   onSyncStateChange(callback: (isBusy: boolean) => void) {
     this.syncListeners.push(callback);
@@ -407,23 +420,9 @@ class Database {
       const customer = this.customers.find(c => c.id === customer_id);
       const previous_balance = customer?.current_balance || 0;
 
-      // توليد رقم فاتورة مبيعات متسلسل احترافي
-      const prefix = is_return ? 'SRET' : 'INV';
-      const now = new Date();
-      const year = now.getFullYear().toString().slice(-2);
-      const month = (now.getMonth() + 1).toString().padStart(2, '0');
-      const pattern = `${prefix}-${year}${month}-`;
-      
-      const sameMonthInvoices = this.invoices.filter(inv => inv.invoice_number?.startsWith(pattern));
-      let nextSeq = 1;
-      if (sameMonthInvoices.length > 0) {
-          const sequences = sameMonthInvoices.map(inv => {
-              const parts = inv.invoice_number.split('-');
-              return parseInt(parts[parts.length - 1]) || 0;
-          });
-          nextSeq = Math.max(...sequences) + 1;
-      }
-      const invoice_number = `${pattern}${nextSeq.toString().padStart(4, '0')}`;
+      // توليد رقم فاتورة مبيعات متسلسل بسيط
+      const prefix = is_return ? 'SR' : 'S';
+      const invoice_number = this.generateSimpleSeq(this.invoices, prefix, 'invoice_number');
 
       const invoice: Invoice = {
         id: this.generateId('inv-'),
@@ -502,6 +501,9 @@ class Database {
       const inv = this.invoices.find(i => i.id === invoiceId);
       const cust = this.customers.find(c => c.id === inv?.customer_id);
       if (inv && cust) {
+          // توليد رقم سند دفع بسيط
+          const ref_number = this.generateSimpleSeq(this.cashTransactions, 'PY', 'ref_number');
+
           const tx: CashTransaction = {
               id: this.generateId('pay-'),
               type: inv.type === 'SALE' ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
@@ -511,7 +513,7 @@ class Database {
               amount,
               date: new Date().toISOString(),
               notes: `سداد فاتورة #${inv.invoice_number}`,
-              ref_number: `PAY-${Date.now().toString().slice(-4)}`
+              ref_number
           };
           
           if (isSupabaseConfigured) {
@@ -612,23 +614,9 @@ class Database {
       const total_amount = items.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
       const enrichedItems = items.map((item, idx) => ({ ...item, serial_number: idx + 1 }));
 
-      // توليد رقم فاتورة مشتريات متسلسل احترافي
-      const prefix = isReturn ? 'PRET' : 'PUR';
-      const today = new Date();
-      const year = today.getFullYear().toString().slice(-2);
-      const month = (today.getMonth() + 1).toString().padStart(2, '0');
-      const pattern = `${prefix}-${year}${month}-`;
-      
-      const sameMonthInvoices = this.purchaseInvoices.filter(inv => inv.invoice_number?.startsWith(pattern));
-      let nextSeq = 1;
-      if (sameMonthInvoices.length > 0) {
-          const sequences = sameMonthInvoices.map(inv => {
-              const parts = inv.invoice_number.split('-');
-              return parseInt(parts[parts.length - 1]) || 0;
-          });
-          nextSeq = Math.max(...sequences) + 1;
-      }
-      const invoice_number = `${pattern}${nextSeq.toString().padStart(4, '0')}`;
+      // توليد رقم فاتورة مشتريات متسلسل بسيط
+      const prefix = isReturn ? 'PR' : 'P';
+      const invoice_number = this.generateSimpleSeq(this.purchaseInvoices, prefix, 'invoice_number');
 
       const invoice: PurchaseInvoice = {
         id: this.generateId('pur-'),
@@ -674,6 +662,8 @@ class Database {
 
       this.purchaseInvoices.push(invoice);
       if (cashPaid > 0) {
+        // توليد رقم سند دفع بسيط
+        const py_ref = this.generateSimpleSeq(this.cashTransactions, 'PPY', 'ref_number');
         const tx: CashTransaction = {
           id: this.generateId('tx-'),
           type: isReturn ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
@@ -683,7 +673,7 @@ class Database {
           amount: cashPaid,
           date: invoice.date,
           notes: `سداد فاتورة مشتريات #${invoice.invoice_number}`,
-          ref_number: `PPAY-${Date.now().toString().slice(-4)}`
+          ref_number: py_ref
         };
         if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
         this.cashTransactions.push(tx);
@@ -846,7 +836,8 @@ class Database {
   }
 
   getNextTransactionRef(type: CashTransactionType) {
-      return `${type === 'RECEIPT' ? 'REC' : 'EXP'}-${Date.now().toString().slice(-6)}`;
+      const prefix = type === 'RECEIPT' ? 'R' : 'E';
+      return this.generateSimpleSeq(this.cashTransactions, prefix, 'ref_number');
   }
 
   async addExpenseCategory(cat: string) {
