@@ -1,5 +1,4 @@
 
-// Fix: Complete implementation of the Database service to handle state management and persistence with Cloud Sync.
 import { supabase, isSupabaseConfigured } from './supabase';
 import { 
   User, Warehouse, Product, Batch, Representative, Customer, Supplier, 
@@ -8,7 +7,10 @@ import {
   PaymentStatus, CashTransactionType, PurchaseItem
 } from '../types';
 
+const DB_VERSION = 1; // إصدار قاعدة البيانات للـ Migration المستقبلي
+
 class Database {
+  // البيانات الأساسية
   products: Product[] = [];
   batches: Batch[] = [];
   customers: Customer[] = [];
@@ -35,10 +37,12 @@ class Database {
   };
   dailyClosings: DailyClosing[] = [];
   pendingAdjustments: PendingAdjustment[] = [];
-  isFullyLoaded: boolean = false;
   
+  // حالة التشغيل (لا تصدر في الـ JSON)
+  isFullyLoaded: boolean = false;
   public activeOperations: number = 0;
   private syncListeners: ((isBusy: boolean) => void)[] = [];
+  private saveTimeout: any = null;
 
   constructor() {
     this.loadFromLocalCache();
@@ -50,7 +54,6 @@ class Database {
     const cryptoPart = typeof crypto !== 'undefined' && crypto.randomUUID 
         ? crypto.randomUUID().split('-')[0] 
         : Math.floor(Math.random() * 1000000).toString(36);
-    
     return `${prefix}${timePart}-${randomPart}-${cryptoPart}`;
   }
 
@@ -177,7 +180,7 @@ class Database {
             this.settings = { ...this.settings, ...cloudSettings };
         }
 
-        this.saveToLocalCache();
+        this.saveToLocalCache(true); // Force save on cloud sync
         this.isFullyLoaded = true;
     } catch (error) {
         console.error("Deep Cloud Sync Failed:", error);
@@ -207,35 +210,78 @@ class Database {
   }
 
   loadFromLocalCache() {
-    const data = localStorage.getItem('mizan_db');
-    if (data) {
-      const parsed = JSON.parse(data);
-      Object.assign(this, parsed);
+    const raw = localStorage.getItem('mizan_db');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        // التحقق من الإصدار أو الـ Migration (بسيط حالياً)
+        if (parsed.dbVersion === DB_VERSION) {
+            this.mapRawData(parsed);
+        } else {
+            console.warn("DB Version Mismatch. Manual migration might be needed.");
+            this.mapRawData(parsed); 
+        }
+      } catch (e) {
+        console.error("Failed to parse local cache", e);
+      }
     }
     if (this.warehouses.length === 0) {
       this.warehouses = [{ id: 'w1', name: 'المخزن الرئيسي', is_default: true }];
     }
   }
 
-  saveToLocalCache() {
-    const data = {
-      products: this.products,
-      batches: this.batches,
-      customers: this.customers,
-      suppliers: this.suppliers,
-      invoices: this.invoices,
-      purchaseInvoices: this.purchaseInvoices,
-      purchaseOrders: this.purchaseOrders,
-      cashTransactions: this.cashTransactions,
-      warehouses: this.warehouses,
-      representatives: this.representatives,
-      settings: this.settings,
-      dailyClosings: this.dailyClosings,
-      pendingAdjustments: this.pendingAdjustments
-    };
-    localStorage.setItem('mizan_db', JSON.stringify(data));
+  // دالة دمج البيانات الآمنة (Manual Mapping)
+  private mapRawData(data: any) {
+      if (data.products) this.products = data.products;
+      if (data.batches) this.batches = data.batches;
+      if (data.customers) this.customers = data.customers;
+      if (data.suppliers) this.suppliers = data.suppliers;
+      if (data.invoices) this.invoices = data.invoices;
+      if (data.purchaseInvoices) this.purchaseInvoices = data.purchaseInvoices;
+      if (data.purchaseOrders) this.purchaseOrders = data.purchaseOrders;
+      if (data.cashTransactions) this.cashTransactions = data.cashTransactions;
+      if (data.warehouses) this.warehouses = data.warehouses;
+      if (data.representatives) this.representatives = data.representatives;
+      if (data.dailyClosings) this.dailyClosings = data.dailyClosings;
+      if (data.pendingAdjustments) this.pendingAdjustments = data.pendingAdjustments;
+      if (data.settings) this.settings = { ...this.settings, ...data.settings };
   }
 
+  // نظام الحفظ بـ Debounce لتخفيف الضغط على المتصفح
+  saveToLocalCache(force: boolean = false) {
+    if (this.saveTimeout) clearTimeout(this.saveTimeout);
+    
+    const performSave = () => {
+        const data = this.getRawDataPackage();
+        localStorage.setItem('mizan_db', JSON.stringify(data));
+        this.saveTimeout = null;
+    };
+
+    if (force) performSave();
+    else this.saveTimeout = setTimeout(performSave, 300);
+  }
+
+  // تجميع البيانات الخام فقط للاستخدام في الحفظ أو التصدير
+  private getRawDataPackage() {
+      return {
+          dbVersion: DB_VERSION,
+          products: this.products,
+          batches: this.batches,
+          customers: this.customers,
+          suppliers: this.suppliers,
+          invoices: this.invoices,
+          purchaseInvoices: this.purchaseInvoices,
+          purchaseOrders: this.purchaseOrders,
+          cashTransactions: this.cashTransactions,
+          warehouses: this.warehouses,
+          representatives: this.representatives,
+          settings: this.settings,
+          dailyClosings: this.dailyClosings,
+          pendingAdjustments: this.pendingAdjustments
+      };
+  }
+
+  // Getters
   getSettings() { return this.settings; }
   getDailyClosings() { return this.dailyClosings; }
   getInvoices() { return this.invoices; }
@@ -276,11 +322,12 @@ class Database {
                 if (!response.error) return { success: true };
                 
                 const error = response.error;
-                if (error.code === '23505' || error.status === 409) {
-                  return { success: false, message: 'DUPLICATE', code: error.code };
-                }
+                // إرجاع تفاصيل الخطأ الفعلية
+                if (error.code === '23505' || error.status === 409) return { success: false, message: 'DUPLICATE', code: error.code };
+                if (i === retries - 1) return { success: false, message: error.message || 'CLOUD_ERROR' };
             } catch (e: any) {
                 if (e.status === 409) return { success: false, message: 'DUPLICATE' };
+                if (i === retries - 1) return { success: false, message: e.message || 'UNEXPECTED_EXCEPTION' };
             }
             await new Promise(r => setTimeout(r, 1000 * (i + 1)));
         }
@@ -305,7 +352,7 @@ class Database {
       };
       if (isSupabaseConfigured) {
           const resP = await this.retryCloudOp(async () => await supabase.from('products').upsert(p));
-          if (!resP.success) return { success: false, message: 'فشل الاتصال بالسحابة' };
+          if (!resP.success) return { success: false, message: resP.message };
           await this.retryCloudOp(async () => await supabase.from('batches').upsert(b));
       }
       this.products.push(p);
@@ -314,14 +361,16 @@ class Database {
       return { success: true };
   }
 
-  // Fix: Return message in updateProduct to resolve TS error in Inventory.tsx
   async updateProduct(id: string, data: Partial<Product>): Promise<{ success: boolean; message?: string }> {
     const p = this.products.find(x => x.id === id);
     if (p) {
       const cleanCode = data.code ? data.code.trim() : p.code;
       const updatedData = { ...data, code: cleanCode };
       Object.assign(p, updatedData);
-      if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('products').update(updatedData).eq('id', id));
+      if (isSupabaseConfigured) {
+          const res = await this.retryCloudOp(async () => await supabase.from('products').update(updatedData).eq('id', id));
+          if (!res.success) return { success: false, message: res.message };
+      }
       this.saveToLocalCache();
       return { success: true };
     }
@@ -358,7 +407,6 @@ class Database {
       this.saveToLocalCache();
   }
 
-  // مبيعات - تم تحديثها لتشمل العمولة
   async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, additional_discount: number, creator?: { id: string, name: string }, commission_value: number = 0): Promise<{ success: boolean; id?: string; message?: string }> {
     this.incrementOp();
     try {
@@ -378,22 +426,10 @@ class Database {
       const invoice_number = this.generateSimpleSeq(this.invoices, prefix, 'invoice_number');
 
       const invoice: Invoice = {
-        id: this.generateId('inv-'),
-        invoice_number,
-        customer_id,
-        created_by: creator?.id,
-        created_by_name: creator?.name,
-        date: new Date().toISOString(),
-        total_before_discount,
-        total_discount: total_item_discount,
-        additional_discount,
-        commission_value, // حفظ مبلغ العمولة
-        net_total,
-        previous_balance,
-        final_balance: previous_balance + (is_return ? -net_total : net_total),
-        payment_status: PaymentStatus.UNPAID,
-        items,
-        type: is_return ? 'RETURN' : 'SALE'
+        id: this.generateId('inv-'), invoice_number, customer_id, created_by: creator?.id, created_by_name: creator?.name,
+        date: new Date().toISOString(), total_before_discount, total_discount: total_item_discount, additional_discount,
+        commission_value, net_total, previous_balance, final_balance: previous_balance + (is_return ? -net_total : net_total),
+        payment_status: PaymentStatus.UNPAID, items, type: is_return ? 'RETURN' : 'SALE'
       };
 
       if (isSupabaseConfigured) {
@@ -401,6 +437,7 @@ class Database {
           if (error) throw error;
       }
 
+      // تعديل الكميات محلياً
       items.forEach(item => {
         const batch = this.batches.find(b => b.id === item.batch?.id);
         if (batch) batch.quantity += is_return ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity);
@@ -450,15 +487,9 @@ class Database {
       if (inv && cust) {
           const ref_number = this.generateSimpleSeq(this.cashTransactions, 'PY', 'ref_number');
           const tx: CashTransaction = {
-              id: this.generateId('pay-'),
-              type: inv.type === 'SALE' ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
-              category: 'CUSTOMER_PAYMENT',
-              reference_id: invoiceId,
-              related_name: cust.name,
-              amount,
-              date: new Date().toISOString(),
-              notes: `سداد فاتورة #${inv.invoice_number}`,
-              ref_number
+              id: this.generateId('pay-'), type: inv.type === 'SALE' ? CashTransactionType.RECEIPT : CashTransactionType.EXPENSE,
+              category: 'CUSTOMER_PAYMENT', reference_id: invoiceId, related_name: cust.name, amount, date: new Date().toISOString(),
+              notes: `سداد فاتورة #${inv.invoice_number}`, ref_number
           };
           if (isSupabaseConfigured) {
               await this.retryCloudOp(async () => await supabase.from('cash_transactions').upsert(tx));
@@ -476,15 +507,10 @@ class Database {
       if (isSupabaseConfigured) {
           try {
               this.incrementOp();
-              await supabase.from('system_settings').upsert({ 
-                  id: 'global_settings',
-                  company_name: this.settings.companyName,
-                  currency: this.settings.currency,
-                  updated_at: new Date().toISOString()
-              });
+              await supabase.from('system_settings').upsert({ id: 'global_settings', company_name: this.settings.companyName, currency: this.settings.currency, updated_at: new Date().toISOString() });
           } catch (e) { console.error(e); } finally { this.decrementOp(); }
       }
-      this.saveToLocalCache(); 
+      this.saveToLocalCache(true); 
       return true; 
   }
   
@@ -497,7 +523,6 @@ class Database {
     }
   }
 
-  // Fix: Added missing updateSupplier to resolve error in Suppliers.tsx
   async updateSupplier(id: string, data: any) {
     const supplier = this.suppliers.find(s => s.id === id);
     if (supplier) {
@@ -521,7 +546,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // Fix: Added missing addRepresentative to resolve error in Representatives.tsx
   async addRepresentative(data: any) {
     const rep: Representative = { ...data, id: this.generateId('rep-') };
     if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').upsert(rep));
@@ -530,7 +554,6 @@ class Database {
     return rep;
   }
 
-  // Fix: Added missing updateRepresentative to resolve error in Representatives.tsx
   async updateRepresentative(id: string, data: any) {
     const rep = this.representatives.find(r => r.id === id);
     if (rep) {
@@ -540,7 +563,6 @@ class Database {
     }
   }
 
-  // Fix: Added missing deleteRepresentative to resolve error in Representatives.tsx
   async deleteRepresentative(id: string) {
     if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('representatives').delete().eq('id', id));
     this.representatives = this.representatives.filter(r => r.id !== id);
@@ -554,7 +576,6 @@ class Database {
     this.saveToLocalCache(); 
   }
 
-  // Fix: Added missing updateWarehouse to resolve error in Warehouses.tsx
   async updateWarehouse(id: string, name: string) {
     const w = this.warehouses.find(x => x.id === id);
     if (w) {
@@ -680,7 +701,6 @@ class Database {
       return false;
   }
 
-  // Fix: Added missing rejectAdjustment to resolve error in Settings.tsx
   async rejectAdjustment(id: string) {
       const adj = this.pendingAdjustments.find(a => a.id === id);
       if (adj) {
@@ -700,7 +720,6 @@ class Database {
       return { success: true };
   }
 
-  // Fix: Added missing updatePurchaseOrderStatus to resolve error in PurchaseOrders.tsx
   async updatePurchaseOrderStatus(id: string, status: 'PENDING' | 'COMPLETED' | 'CANCELLED') {
     const order = this.purchaseOrders.find(o => o.id === id);
     if (order) {
@@ -710,26 +729,20 @@ class Database {
     }
   }
 
-  // ملخص اليومية - تم تحديثه لخصم المرتجع من المبيعات
   getDailySummary(date: string) {
       const invoices = this.invoices.filter(i => i.date.startsWith(date));
       const txs = this.cashTransactions.filter(t => t.date.startsWith(date));
-      
-      // مبيعات صافية (مبيعات - مرتجعات)
       const cashSales = invoices.reduce((s, i) => {
           const paid = this.getInvoicePaidAmount(i.id);
           return i.type === 'SALE' ? s + paid : s - paid;
       }, 0);
-      
       const otherReceipts = txs.filter(t => t.type === 'RECEIPT' && t.category !== 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
       const cashPurchases = this.purchaseInvoices.filter(i => i.date.startsWith(date)).reduce((s, i) => i.type === 'PURCHASE' ? s + i.paid_amount : s - i.paid_amount, 0);
       const expenses = txs.filter(t => t.type === 'EXPENSE' && t.category !== 'SUPPLIER_PAYMENT').reduce((s, t) => s + t.amount, 0);
-      
       const prevClosing = this.dailyClosings.filter(c => c.date < date).sort((a,b) => b.date.localeCompare(a.date))[0];
       const openingCash = prevClosing ? prevClosing.cash_balance : 0;
       const expectedCash = openingCash + cashSales + otherReceipts - cashPurchases - expenses;
       const inventoryValue = this.getProductsWithBatches().reduce((sum, p) => sum + (p.batches.reduce((s, b) => s + b.quantity, 0) * (p.purchase_price || 0)), 0);
-      
       return { openingCash, cashSales, expenses, cashPurchases, expectedCash, inventoryValue };
   }
 
@@ -739,7 +752,7 @@ class Database {
         const closing: DailyClosing = { ...data, id: this.generateId('dc-'), updated_at: new Date().toISOString() };
         if (isSupabaseConfigured) await this.retryCloudOp(async () => await supabase.from('daily_closings').upsert(closing));
         this.dailyClosings.push(closing);
-        this.saveToLocalCache();
+        this.saveToLocalCache(true);
         return true;
       } finally { this.decrementOp(); }
   }
@@ -762,10 +775,9 @@ class Database {
         await supabase.from('invoices').delete().neq('id', '0');
         await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
     }
-    await this.recalculateAllBalances(); this.saveToLocalCache();
+    await this.recalculateAllBalances(); this.saveToLocalCache(true);
   }
 
-  // Fix: Added missing clearAllPurchases to resolve error in Settings.tsx
   async clearAllPurchases() {
     this.purchaseInvoices = [];
     this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'SUPPLIER_PAYMENT');
@@ -774,39 +786,30 @@ class Database {
         await supabase.from('cash_transactions').delete().eq('category', 'SUPPLIER_PAYMENT');
     }
     await this.recalculateAllBalances();
-    this.saveToLocalCache();
+    this.saveToLocalCache(true);
   }
 
-  // Fix: Added missing clearAllOrders to resolve error in Settings.tsx
   async clearAllOrders() {
     this.purchaseOrders = [];
-    if (isSupabaseConfigured) {
-        await supabase.from('purchase_orders').delete().neq('id', '0');
-    }
-    this.saveToLocalCache();
+    if (isSupabaseConfigured) { await supabase.from('purchase_orders').delete().neq('id', '0'); }
+    this.saveToLocalCache(true);
   }
 
-  // Fix: Added missing resetCashRegister to resolve error in Settings.tsx
   async resetCashRegister() {
     this.cashTransactions = [];
-    if (isSupabaseConfigured) {
-        await supabase.from('cash_transactions').delete().neq('id', '0');
-    }
+    if (isSupabaseConfigured) { await supabase.from('cash_transactions').delete().neq('id', '0'); }
     await this.recalculateAllBalances();
-    this.saveToLocalCache();
+    this.saveToLocalCache(true);
   }
 
-  // Fix: Added missing clearWarehouseStock to resolve error in Settings.tsx
   async clearWarehouseStock(warehouseId: string) {
     this.batches.forEach(b => {
-      if (b.warehouse_id === warehouseId) {
-        b.quantity = 0;
-      }
+      if (b.warehouse_id === warehouseId) { b.quantity = 0; }
     });
     if (isSupabaseConfigured) {
         await this.retryCloudOp(async () => await supabase.from('batches').update({ quantity: 0 }).eq('warehouse_id', warehouseId));
     }
-    this.saveToLocalCache();
+    this.saveToLocalCache(true);
   }
 
   async resetCustomerAccounts() {
@@ -817,14 +820,12 @@ class Database {
         await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
         for (const c of this.customers) { await supabase.from('customers').update({ current_balance: c.opening_balance }).eq('id', c.id); }
     }
-    this.saveToLocalCache();
+    this.saveToLocalCache(true);
   }
 
-  // Fix: Added missing getABCAnalysis to resolve error in InventoryAnalysis.tsx
   getABCAnalysis() {
     const products = this.getProductsWithBatches();
     const invoices = this.invoices.filter(i => i.type === 'SALE');
-    
     const revenueMap: Record<string, number> = {};
     invoices.forEach(inv => {
       inv.items.forEach(item => {
@@ -832,17 +833,11 @@ class Database {
         revenueMap[item.product.id] = (revenueMap[item.product.id] || 0) + lineVal;
       });
     });
-
     const classifiedProducts = products.map(p => ({
-      id: p.id,
-      name: p.name,
-      revenue: revenueMap[p.id] || 0,
-      category: 'C'
+      id: p.id, name: p.name, revenue: revenueMap[p.id] || 0, category: 'C'
     })).sort((a, b) => b.revenue - a.revenue);
-
     const totalRevenue = classifiedProducts.reduce((sum, p) => sum + p.revenue, 0);
     let runningRevenue = 0;
-
     classifiedProducts.forEach(p => {
       runningRevenue += p.revenue;
       const ratio = totalRevenue > 0 ? runningRevenue / totalRevenue : 0;
@@ -850,11 +845,9 @@ class Database {
       else if (ratio <= 0.95) p.category = 'B';
       else p.category = 'C';
     });
-
     return { classifiedProducts };
   }
 
-  // Fix: Added missing getInventoryValuationReport to resolve error in InventoryAnalysis.tsx
   getInventoryValuationReport() {
     const products = this.getProductsWithBatches();
     const thirtyDaysAgo = new Date();
@@ -863,39 +856,37 @@ class Database {
 
     return products.map(p => {
       const totalQty = p.batches.reduce((sum, b) => sum + b.quantity, 0);
-      const latestCost = p.batches.length > 0 ? p.batches[p.batches.length - 1].purchase_price : (p.purchase_price || 0);
-      
-      // Basic WAC (Weighted Average Cost)
+      // فرز التشغيلات حسب التاريخ للحصول على أحدث تكلفة فعلية
+      const latestBatch = [...p.batches].sort((a, b) => b.id.localeCompare(a.id))[0];
+      const latestCost = latestBatch ? latestBatch.purchase_price : (p.purchase_price || 0);
       const totalBatchValue = p.batches.reduce((sum, b) => sum + (b.purchase_price * b.quantity), 0);
       const wac = totalQty > 0 ? totalBatchValue / totalQty : (p.purchase_price || 0);
-
-      // TurnoverRate calculation based on last 30 days sales
       const soldLast30 = this.invoices
         .filter(i => i.type === 'SALE' && i.date.split('T')[0] >= strThirtyDaysAgo)
         .reduce((sum, inv) => {
           const item = inv.items.find(it => it.product.id === p.id);
           return sum + (item ? item.quantity : 0);
         }, 0);
-      
       const turnoverRate = ((soldLast30 / (totalQty || 1)) * 10).toFixed(1);
-
       return {
-        id: p.id,
-        name: p.name,
-        code: p.code || '',
-        totalQty,
-        wac,
-        latestCost,
-        totalValue: totalQty * wac,
-        turnoverRate
+        id: p.id, name: p.name, code: p.code || '', totalQty, wac, latestCost, totalValue: totalQty * wac, turnoverRate
       };
     }).sort((a,b) => b.totalValue - a.totalValue);
   }
 
   async resetDatabase() { localStorage.removeItem('mizan_db'); window.location.reload(); }
-  exportDbData() { return JSON.stringify(this); }
+  
+  exportDbData() { 
+      return JSON.stringify(this.getRawDataPackage()); 
+  }
+  
   importDbData(json: string) {
-      try { const data = JSON.parse(json); Object.assign(this, data); this.saveToLocalCache(); return true; } catch (e) { return false; }
+      try { 
+        const data = JSON.parse(json); 
+        this.mapRawData(data);
+        this.saveToLocalCache(true); 
+        return true; 
+      } catch (e) { return false; }
   }
 }
 
