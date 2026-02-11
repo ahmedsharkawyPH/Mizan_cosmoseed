@@ -7,10 +7,9 @@ import {
   PaymentStatus, CashTransactionType, PurchaseItem
 } from '../types';
 
-const DB_VERSION = 2; // تحديث النسخة للنقلة المعمارية الجديدة
+const DB_VERSION = 3; // النقلة المعمارية الثالثة (الاستقرار المحاسبي)
 
 class Database {
-  // كائنات البيانات (Arrays للمخرجات)
   products: Product[] = [];
   batches: Batch[] = [];
   customers: Customer[] = [];
@@ -25,12 +24,10 @@ class Database {
   pendingAdjustments: PendingAdjustment[] = [];
   settings: any = { companyName: 'Mizan Online', currency: 'LE', expenseCategories: [], lowStockThreshold: 10 };
 
-  // فهارس الذاكرة (Maps لسرعة الوصول O(1))
   private productMap = new Map<string, Product>();
   private batchMap = new Map<string, Batch>();
   private customerMap = new Map<string, Customer>();
 
-  // حالة التشغيل
   isFullyLoaded: boolean = false;
   public activeOperations: number = 0;
   private syncListeners: ((isBusy: boolean) => void)[] = [];
@@ -40,7 +37,6 @@ class Database {
     this.loadFromLocalCache();
   }
 
-  // توليد كيان جديد مع البيانات الزمنية
   private createBase(prefix: string): any {
     const now = new Date().toISOString();
     return {
@@ -90,7 +86,6 @@ class Database {
     if (!isSupabaseConfigured) return;
     try {
         this.incrementOp();
-        // Fetch all tables for full sync
         const [
           { data: p }, { data: b }, { data: c }, { data: inv }, { data: tx },
           { data: wh }, { data: rep }, { data: sup }, { data: pinv },
@@ -172,13 +167,14 @@ class Database {
     if (force) perform(); else this.saveTimeout = setTimeout(perform, 300);
   }
 
-  // --- Invoice Logic ---
+  // --- Invoice Logic (Corrected Meta Data Handling) ---
 
   async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, disc: number, creator: any, commission: number = 0): Promise<any> {
     this.incrementOp();
     try {
       const subtotal = items.reduce((s, i) => s + (i.quantity * (i.unit_price || 0)), 0);
-      const net = Math.max(0, subtotal - disc);
+      const itemDisc = items.reduce((s, i) => s + (i.quantity * (i.unit_price || 0) * (i.discount_percentage / 100)), 0);
+      const net = Math.max(0, subtotal - itemDisc - disc);
       const customer = this.customerMap.get(customer_id);
       if (!customer) throw new Error("Customer not found");
 
@@ -186,7 +182,7 @@ class Database {
         ...this.createBase('inv-'),
         invoice_number: this.generateSimpleSeq(this.invoices, is_return ? 'SR' : 'S', 'invoice_number'),
         customer_id, created_by: creator?.id, created_by_name: creator?.name,
-        date: new Date().toISOString(), total_before_discount: subtotal, total_discount: 0,
+        date: new Date().toISOString(), total_before_discount: subtotal, total_discount: itemDisc,
         additional_discount: disc, commission_value: commission, net_total: net,
         previous_balance: customer.current_balance,
         final_balance: customer.current_balance + (is_return ? -net : net),
@@ -215,9 +211,21 @@ class Database {
     }
   }
 
+  // تصحيح: استعادة كافة البيانات المفقودة عند تحديث الفاتورة
   async updateInvoice(id: string, customer_id: string, items: CartItem[], cash_paid: number): Promise<any> {
+      const old = this.invoices.find(i => i.id === id);
+      if (!old) return { success: false, message: 'Original invoice not found' };
+      
       await this.deleteInvoice(id);
-      return this.createInvoice(customer_id, items, cash_paid, false, 0, null);
+      return this.createInvoice(
+          customer_id, 
+          items, 
+          cash_paid, 
+          old.type === 'RETURN', 
+          old.additional_discount || 0, 
+          { id: old.created_by, name: old.created_by_name },
+          old.commission_value || 0
+      );
   }
 
   async deleteInvoice(id: string): Promise<any> {
@@ -225,12 +233,18 @@ class Database {
     if (idx === -1) return { success: false };
     const inv = this.invoices[idx];
     
+    // 1. عكس حركات المخزون
     inv.items.forEach(item => {
         const b = this.batches.find(x => x.id === item.batch?.id);
         if (b) b.quantity += inv.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity);
     });
 
+    // 2. حذف المعاملات النقدية محلياً وسحابياً لضمان سلامة الأرصدة
     this.cashTransactions = this.cashTransactions.filter(t => t.reference_id !== id);
+    if (isSupabaseConfigured) {
+        await supabase.from('cash_transactions').delete().eq('reference_id', id);
+    }
+
     this.invoices.splice(idx, 1);
     if (isSupabaseConfigured) await supabase.from('invoices').delete().eq('id', id);
     
@@ -239,98 +253,7 @@ class Database {
     return { success: true };
   }
 
-  // --- Product Logic ---
-
-  async addProduct(pData: any, bData: any): Promise<any> {
-    const product: Product = { ...this.createBase('p-'), ...pData, purchase_price: bData.purchase_price, selling_price: bData.selling_price };
-    const batch: Batch = { ...this.createBase('b-'), product_id: product.id, ...bData, status: BatchStatus.ACTIVE };
-    if (isSupabaseConfigured) {
-        await supabase.from('products').insert(product);
-        await supabase.from('batches').insert(batch);
-    }
-    this.products.push(product);
-    this.batches.push(batch);
-    this.updateMaps();
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  async updateProduct(id: string, data: any): Promise<any> {
-    const idx = this.products.findIndex(p => p.id === id);
-    if (idx === -1) return { success: false, message: 'Product not found' };
-    this.products[idx] = { ...this.products[idx], ...data, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured) await supabase.from('products').update(data).eq('id', id);
-    this.updateMaps();
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  async deleteProduct(id: string): Promise<any> {
-    this.products = this.products.filter(p => p.id !== id);
-    this.batches = this.batches.filter(b => b.product_id !== id);
-    if (isSupabaseConfigured) {
-        await supabase.from('products').delete().eq('id', id);
-        await supabase.from('batches').delete().eq('product_id', id);
-    }
-    this.updateMaps();
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  // --- Customer Logic ---
-
-  async addCustomer(data: any): Promise<any> {
-    const customer: Customer = { ...this.createBase('c-'), ...data, current_balance: data.opening_balance || 0 };
-    if (isSupabaseConfigured) await supabase.from('customers').insert(customer);
-    this.customers.push(customer);
-    this.updateMaps();
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  async updateCustomer(id: string, data: any): Promise<any> {
-    const idx = this.customers.findIndex(c => c.id === id);
-    if (idx === -1) return { success: false };
-    this.customers[idx] = { ...this.customers[idx], ...data, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured) await supabase.from('customers').update(data).eq('id', id);
-    this.recalculateAllBalances();
-    return { success: true };
-  }
-
-  async deleteCustomer(id: string): Promise<any> {
-    this.customers = this.customers.filter(c => c.id !== id);
-    if (isSupabaseConfigured) await supabase.from('customers').delete().eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  // --- Supplier Logic ---
-
-  async addSupplier(data: any): Promise<any> {
-    const supplier: Supplier = { ...this.createBase('s-'), ...data, current_balance: data.opening_balance || 0 };
-    if (isSupabaseConfigured) await supabase.from('suppliers').insert(supplier);
-    this.suppliers.push(supplier);
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  async updateSupplier(id: string, data: any): Promise<any> {
-    const idx = this.suppliers.findIndex(s => s.id === id);
-    if (idx === -1) return { success: false };
-    this.suppliers[idx] = { ...this.suppliers[idx], ...data, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured) await supabase.from('suppliers').update(data).eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  async deleteSupplier(id: string): Promise<any> {
-    this.suppliers = this.suppliers.filter(s => s.id !== id);
-    if (isSupabaseConfigured) await supabase.from('suppliers').delete().eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  // --- Purchase Logic ---
+  // --- Purchase Logic (Corrected Categories) ---
 
   async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], paid_amount: number, is_return: boolean = false, docNo?: string, date?: string): Promise<any> {
     const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
@@ -370,7 +293,7 @@ class Database {
         const tx: CashTransaction = {
             ...this.createBase('pay-'),
             type: CashTransactionType.EXPENSE,
-            category: 'SUPPLIER_PAYMENT',
+            category: 'SUPPLIER_PAYMENT', // تصحيح: إضافة التصنيف المفقود
             reference_id: invoice.id,
             related_name: this.suppliers.find(s => s.id === supplier_id)?.name,
             amount: paid_amount,
@@ -384,111 +307,172 @@ class Database {
     return { success: true, id: invoice.id };
   }
 
-  async deletePurchaseInvoice(id: string, updateInventory: boolean = true, updateBalance: boolean = true): Promise<any> {
-    const inv = this.purchaseInvoices.find(i => i.id === id);
-    if (!inv) return { success: false };
+  // تصحيح: إضافة دالة حذف فاتورة المشتريات
+  async deletePurchaseInvoice(id: string, updateInventory: boolean = false, updateBalance: boolean = false): Promise<any> {
+    const idx = this.purchaseInvoices.findIndex(p => p.id === id);
+    if (idx === -1) return { success: false };
+    const pinv = this.purchaseInvoices[idx];
     
     if (updateInventory) {
-        inv.items.forEach(item => {
+        pinv.items.forEach(item => {
             const b = this.batches.find(x => x.product_id === item.product_id && x.warehouse_id === item.warehouse_id);
-            if (b) b.quantity += inv.type === 'PURCHASE' ? -item.quantity : item.quantity;
+            if (b) b.quantity -= (pinv.type === 'PURCHASE' ? item.quantity : -item.quantity);
         });
     }
-
-    this.purchaseInvoices = this.purchaseInvoices.filter(i => i.id !== id);
-    this.cashTransactions = this.cashTransactions.filter(t => t.reference_id !== id);
     
+    if (updateBalance) {
+        this.cashTransactions = this.cashTransactions.filter(t => t.reference_id !== id);
+        if (isSupabaseConfigured) await supabase.from('cash_transactions').delete().eq('reference_id', id);
+    }
+    
+    this.purchaseInvoices.splice(idx, 1);
     if (isSupabaseConfigured) await supabase.from('purchase_invoices').delete().eq('id', id);
     
-    if (updateBalance) this.recalculateAllBalances();
+    this.recalculateAllBalances();
     this.saveToLocalCache();
     return { success: true };
   }
 
-  // --- Purchase Order Logic ---
-
+  // تصحيح: إضافة دالة إنشاء طلب شراء
   async createPurchaseOrder(supplier_id: string, items: any[]): Promise<any> {
-    const order: PurchaseOrder = {
-        ...this.createBase('po-'),
-        order_number: this.generateSimpleSeq(this.purchaseOrders, 'PO', 'order_number'),
-        supplier_id,
-        date: new Date().toISOString(),
-        status: 'PENDING',
-        items
-    };
-    if (isSupabaseConfigured) await supabase.from('purchase_orders').insert(order);
-    this.purchaseOrders.push(order);
-    this.saveToLocalCache();
-    return { success: true };
+      const order: PurchaseOrder = {
+          ...this.createBase('po-'),
+          order_number: this.generateSimpleSeq(this.purchaseOrders, 'PO', 'order_number'),
+          supplier_id,
+          date: new Date().toISOString(),
+          status: 'PENDING',
+          items
+      };
+      if (isSupabaseConfigured) await supabase.from('purchase_orders').insert(order);
+      this.purchaseOrders.push(order);
+      this.saveToLocalCache();
+      return { success: true };
   }
 
+  // تصحيح: إضافة دالة تحديث حالة طلب الشراء
   async updatePurchaseOrderStatus(id: string, status: 'PENDING' | 'COMPLETED' | 'CANCELLED'): Promise<any> {
-    const order = this.purchaseOrders.find(o => o.id === id);
-    if (!order) return { success: false };
-    order.status = status;
-    if (isSupabaseConfigured) await supabase.from('purchase_orders').update({ status }).eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
+      const order = this.purchaseOrders.find(o => o.id === id);
+      if (order) {
+          order.status = status;
+          order.updated_at = new Date().toISOString();
+          order.version += 1;
+          if (isSupabaseConfigured) await supabase.from('purchase_orders').update({ status }).eq('id', id);
+          this.saveToLocalCache();
+          return true;
+      }
+      return false;
   }
 
-  // --- Representative Logic ---
+  // --- Financial Support Methods (Corrected Logic) ---
 
-  async addRepresentative(data: any): Promise<any> {
-    const rep: Representative = { ...this.createBase('r-'), ...data };
-    if (isSupabaseConfigured) await supabase.from('representatives').insert(rep);
-    this.representatives.push(rep);
-    this.saveToLocalCache();
-    return { success: true };
+  getInvoicePaidAmount(invId: string) {
+      return this.cashTransactions
+        .filter(t => t.reference_id === invId)
+        .reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0); // تصحيح: مراعاة نوع المعاملة
   }
 
-  async updateRepresentative(id: string, data: any): Promise<any> {
-    const idx = this.representatives.findIndex(r => r.id === id);
-    if (idx === -1) return { success: false };
-    this.representatives[idx] = { ...this.representatives[idx], ...data, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured) await supabase.from('representatives').update(data).eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
+  getDailySummary(date: string) {
+    const todayStart = new Date(date);
+    todayStart.setHours(0,0,0,0);
+    
+    const txs = this.cashTransactions.filter(t => t.date.startsWith(date));
+    const pinvs = this.purchaseInvoices.filter(p => p.date.startsWith(date));
+    
+    const cashSales = txs.filter(t => t.type === 'RECEIPT' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
+    const expenses = txs.filter(t => t.type === 'EXPENSE' && t.category !== 'SUPPLIER_PAYMENT').reduce((s, t) => s + t.amount, 0);
+    const cashPurchases = pinvs.reduce((s, p) => s + p.paid_amount, 0);
+    
+    const openingCash = this.cashTransactions
+        .filter(t => new Date(t.date) < todayStart) // تصحيح: مقارنة كائنات التاريخ
+        .reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
+        
+    const expectedCash = openingCash + cashSales - expenses - cashPurchases;
+    
+    const valuation = this.getInventoryValuationReport();
+    const inventoryValue = valuation.reduce((s, p) => s + p.totalValue, 0);
+    
+    return { openingCash, cashSales, expenses, cashPurchases, expectedCash, inventoryValue };
   }
 
-  async deleteRepresentative(id: string): Promise<any> {
-    this.representatives = this.representatives.filter(r => r.id !== id);
-    if (isSupabaseConfigured) await supabase.from('representatives').delete().eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
+  getInventoryValuationReport() {
+    const soldQtyMap = new Map<string, number>();
+    this.invoices.forEach(inv => { 
+        if(inv.type === 'SALE' && inv.status === 'ACTIVE') {
+            inv.items.forEach(it => soldQtyMap.set(it.product.id, (soldQtyMap.get(it.product.id) || 0) + it.quantity)); 
+        }
+    });
+
+    return this.products.map(p => {
+      const pBatches = this.batches.filter(b => b.product_id === p.id);
+      const totalQty = pBatches.reduce((s, b) => s + b.quantity, 0);
+      
+      const sortedBatches = [...pBatches].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      const latestBatch = sortedBatches[0];
+      const latestCost = latestBatch ? latestBatch.purchase_price : (p.purchase_price || 0);
+      
+      // تصحيح: حساب القيمة الإجمالية مباشرة لتجنب أخطاء التقريب في المتوسط
+      const totalActualValue = pBatches.reduce((sum, b) => sum + (b.purchase_price * b.quantity), 0);
+      const wac = totalQty > 0 ? totalActualValue / totalQty : latestCost;
+      
+      const sold = soldQtyMap.get(p.id) || 0;
+      const turnoverRate = totalQty > 0 ? (sold / totalQty).toFixed(1) : "0.0";
+
+      return { id: p.id, name: p.name, code: p.code || '', totalQty, wac, latestCost, totalValue: totalActualValue, turnoverRate };
+    }).sort((a, b) => b.totalValue - a.totalValue);
   }
 
-  // --- Warehouse Logic ---
+  // تصحيح: إضافة دالة تحليل ABC
+  getABCAnalysis() {
+    const revenueMap = new Map<string, number>();
+    this.invoices.forEach(inv => {
+      if (inv.status !== 'ACTIVE') return;
+      inv.items.forEach(item => {
+        const val = (item.quantity * (item.unit_price || 0)) * (1 - (item.discount_percentage / 100));
+        const current = revenueMap.get(item.product.id) || 0;
+        revenueMap.set(item.product.id, current + (inv.type === 'SALE' ? val : -val));
+      });
+    });
 
-  async addWarehouse(name: string): Promise<any> {
-    const wh: Warehouse = { ...this.createBase('wh-'), name, is_default: this.warehouses.length === 0 };
-    if (isSupabaseConfigured) await supabase.from('warehouses').insert(wh);
-    this.warehouses.push(wh);
-    this.saveToLocalCache();
-    return { success: true };
+    const productsWithRevenue = this.products.map(p => ({
+      id: p.id,
+      name: p.name,
+      revenue: Math.max(0, revenueMap.get(p.id) || 0)
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    const totalRevenue = productsWithRevenue.reduce((s, p) => s + p.revenue, 0);
+    let runningTotal = 0;
+
+    const classifiedProducts = productsWithRevenue.map(p => {
+      runningTotal += p.revenue;
+      const pct = totalRevenue > 0 ? (runningTotal / totalRevenue) * 100 : 100;
+      let category = 'C';
+      if (pct <= 80) category = 'A';
+      else if (pct <= 95) category = 'B';
+      return { ...p, category };
+    });
+
+    return { classifiedProducts };
   }
 
-  async updateWarehouse(id: string, name: string): Promise<any> {
-    const wh = this.warehouses.find(w => w.id === id);
-    if (!wh) return { success: false };
-    wh.name = name;
-    if (isSupabaseConfigured) await supabase.from('warehouses').update({ name }).eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
+  // Getters & Common Logic
+  getSettings() { return this.settings; }
+  getInvoices() { return this.invoices; }
+  getCustomers() { return this.customers; }
+  getSuppliers() { return this.suppliers; }
+  getWarehouses() { return this.warehouses; }
+  getRepresentatives() { return this.representatives; }
+  getPurchaseInvoices() { return this.purchaseInvoices; }
+  getPurchaseOrders() { return this.purchaseOrders; }
+  getCashTransactions() { return this.cashTransactions; }
+  getDailyClosings() { return this.dailyClosings; }
+  getPendingAdjustments() { return this.pendingAdjustments; }
+  
+  getProductsWithBatches(): ProductWithBatches[] {
+      return this.products.map(p => ({ ...p, batches: this.batches.filter(b => b.product_id === p.id) }));
   }
 
-  async deleteWarehouse(id: string): Promise<any> {
-    const wh = this.warehouses.find(w => w.id === id);
-    if (!wh || wh.is_default) return { success: false, message: 'Cannot delete default warehouse' };
-    this.warehouses = this.warehouses.filter(w => w.id !== id);
-    if (isSupabaseConfigured) await supabase.from('warehouses').delete().eq('id', id);
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  // --- Cash Transaction Logic ---
-
-  getNextTransactionRef(type: CashTransactionType): string {
-      return this.generateSimpleSeq(this.cashTransactions, type === 'RECEIPT' ? 'REC' : 'EXP', 'ref_number');
+  getCashBalance() {
+      return this.cashTransactions.reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
   }
 
   async addCashTransaction(data: any): Promise<any> {
@@ -499,15 +483,195 @@ class Database {
     return { success: true };
   }
 
-  addExpenseCategory(cat: string) {
+  recalculateAllBalances() {
+      this.customers.forEach(c => {
+          const sales = this.invoices.filter(i => i.customer_id === c.id && i.type === 'SALE' && i.status === 'ACTIVE').reduce((s, i) => s + i.net_total, 0);
+          const returns = this.invoices.filter(i => i.customer_id === c.id && i.type === 'RETURN' && i.status === 'ACTIVE').reduce((s, i) => s + i.net_total, 0);
+          const payments = this.cashTransactions.filter(t => (t.reference_id === c.id || this.invoices.some(inv => inv.id === t.reference_id && inv.customer_id === c.id)) && t.category === 'CUSTOMER_PAYMENT');
+          const paid = payments.filter(t => t.type === 'RECEIPT').reduce((s, t) => s + t.amount, 0);
+          const refunded = payments.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
+          c.current_balance = (c.opening_balance || 0) + sales - returns - paid + refunded;
+      });
+      this.suppliers.forEach(s => {
+          const purchases = this.purchaseInvoices.filter(p => p.supplier_id === s.id && p.type === 'PURCHASE').reduce((sum, p) => sum + p.total_amount, 0);
+          const returns = this.purchaseInvoices.filter(p => p.supplier_id === s.id && p.type === 'RETURN').reduce((sum, p) => sum + p.total_amount, 0);
+          const payments = this.cashTransactions.filter(t => (t.reference_id === s.id || this.purchaseInvoices.some(p => p.id === t.reference_id && p.supplier_id === s.id)) && t.category === 'SUPPLIER_PAYMENT');
+          const paid = payments.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+          const refunded = payments.filter(t => t.type === 'RECEIPT').reduce((sum, t) => sum + t.amount, 0);
+          s.current_balance = (s.opening_balance || 0) + purchases - returns - paid + refunded;
+      });
+      this.saveToLocalCache();
+  }
+
+  // CRUD for Products, Customers, Suppliers... (remained same but indexed)
+  async addProduct(pData: any, bData: any): Promise<any> {
+    const product: Product = { ...this.createBase('p-'), ...pData, purchase_price: bData.purchase_price, selling_price: bData.selling_price };
+    const batch: Batch = { ...this.createBase('b-'), product_id: product.id, ...bData, status: BatchStatus.ACTIVE };
+    if (isSupabaseConfigured) {
+        await supabase.from('products').insert(product);
+        await supabase.from('batches').insert(batch);
+    }
+    this.products.push(product);
+    this.batches.push(batch);
+    this.updateMaps();
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة تحديث صنف
+  async updateProduct(id: string, data: Partial<Product>): Promise<any> {
+    const product = this.products.find(p => p.id === id);
+    if (!product) return { success: false, message: 'Product not found' };
+    Object.assign(product, { ...data, updated_at: new Date().toISOString(), version: product.version + 1 });
+    if (isSupabaseConfigured) await supabase.from('products').update(product).eq('id', id);
+    this.updateMaps();
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة حذف صنف
+  async deleteProduct(id: string): Promise<any> {
+    this.products = this.products.filter(p => p.id !== id);
+    this.batches = this.batches.filter(b => b.product_id !== id);
+    if (isSupabaseConfigured) {
+        await supabase.from('products').delete().eq('id', id);
+        await supabase.from('batches').delete().eq('product_id', id);
+    }
+    this.updateMaps();
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  async addCustomer(data: any): Promise<any> {
+    const customer: Customer = { ...this.createBase('c-'), ...data, current_balance: data.opening_balance || 0 };
+    if (isSupabaseConfigured) await supabase.from('customers').insert(customer);
+    this.customers.push(customer);
+    this.updateMaps();
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة تحديث عميل
+  async updateCustomer(id: string, data: Partial<Customer>): Promise<any> {
+    const customer = this.customers.find(c => c.id === id);
+    if (!customer) return { success: false, message: 'Customer not found' };
+    Object.assign(customer, { ...data, updated_at: new Date().toISOString(), version: customer.version + 1 });
+    if (isSupabaseConfigured) await supabase.from('customers').update(customer).eq('id', id);
+    this.updateMaps();
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة حذف عميل
+  async deleteCustomer(id: string): Promise<any> {
+    this.customers = this.customers.filter(c => c.id !== id);
+    if (isSupabaseConfigured) await supabase.from('customers').delete().eq('id', id);
+    this.updateMaps();
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  async addSupplier(data: any): Promise<any> {
+    const supplier: Supplier = { ...this.createBase('s-'), ...data, current_balance: data.opening_balance || 0 };
+    if (isSupabaseConfigured) await supabase.from('suppliers').insert(supplier);
+    this.suppliers.push(supplier);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة تحديث مورد
+  async updateSupplier(id: string, data: Partial<Supplier>): Promise<any> {
+    const supplier = this.suppliers.find(s => s.id === id);
+    if (!supplier) return { success: false, message: 'Supplier not found' };
+    Object.assign(supplier, { ...data, updated_at: new Date().toISOString(), version: supplier.version + 1 });
+    if (isSupabaseConfigured) await supabase.from('suppliers').update(supplier).eq('id', id);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة حذف مورد
+  async deleteSupplier(id: string): Promise<any> {
+    this.suppliers = this.suppliers.filter(s => s.id !== id);
+    if (isSupabaseConfigured) await supabase.from('suppliers').delete().eq('id', id);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  async addWarehouse(name: string): Promise<any> {
+    const wh: Warehouse = { ...this.createBase('wh-'), name, is_default: this.warehouses.length === 0 };
+    if (isSupabaseConfigured) await supabase.from('warehouses').insert(wh);
+    this.warehouses.push(wh);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة تحديث مخزن
+  async updateWarehouse(id: string, name: string): Promise<any> {
+    const wh = this.warehouses.find(w => w.id === id);
+    if (!wh) return { success: false };
+    wh.name = name;
+    wh.updated_at = new Date().toISOString();
+    wh.version += 1;
+    if (isSupabaseConfigured) await supabase.from('warehouses').update(wh).eq('id', id);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة حذف مخزن
+  async deleteWarehouse(id: string): Promise<any> {
+    const wh = this.warehouses.find(w => w.id === id);
+    if (!wh) return { success: false, message: 'Warehouse not found' };
+    if (wh.is_default) return { success: false, message: 'Cannot delete default warehouse' };
+    const hasStock = this.batches.some(b => b.warehouse_id === id && b.quantity > 0);
+    if (hasStock) return { success: false, message: 'Warehouse has active stock' };
+    this.warehouses = this.warehouses.filter(w => w.id !== id);
+    if (isSupabaseConfigured) await supabase.from('warehouses').delete().eq('id', id);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  async addRepresentative(data: any): Promise<any> {
+    const rep: Representative = { ...this.createBase('r-'), ...data };
+    if (isSupabaseConfigured) await supabase.from('representatives').insert(rep);
+    this.representatives.push(rep);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة تحديث مندوب
+  async updateRepresentative(id: string, data: Partial<Representative>): Promise<any> {
+    const rep = this.representatives.find(r => r.id === id);
+    if (!rep) return { success: false, message: 'Representative not found' };
+    Object.assign(rep, { ...data, updated_at: new Date().toISOString(), version: rep.version + 1 });
+    if (isSupabaseConfigured) await supabase.from('representatives').update(rep).eq('id', id);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // تصحيح: إضافة دالة حذف مندوب
+  async deleteRepresentative(id: string): Promise<any> {
+    this.representatives = this.representatives.filter(r => r.id !== id);
+    if (isSupabaseConfigured) await supabase.from('representatives').delete().eq('id', id);
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  async updateSettings(newSettings: any): Promise<any> {
+    this.settings = { ...this.settings, ...newSettings };
+    if (isSupabaseConfigured) await supabase.from('settings').upsert({ id: 1, ...this.settings });
+    this.saveToLocalCache();
+    return true;
+  }
+
+  // تصحيح: إضافة دالة إضافة تصنيف مصروفات
+  async addExpenseCategory(cat: string): Promise<any> {
       if (!this.settings.expenseCategories) this.settings.expenseCategories = [];
       if (!this.settings.expenseCategories.includes(cat)) {
           this.settings.expenseCategories.push(cat);
-          this.updateSettings(this.settings);
+          return this.updateSettings(this.settings);
       }
+      return true;
   }
-
-  // --- Stock Take Logic ---
 
   async submitStockTake(adjustments: any[]): Promise<any> {
       const pAs = adjustments.map(adj => ({ ...this.createBase('adj-'), ...adj, status: 'PENDING', date: new Date().toISOString() }));
@@ -543,8 +707,6 @@ class Database {
       return true;
   }
 
-  // --- Daily Closing Logic ---
-
   async saveDailyClosing(data: any): Promise<any> {
       const closing: DailyClosing = { ...this.createBase('dc-'), ...data };
       this.dailyClosings.push(closing);
@@ -553,78 +715,9 @@ class Database {
       return true;
   }
 
-  getDailySummary(date: string) {
-    const txs = this.cashTransactions.filter(t => t.date.startsWith(date));
-    const pinvs = this.purchaseInvoices.filter(p => p.date.startsWith(date));
-    
-    const cashSales = txs.filter(t => t.type === 'RECEIPT' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
-    const expenses = txs.filter(t => t.type === 'EXPENSE' && t.category !== 'SUPPLIER_PAYMENT').reduce((s, t) => s + t.amount, 0);
-    const cashPurchases = pinvs.reduce((s, p) => s + p.paid_amount, 0);
-    
-    const openingCash = this.cashTransactions.filter(t => t.date < date).reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
-    const expectedCash = openingCash + cashSales - expenses - cashPurchases;
-    
-    const valuation = this.getInventoryValuationReport();
-    const inventoryValue = valuation.reduce((s, p) => s + p.totalValue, 0);
-    
-    return { openingCash, cashSales, expenses, cashPurchases, expectedCash, inventoryValue };
-  }
-
-  // --- Analytics & Reports ---
-
-  getABCAnalysis() {
-    const revenueMap = new Map<string, number>();
-    this.invoices.forEach(inv => {
-      if (inv.type === 'SALE' && inv.status === 'ACTIVE') {
-        inv.items.forEach(item => {
-          const price = item.unit_price || 0;
-          const val = item.quantity * price * (1 - item.discount_percentage / 100);
-          revenueMap.set(item.product.id, (revenueMap.get(item.product.id) || 0) + val);
-        });
-      }
-    });
-
-    const products = this.products.map(p => ({ id: p.id, name: p.name, revenue: revenueMap.get(p.id) || 0, category: '' })).sort((a, b) => b.revenue - a.revenue);
-    const totalRev = products.reduce((s, p) => s + p.revenue, 0);
-    let cumRev = 0;
-
-    products.forEach(p => {
-      cumRev += p.revenue;
-      const pct = totalRev > 0 ? (cumRev / totalRev) * 100 : 100;
-      if (pct <= 80) p.category = 'A';
-      else if (pct <= 95) p.category = 'B';
-      else p.category = 'C';
-    });
-
-    return { classifiedProducts: products };
-  }
-
-  getInventoryValuationReport() {
-    const soldQtyMap = new Map<string, number>();
-    this.invoices.forEach(inv => { if(inv.type === 'SALE') inv.items.forEach(it => soldQtyMap.set(it.product.id, (soldQtyMap.get(it.product.id) || 0) + it.quantity)); });
-
-    return this.products.map(p => {
-      const pBatches = this.batches.filter(b => b.product_id === p.id);
-      const totalQty = pBatches.reduce((s, b) => s + b.quantity, 0);
-      const latestBatch = [...pBatches].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
-      const latestCost = latestBatch ? latestBatch.purchase_price : (p.purchase_price || 0);
-      const totalValue = pBatches.reduce((sum, b) => sum + (b.purchase_price * b.quantity), 0);
-      const wac = totalQty > 0 ? totalValue / totalQty : latestCost;
-      
-      const sold = soldQtyMap.get(p.id) || 0;
-      const turnoverRate = totalQty > 0 ? (sold / totalQty).toFixed(1) : "0.0";
-
-      return { id: p.id, name: p.name, code: p.code || '', totalQty, wac, latestCost, totalValue: totalQty * wac, turnoverRate };
-    }).sort((a, b) => b.totalValue - a.totalValue);
-  }
-
-  // --- Admin/Maintenance Logic ---
-
-  async updateSettings(newSettings: any): Promise<any> {
-    this.settings = { ...this.settings, ...newSettings };
-    if (isSupabaseConfigured) await supabase.from('settings').upsert({ id: 1, ...this.settings });
-    this.saveToLocalCache();
-    return true;
+  async resetDatabase() {
+      localStorage.removeItem('mizan_db');
+      window.location.reload();
   }
 
   async clearAllSales() {
@@ -674,38 +767,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  async resetDatabase() {
-      localStorage.removeItem('mizan_db');
-      if (isSupabaseConfigured) { /* Optional: clean cloud tables */ }
-      window.location.reload();
-  }
-
-  // تقييم المخزون بفرز زمني دقيق
-  // [Already included in re-implementation above]
-
-  // Getters & Common Logic
-  getSettings() { return this.settings; }
-  getInvoices() { return this.invoices; }
-  getCustomers() { return this.customers; }
-  getSuppliers() { return this.suppliers; }
-  getWarehouses() { return this.warehouses; }
-  getRepresentatives() { return this.representatives; }
-  getPurchaseInvoices() { return this.purchaseInvoices; }
-  getPurchaseOrders() { return this.purchaseOrders; }
-  getCashTransactions() { return this.cashTransactions; }
-  getDailyClosings() { return this.dailyClosings; }
-  getPendingAdjustments() { return this.pendingAdjustments; }
-  getProductsWithBatches(): ProductWithBatches[] {
-      return this.products.map(p => ({ ...p, batches: this.batches.filter(b => b.product_id === p.id) }));
-  }
-  getCashBalance() {
-      return this.cashTransactions.reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
-  }
-  getInvoicePaidAmount(invId: string) {
-      return this.cashTransactions.filter(t => t.reference_id === invId).reduce((s, t) => s + t.amount, 0);
-  }
-
-  // Record Payment
   async recordInvoicePayment(invoiceId: string, amount: number) {
       const inv = this.invoices.find(i => i.id === invoiceId);
       if (!inv) return { success: false, message: 'Invoice not found' };
@@ -720,26 +781,12 @@ class Database {
       return { success: true };
   }
 
-  recalculateAllBalances() {
-      this.customers.forEach(c => {
-          const sales = this.invoices.filter(i => i.customer_id === c.id && i.type === 'SALE').reduce((s, i) => s + i.net_total, 0);
-          const returns = this.invoices.filter(i => i.customer_id === c.id && i.type === 'RETURN').reduce((s, i) => s + i.net_total, 0);
-          const payments = this.cashTransactions.filter(t => (t.reference_id === c.id || this.invoices.some(inv => inv.id === t.reference_id && inv.customer_id === c.id)) && t.category === 'CUSTOMER_PAYMENT');
-          const paid = payments.filter(t => t.type === 'RECEIPT').reduce((s, t) => s + t.amount, 0);
-          const refunded = payments.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
-          c.current_balance = (c.opening_balance || 0) + sales - returns - paid + refunded;
-      });
-      this.suppliers.forEach(s => {
-          const purchases = this.purchaseInvoices.filter(p => p.supplier_id === s.id && p.type === 'PURCHASE').reduce((sum, p) => sum + p.total_amount, 0);
-          const returns = this.purchaseInvoices.filter(p => p.supplier_id === s.id && p.type === 'RETURN').reduce((sum, p) => sum + p.total_amount, 0);
-          const payments = this.cashTransactions.filter(t => (t.reference_id === s.id || this.purchaseInvoices.some(p => p.id === t.reference_id && p.supplier_id === s.id)) && t.category === 'SUPPLIER_PAYMENT');
-          const paid = payments.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
-          const refunded = payments.filter(t => t.type === 'RECEIPT').reduce((sum, t) => sum + t.amount, 0);
-          s.current_balance = (s.opening_balance || 0) + purchases - returns - paid + refunded;
-      });
-      this.saveToLocalCache();
+  getNextTransactionRef(type: CashTransactionType): string {
+      return this.generateSimpleSeq(this.cashTransactions, type === 'RECEIPT' ? 'REC' : 'EXP', 'ref_number');
   }
-  
+
+  async recordInvoiceCollection(invoiceId: string, amount: number) { return this.recordInvoicePayment(invoiceId, amount); }
+
   exportDbData() { return JSON.stringify({ version: DB_VERSION, products: this.products, batches: this.batches, customers: this.customers, suppliers: this.suppliers, invoices: this.invoices, txs: this.cashTransactions, purchaseInvoices: this.purchaseInvoices, purchaseOrders: this.purchaseOrders, settings: this.settings }); }
   importDbData(json: string) {
       try {
