@@ -1,5 +1,5 @@
 
-// Domain Model (STRICT)
+// Domain Model (STRICT - ENTERPRISE READY)
 
 export enum BatchStatus {
   ACTIVE = 'ACTIVE',
@@ -9,8 +9,14 @@ export enum BatchStatus {
 
 export type Role = 'ADMIN' | 'TELESALES' | 'REP';
 
-export interface User {
+export interface BaseEntity {
   id: string;
+  created_at: string;
+  updated_at: string;
+  version: number; // For Optimistic Locking
+}
+
+export interface User extends BaseEntity {
   username: string;
   name: string;
   role: Role;
@@ -18,14 +24,12 @@ export interface User {
   permissions?: string[]; 
 }
 
-export interface Warehouse {
-  id: string;
+export interface Warehouse extends BaseEntity {
   name: string;
   is_default: boolean;
 }
 
-export interface Product {
-  id: string;
+export interface Product extends BaseEntity {
   code?: string; 
   name: string;
   package_type?: string; 
@@ -34,8 +38,7 @@ export interface Product {
   purchase_price?: number; 
 }
 
-export interface Batch {
-  id: string;
+export interface Batch extends BaseEntity {
   product_id: string;
   warehouse_id: string; 
   batch_number: string;
@@ -46,8 +49,7 @@ export interface Batch {
   status: BatchStatus;
 }
 
-export interface Representative {
-  id: string;
+export interface Representative extends BaseEntity {
   code: string; 
   name: string;
   phone: string;
@@ -57,8 +59,7 @@ export interface Representative {
   commission_target?: number; 
 }
 
-export interface Customer {
-  id: string;
+export interface Customer extends BaseEntity {
   code: string;
   name: string;
   phone: string;
@@ -72,8 +73,7 @@ export interface Customer {
   default_discount_percent?: number; 
 }
 
-export interface Supplier {
-  id: string;
+export interface Supplier extends BaseEntity {
   code: string;
   name: string;
   phone: string;
@@ -89,8 +89,7 @@ export enum PaymentStatus {
   UNPAID = 'UNPAID',
 }
 
-export interface Invoice {
-  id: string;
+export interface Invoice extends BaseEntity {
   invoice_number: string;
   customer_id: string;
   created_by?: string; 
@@ -99,17 +98,17 @@ export interface Invoice {
   total_before_discount: number;
   total_discount: number; 
   additional_discount?: number; 
-  commission_value?: number; // الحقل الجديد للعمولة
+  commission_value?: number;
   net_total: number;
   previous_balance: number;
   final_balance: number;
   payment_status: PaymentStatus;
   items: CartItem[]; 
   type: 'SALE' | 'RETURN'; 
+  status: 'ACTIVE' | 'CANCELLED'; // Added for Audit
 }
 
-export interface PurchaseInvoice {
-  id: string;
+export interface PurchaseInvoice extends BaseEntity {
   invoice_number: string;
   document_number?: string; 
   supplier_id: string;
@@ -132,8 +131,7 @@ export interface PurchaseItem {
   expiry_date: string;
 }
 
-export interface PurchaseOrder {
-  id: string;
+export interface PurchaseOrder extends BaseEntity {
   order_number: string;
   supplier_id: string;
   date: string;
@@ -155,39 +153,18 @@ export enum CashTransactionType {
   EXPENSE = 'EXPENSE',
 }
 
-export type CashCategory = string;
-
-export interface CashTransaction {
-  id: string;
+export interface CashTransaction extends BaseEntity {
   ref_number?: string; 
   type: CashTransactionType;
-  category: CashCategory;
+  category: string;
   reference_id?: string; 
   related_name?: string; 
   amount: number;
   date: string;
   notes: string;
-  created_at?: string;
-  updated_at?: string;
 }
 
-export type StockMovementType = 'SALE' | 'PURCHASE' | 'RETURN_IN' | 'RETURN_OUT' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'ADJUSTMENT' | 'SPOILAGE' | 'INITIAL';
-
-export interface StockMovement {
-    id: string;
-    date: string;
-    type: StockMovementType;
-    product_id: string;
-    batch_number: string;
-    warehouse_id: string;
-    quantity: number; 
-    reference_id?: string; 
-    notes?: string;
-    created_at?: string;
-}
-
-export interface PendingAdjustment {
-  id: string;
+export interface PendingAdjustment extends BaseEntity {
   product_id: string;
   warehouse_id: string;
   system_qty: number;
@@ -198,15 +175,13 @@ export interface PendingAdjustment {
   submitted_by?: string;
 }
 
-export interface DailyClosing {
-  id: string;
+export interface DailyClosing extends BaseEntity {
   date: string;
   total_sales: number;
   total_expenses: number;
   cash_balance: number;
   bank_balance: number;
   inventory_value: number;
-  updated_at: string;
   notes?: string;
   closed_by?: string;
 }
