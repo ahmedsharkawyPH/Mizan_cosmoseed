@@ -105,7 +105,7 @@ export interface Invoice extends BaseEntity {
   payment_status: PaymentStatus;
   items: CartItem[]; 
   type: 'SALE' | 'RETURN'; 
-  status: 'ACTIVE' | 'CANCELLED'; // Added for Audit
+  status: 'ACTIVE' | 'CANCELLED'; 
 }
 
 export interface PurchaseInvoice extends BaseEntity {
@@ -117,6 +117,7 @@ export interface PurchaseInvoice extends BaseEntity {
   paid_amount: number;
   type: 'PURCHASE' | 'RETURN';
   items: PurchaseItem[];
+  status: 'ACTIVE' | 'CANCELLED'; // Added in V4
 }
 
 export interface PurchaseItem {
@@ -162,6 +163,7 @@ export interface CashTransaction extends BaseEntity {
   amount: number;
   date: string;
   notes: string;
+  status?: 'ACTIVE' | 'CANCELLED';
 }
 
 export interface PendingAdjustment extends BaseEntity {
