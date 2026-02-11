@@ -191,7 +191,7 @@ export default function PurchaseOrders() {
         warehouse_id: convWarehouse,
         batch_number: `BATCH-${Date.now().toString().slice(-4)}`,
         quantity: item.quantity,
-        bonus_quantity: item.bonus_quantity || 0, // Fix: Added missing bonus_quantity
+        bonus_quantity: item.bonus_quantity || 0,
         cost_price: item.cost_price,
         selling_price: item.selling_price || 0,
         expiry_date: '2099-12-31'
@@ -387,9 +387,9 @@ export default function PurchaseOrders() {
                                             <span className="bg-slate-100 px-2 py-1 rounded-lg text-[10px]">{order.items.length} أصناف</span>
                                         </td>
                                         <td className="p-6 text-center">
-                                            {order.status === 'PENDING' ? (
+                                            {order.order_status === 'PENDING' ? (
                                                 <span className="px-3 py-1 rounded-full text-[10px] bg-amber-50 text-amber-700 border border-amber-100">قيد الانتظار</span>
-                                            ) : order.status === 'COMPLETED' ? (
+                                            ) : order.order_status === 'COMPLETED' ? (
                                                 <span className="px-3 py-1 rounded-full text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100">مكتمل</span>
                                             ) : (
                                                 <span className="px-3 py-1 rounded-full text-[10px] bg-red-50 text-red-700 border border-red-100">ملغى</span>
@@ -399,13 +399,13 @@ export default function PurchaseOrders() {
                                             <div className="flex justify-center gap-3">
                                                 <button 
                                                     onClick={() => handleOpenConversion(order)}
-                                                    disabled={order.status !== 'PENDING'}
+                                                    disabled={order.order_status !== 'PENDING'}
                                                     className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all disabled:opacity-30 shadow-md shadow-blue-100"
                                                 >
                                                     <RefreshCcw className="w-3.5 h-3.5" />
                                                     تحويل لفاتورة
                                                 </button>
-                                                {order.status === 'PENDING' && (
+                                                {order.order_status === 'PENDING' && (
                                                     <button 
                                                         onClick={() => db.updatePurchaseOrderStatus(order.id, 'CANCELLED').then(() => setOrders(db.getPurchaseOrders()))}
                                                         className="p-2 text-slate-400 hover:text-red-600 transition-colors"
@@ -433,7 +433,7 @@ export default function PurchaseOrders() {
 
         {/* --- Conversion & Preview Modal --- */}
         {isConvModalOpen && convOrder && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
                 <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
                     {/* Modal Header */}
                     <div className="px-8 py-6 bg-slate-50 border-b flex justify-between items-center">
