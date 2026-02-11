@@ -7,7 +7,7 @@ import {
   PaymentStatus, CashTransactionType, PurchaseItem
 } from '../types';
 
-const DB_VERSION = 4; // نسخة V4 الاحترافية
+const DB_VERSION = 4.1; // Fortress Edition
 
 class Database {
   products: Product[] = [];
@@ -37,7 +37,18 @@ class Database {
     this.loadFromLocalCache();
   }
 
-  // --- V4 CORE HELPERS ---
+  // --- CORE HELPERS (V4.1 SECURITY) ---
+
+  private createBase(prefix: string): any {
+    const now = new Date().toISOString();
+    return {
+      id: `${prefix}${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+      created_at: now,
+      updated_at: now,
+      version: 1,
+      status: 'ACTIVE'
+    };
+  }
 
   private async safeCloudOperation(fn: () => Promise<any>) {
     try {
@@ -63,16 +74,6 @@ class Database {
         throw new Error(`عفواً، الرصيد لا يكفي للصنف: ${item.product.name}. المتاح: ${batch.quantity}`);
       }
     }
-  }
-
-  private createBase(prefix: string): any {
-    const now = new Date().toISOString();
-    return {
-      id: `${prefix}${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
-      created_at: now,
-      updated_at: now,
-      version: 1
-    };
   }
 
   private generateSimpleSeq(list: any[], prefix: string, key: string): string {
@@ -195,7 +196,7 @@ class Database {
     if (force) perform(); else this.saveTimeout = setTimeout(perform, 300);
   }
 
-  // --- V4 RECALCULATE ENGINE (O(N) PERFORMANCE) ---
+  // --- RECALCULATE ENGINE (O(N) PERFORMANCE) ---
 
   recalculateAllBalances() {
     const customerInvoiceMap = new Map<string, Invoice[]>();
@@ -210,14 +211,14 @@ class Database {
     });
 
     this.purchaseInvoices.forEach(p => {
-      if ((p as any).status !== 'CANCELLED') {
+      if (p.status === 'ACTIVE') {
         if (!supplierInvoiceMap.has(p.supplier_id)) supplierInvoiceMap.set(p.supplier_id, []);
         supplierInvoiceMap.get(p.supplier_id)!.push(p);
       }
     });
 
     this.cashTransactions.forEach(t => {
-      if (!t.reference_id) return;
+      if (t.status === 'CANCELLED' || !t.reference_id) return;
       if (!txMap.has(t.reference_id)) txMap.set(t.reference_id, []);
       txMap.get(t.reference_id)!.push(t);
     });
@@ -236,7 +237,6 @@ class Database {
         refunded += txs.filter(t => t.type === 'EXPENSE' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
       });
 
-      // دفعات مباشرة مربوطة بـ ID العميل
       const directTxs = txMap.get(c.id) || [];
       paid += directTxs.filter(t => t.type === 'RECEIPT' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
       refunded += directTxs.filter(t => t.type === 'EXPENSE' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
@@ -264,7 +264,7 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // --- Invoice Logic (V4 Safe Update & Soft Delete) ---
+  // --- Invoice Logic (V4.1 Snapshot Rollback & Optimistic Lock) ---
 
   async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, disc: number, creator: any, commission: number = 0): Promise<any> {
     try {
@@ -284,7 +284,7 @@ class Database {
         additional_discount: disc, commission_value: commission, net_total: net,
         previous_balance: customer.current_balance,
         final_balance: customer.current_balance + (is_return ? -net : net),
-        payment_status: PaymentStatus.UNPAID, items, type: is_return ? 'RETURN' : 'SALE', status: 'ACTIVE'
+        payment_status: PaymentStatus.UNPAID, items, type: is_return ? 'RETURN' : 'SALE'
       };
 
       await this.safeCloudOperation(async () => {
@@ -313,23 +313,30 @@ class Database {
       const invoice = this.invoices.find(i => i.id === id);
       if (!invoice) return { success: false, message: 'Invoice not found' };
 
+      // Snapshot for memory rollback
+      const relevantBatchIds = Array.from(new Set([
+          ...invoice.items.map(it => it.batch?.id),
+          ...newItems.map(it => it.batch?.id)
+      ])).filter(Boolean) as string[];
+      
+      const stockSnapshot = new Map(relevantBatchIds.map(bid => [bid, this.batchMap.get(bid)!.quantity]));
+
       try {
-        // 1. عكس أثر المخزون القديم مؤقتاً للتحقق
+        // 1. Reverse old stock
         invoice.items.forEach(item => {
           const b = this.batchMap.get(item.batch?.id || '');
           if (b) b.quantity += (invoice.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity));
         });
 
-        // 2. التحقق من توفر المخزون الجديد
+        // 2. Validate and apply new stock
         this.validateStockAvailability(newItems, invoice.type === 'RETURN');
-
-        // 3. تطبيق أثر المخزون الجديد
         newItems.forEach(item => {
           const b = this.batchMap.get(item.batch?.id || '');
           if (b) b.quantity -= (invoice.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity));
         });
 
-        // 4. تحديث بيانات الفاتورة
+        // 3. Update Invoice Data & Optimistic Lock Increment
+        const oldVersion = invoice.version;
         const subtotal = newItems.reduce((s, i) => s + (i.quantity * (i.unit_price || 0)), 0);
         const itemDisc = newItems.reduce((s, i) => s + (i.quantity * (i.unit_price || 0) * (i.discount_percentage / 100)), 0);
         const net = Math.max(0, subtotal - itemDisc - (invoice.additional_discount || 0));
@@ -344,16 +351,24 @@ class Database {
 
         await this.safeCloudOperation(async () => {
             if (isSupabaseConfigured) {
-                const { error } = await supabase.from('invoices').update(invoice).eq('id', id);
+                const { error, count } = await supabase.from('invoices')
+                    .update(invoice)
+                    .eq('id', id)
+                    .eq('version', oldVersion); // OPTIMISTIC LOCKING
+                
                 if (error) throw error;
+                if (count === 0) throw new Error("تم تعديل هذه الفاتورة من قبل مستخدم آخر، يرجى تحديث الصفحة.");
             }
         });
 
         this.recalculateAllBalances();
         return { success: true, id: invoice.id };
       } catch (e: any) {
-          // في حال الفشل نرجع المخزون كما كان (Rollback local)
-          this.syncFromCloud(); 
+          // MEMORY ROLLBACK - Instant & Safe
+          stockSnapshot.forEach((qty, bid) => {
+              const b = this.batchMap.get(bid);
+              if (b) b.quantity = qty;
+          });
           return { success: false, message: e.message };
       }
   }
@@ -362,28 +377,34 @@ class Database {
     const inv = this.invoices.find(i => i.id === id);
     if (!inv) return { success: false };
     
-    // 1. عكس حركات المخزون
     inv.items.forEach(item => {
         const b = this.batchMap.get(item.batch?.id || '');
         if (b) b.quantity += inv.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity);
     });
 
-    // 2. Soft Delete (إلغاء الفاتورة والمعاملات النقدية)
     inv.status = 'CANCELLED';
+    inv.updated_at = new Date().toISOString();
+    inv.version += 1;
+
     if (isSupabaseConfigured) {
-        await supabase.from('invoices').update({ status: 'CANCELLED' }).eq('id', id);
-        await supabase.from('cash_transactions').update({ notes: 'CANCELLED INVOICE PAYMENT', amount: 0 }).eq('reference_id', id);
+        await supabase.from('invoices').update({ status: 'CANCELLED', version: inv.version }).eq('id', id);
+        // Soft cancel cash transactions instead of zeroing amount
+        await supabase.from('cash_transactions').update({ status: 'CANCELLED', notes: 'إلغاء تابع للفاتورة' }).eq('reference_id', id);
     }
+
+    this.cashTransactions.forEach(t => {
+        if(t.reference_id === id) t.status = 'CANCELLED';
+    });
 
     this.recalculateAllBalances();
     return { success: true };
   }
 
-  // --- Financial Support Methods ---
+  // --- Financial Support Methods (O(N) Optimized) ---
 
   getInvoicePaidAmount(invId: string) {
       return this.cashTransactions
-        .filter(t => t.reference_id === invId)
+        .filter(t => t.reference_id === invId && t.status !== 'CANCELLED')
         .reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
   }
 
@@ -391,15 +412,15 @@ class Database {
     const todayStart = new Date(date);
     todayStart.setHours(0,0,0,0);
     
-    const txs = this.cashTransactions.filter(t => t.date.startsWith(date));
-    const pinvs = this.purchaseInvoices.filter(p => p.date.startsWith(date) && (p as any).status !== 'CANCELLED');
+    const txs = this.cashTransactions.filter(t => t.date.startsWith(date) && t.status !== 'CANCELLED');
+    const pinvs = this.purchaseInvoices.filter(p => p.date.startsWith(date) && p.status !== 'CANCELLED');
     
     const cashSales = txs.filter(t => t.type === 'RECEIPT' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
     const expenses = txs.filter(t => t.type === 'EXPENSE' && t.category !== 'SUPPLIER_PAYMENT').reduce((s, t) => s + t.amount, 0);
     const cashPurchases = pinvs.reduce((s, p) => s + p.paid_amount, 0);
     
     const openingCash = this.cashTransactions
-        .filter(t => new Date(t.date) < todayStart)
+        .filter(t => new Date(t.date) < todayStart && t.status !== 'CANCELLED')
         .reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
         
     const expectedCash = openingCash + cashSales - expenses - cashPurchases;
@@ -417,14 +438,17 @@ class Database {
         }
     });
 
-    return this.products.map(p => {
-      const pBatches = this.batches.filter(b => b.product_id === p.id);
+    const batchMapByProduct = new Map<string, Batch[]>();
+    this.batches.forEach(b => {
+        if (!batchMapByProduct.has(b.product_id)) batchMapByProduct.set(b.product_id, []);
+        batchMapByProduct.get(b.product_id)!.push(b);
+    });
+
+    return this.products.filter(p => p.status !== 'INACTIVE').map(p => {
+      const pBatches = batchMapByProduct.get(p.id) || [];
       const totalQty = pBatches.reduce((s, b) => s + b.quantity, 0);
       
-      const sortedBatches = [...pBatches].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-      const latestBatch = sortedBatches[0];
-      const latestCost = latestBatch ? latestBatch.purchase_price : (p.purchase_price || 0);
-      
+      const latestCost = pBatches.length > 0 ? [...pBatches].sort((a,b) => b.version - a.version)[0].purchase_price : (p.purchase_price || 0);
       const totalActualValue = pBatches.reduce((sum, b) => sum + (b.purchase_price * b.quantity), 0);
       const wac = totalQty > 0 ? totalActualValue / totalQty : latestCost;
       
@@ -435,28 +459,75 @@ class Database {
     }).sort((a, b) => b.totalValue - a.totalValue);
   }
 
-  // Common Getters
+  // --- CRUD (V4.1 SOFT DELETE IMPLEMENTATION) ---
+
+  async deleteProduct(id: string): Promise<any> {
+    const prod = this.products.find(p => p.id === id);
+    if (!prod) return { success: false };
+    
+    prod.status = 'INACTIVE';
+    prod.updated_at = new Date().toISOString();
+    prod.version += 1;
+
+    await this.safeCloudOperation(async () => {
+        if (isSupabaseConfigured) await supabase.from('products').update({ status: 'INACTIVE', version: prod.version }).eq('id', id);
+    });
+    this.updateMaps();
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  async deleteCustomer(id: string): Promise<any> {
+    const cust = this.customers.find(c => c.id === id);
+    if (!cust) return { success: false };
+
+    cust.status = 'INACTIVE';
+    cust.updated_at = new Date().toISOString();
+    cust.version += 1;
+
+    await this.safeCloudOperation(async () => {
+        if (isSupabaseConfigured) await supabase.from('customers').update({ status: 'INACTIVE', version: cust.version }).eq('id', id);
+    });
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  async deleteSupplier(id: string): Promise<any> {
+    const supp = this.suppliers.find(s => s.id === id);
+    if (!supp) return { success: false };
+
+    supp.status = 'INACTIVE';
+    supp.updated_at = new Date().toISOString();
+    supp.version += 1;
+
+    await this.safeCloudOperation(async () => {
+        if (isSupabaseConfigured) await supabase.from('suppliers').update({ status: 'INACTIVE', version: supp.version }).eq('id', id);
+    });
+    this.saveToLocalCache();
+    return { success: true };
+  }
+
+  // Common Getters & Adders
   getSettings() { return this.settings; }
-  getInvoices() { return this.invoices; }
-  getCustomers() { return this.customers; }
-  getSuppliers() { return this.suppliers; }
+  getInvoices() { return this.invoices.filter(i => i.status !== 'DELETED'); }
+  getCustomers() { return this.customers.filter(c => c.status !== 'INACTIVE'); }
+  getSuppliers() { return this.suppliers.filter(s => s.status !== 'INACTIVE'); }
   getWarehouses() { return this.warehouses; }
   getRepresentatives() { return this.representatives; }
-  getPurchaseInvoices() { return this.purchaseInvoices; }
+  getPurchaseInvoices() { return this.purchaseInvoices.filter(p => p.status !== 'CANCELLED'); }
   getCashTransactions() { return this.cashTransactions; }
   getDailyClosings() { return this.dailyClosings; }
   getPendingAdjustments() { return this.pendingAdjustments; }
   getPurchaseOrders() { return this.purchaseOrders; }
 
   getProductsWithBatches(): ProductWithBatches[] {
-      return this.products.map(p => ({ ...p, batches: this.batches.filter(b => b.product_id === p.id) }));
+      return this.products.filter(p => p.status !== 'INACTIVE').map(p => ({ ...p, batches: this.batches.filter(b => b.product_id === p.id) }));
   }
 
   getCashBalance() {
-      return this.cashTransactions.reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
+      return this.cashTransactions.filter(t => t.status !== 'CANCELLED').reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0);
   }
 
-  // Operations
   async addCashTransaction(data: any): Promise<any> {
     const tx: CashTransaction = { ...this.createBase('tx-'), ...data, ref_number: data.ref_number || this.getNextTransactionRef(data.type) };
     await this.safeCloudOperation(async () => {
@@ -469,7 +540,7 @@ class Database {
 
   async addProduct(pData: any, bData: any): Promise<any> {
     const product: Product = { ...this.createBase('p-'), ...pData, purchase_price: bData.purchase_price, selling_price: bData.selling_price };
-    const batch: Batch = { ...this.createBase('b-'), product_id: product.id, ...bData, status: BatchStatus.ACTIVE };
+    const batch: Batch = { ...this.createBase('b-'), product_id: product.id, ...bData, batch_status: BatchStatus.ACTIVE };
     await this.safeCloudOperation(async () => {
         if (isSupabaseConfigured) {
             await supabase.from('products').insert(product);
@@ -486,22 +557,12 @@ class Database {
   async updateProduct(id: string, data: Partial<Product>): Promise<any> {
     const product = this.products.find(p => p.id === id);
     if (!product) return { success: false, message: 'Product not found' };
-    Object.assign(product, { ...data, updated_at: new Date().toISOString(), version: product.version + 1 });
-    await this.safeCloudOperation(async () => {
-        if (isSupabaseConfigured) await supabase.from('products').update(product).eq('id', id);
-    });
-    this.updateMaps();
-    this.saveToLocalCache();
-    return { success: true };
-  }
-
-  async deleteProduct(id: string): Promise<any> {
-    this.products = this.products.filter(p => p.id !== id);
-    this.batches = this.batches.filter(b => b.product_id !== id);
+    const oldVer = product.version;
+    Object.assign(product, { ...data, updated_at: new Date().toISOString(), version: oldVer + 1 });
     await this.safeCloudOperation(async () => {
         if (isSupabaseConfigured) {
-            await supabase.from('products').delete().eq('id', id);
-            await supabase.from('batches').delete().eq('product_id', id);
+            const { count } = await supabase.from('products').update(product).eq('id', id).eq('version', oldVer);
+            if (count === 0) throw new Error("Conflict Detected");
         }
     });
     this.updateMaps();
@@ -523,20 +584,12 @@ class Database {
   async updateCustomer(id: string, data: Partial<Customer>): Promise<any> {
     const customer = this.customers.find(c => c.id === id);
     if (!customer) return { success: false, message: 'Customer not found' };
-    Object.assign(customer, { ...data, updated_at: new Date().toISOString(), version: customer.version + 1 });
+    const oldVer = customer.version;
+    Object.assign(customer, { ...data, updated_at: new Date().toISOString(), version: oldVer + 1 });
     await this.safeCloudOperation(async () => {
-        if (isSupabaseConfigured) await supabase.from('customers').update(customer).eq('id', id);
+        if (isSupabaseConfigured) await supabase.from('customers').update(customer).eq('id', id).eq('version', oldVer);
     });
     this.recalculateAllBalances();
-    return { success: true };
-  }
-
-  async deleteCustomer(id: string): Promise<any> {
-    this.customers = this.customers.filter(c => c.id !== id);
-    await this.safeCloudOperation(async () => {
-        if (isSupabaseConfigured) await supabase.from('customers').delete().eq('id', id);
-    });
-    this.saveToLocalCache();
     return { success: true };
   }
 
@@ -550,9 +603,7 @@ class Database {
       date: date || new Date().toISOString(),
       total_amount: total,
       paid_amount,
-      type: is_return ? 'RETURN' : 'PURCHASE',
-      items,
-      status: 'ACTIVE'
+      type: is_return ? 'RETURN' : 'PURCHASE'
     };
 
     await this.safeCloudOperation(async () => {
@@ -567,7 +618,7 @@ class Database {
         }
         let b = this.batches.find(x => x.product_id === item.product_id && x.warehouse_id === item.warehouse_id);
         if (!b) {
-            b = { ...this.createBase('b-'), product_id: item.product_id, warehouse_id: item.warehouse_id, quantity: 0, purchase_price: item.cost_price, selling_price: item.selling_price, expiry_date: item.expiry_date, batch_number: item.batch_number, status: BatchStatus.ACTIVE };
+            b = { ...this.createBase('b-'), product_id: item.product_id, warehouse_id: item.warehouse_id, quantity: 0, purchase_price: item.cost_price, selling_price: item.selling_price, expiry_date: item.expiry_date, batch_number: item.batch_number, batch_status: BatchStatus.ACTIVE };
             this.batches.push(b);
             this.batchMap.set(b.id, b);
         }
@@ -659,31 +710,195 @@ class Database {
       } catch { return false; }
   }
   
-  // Stubs for other methods to avoid breaking UI imports
-  // FIX: Added Promise<any> return type to stubs to ensure UI components can safely access optional properties like 'message' on the result object.
-  async addSupplier(data: any): Promise<any> { return { success: true }; }
-  async updateSupplier(id: string, data: any): Promise<any> { return { success: true }; }
-  async deleteSupplier(id: string): Promise<any> { return { success: true }; }
-  async addWarehouse(name: string): Promise<any> { return { success: true }; }
-  async updateWarehouse(id: string, name: string): Promise<any> { return { success: true }; }
-  async deleteWarehouse(id: string): Promise<any> { return { success: true }; }
-  async addRepresentative(data: any) { return { success: true }; }
-  async updateRepresentative(id: string, data: any) { return { success: true }; }
-  async deleteRepresentative(id: string) { return { success: true }; }
-  async submitStockTake(adjs: any[]) { return { success: true }; }
-  async approveAdjustment(id: string) { return true; }
-  async rejectAdjustment(id: string) { return true; }
-  async saveDailyClosing(data: any) { return true; }
-  async createPurchaseOrder(sid: string, items: any[]) { return { success: true }; }
-  async updatePurchaseOrderStatus(id: string, status: string) { return true; }
-  async clearAllSales() { return true; }
-  async resetCustomerAccounts() { return true; }
-  async clearAllPurchases() { return true; }
-  async clearAllOrders() { return true; }
-  async resetCashRegister() { return true; }
-  async clearWarehouseStock(id: string) { return true; }
-  async addExpenseCategory(c: string) { return true; }
-  getABCAnalysis() { return { classifiedProducts: [] }; }
+  // Stubs for other methods
+  async addSupplier(data: any): Promise<any> { 
+      const s = { ...this.createBase('s-'), ...data, current_balance: data.opening_balance || 0 };
+      if (isSupabaseConfigured) await supabase.from('suppliers').insert(s);
+      this.suppliers.push(s); this.saveToLocalCache(); return { success: true }; 
+  }
+  async updateSupplier(id: string, data: any): Promise<any> { 
+      const s = this.suppliers.find(x => x.id === id);
+      if (s) { Object.assign(s, { ...data, updated_at: new Date().toISOString() }); if (isSupabaseConfigured) await supabase.from('suppliers').update(s).eq('id', id); this.saveToLocalCache(); }
+      return { success: true }; 
+  }
+  async addWarehouse(name: string): Promise<any> { 
+      const w = { ...this.createBase('wh-'), name, is_default: this.warehouses.length === 0 };
+      if (isSupabaseConfigured) await supabase.from('warehouses').insert(w);
+      this.warehouses.push(w); this.saveToLocalCache(); return { success: true }; 
+  }
+  async updateWarehouse(id: string, name: string): Promise<any> { 
+      const w = this.warehouses.find(x => x.id === id);
+      if (w) { w.name = name; if (isSupabaseConfigured) await supabase.from('warehouses').update(w).eq('id', id); this.saveToLocalCache(); }
+      return { success: true }; 
+  }
+  async deleteWarehouse(id: string): Promise<any> { 
+      const w = this.warehouses.find(x => x.id === id);
+      if (w?.is_default) return { success: false, message: 'Default warehouse cannot be deleted' };
+      this.warehouses = this.warehouses.filter(x => x.id !== id);
+      if (isSupabaseConfigured) await supabase.from('warehouses').delete().eq('id', id);
+      this.saveToLocalCache(); return { success: true }; 
+  }
+  async addRepresentative(data: any) { 
+      const r = { ...this.createBase('r-'), ...data };
+      if (isSupabaseConfigured) await supabase.from('representatives').insert(r);
+      this.representatives.push(r); this.saveToLocalCache(); return { success: true }; 
+  }
+  async updateRepresentative(id: string, data: any) { 
+      const r = this.representatives.find(x => x.id === id);
+      if (r) { Object.assign(r, { ...data, updated_at: new Date().toISOString() }); if (isSupabaseConfigured) await supabase.from('representatives').update(r).eq('id', id); this.saveToLocalCache(); }
+      return { success: true }; 
+  }
+  async deleteRepresentative(id: string) { 
+      this.representatives = this.representatives.filter(x => x.id !== id);
+      if (isSupabaseConfigured) await supabase.from('representatives').delete().eq('id', id);
+      this.saveToLocalCache(); return { success: true }; 
+  }
+  async submitStockTake(adjs: any[]) { 
+      const pas = adjs.map(a => ({ ...this.createBase('adj-'), ...a, adj_status: 'PENDING' }));
+      this.pendingAdjustments.push(...pas);
+      if (isSupabaseConfigured) await supabase.from('pending_adjustments').insert(pas);
+      this.saveToLocalCache(); return { success: true }; 
+  }
+  async approveAdjustment(id: string) { 
+      const adj = this.pendingAdjustments.find(a => a.id === id);
+      if (!adj) return false;
+      const b = this.batches.find(x => x.product_id === adj.product_id && x.warehouse_id === adj.warehouse_id);
+      if (b) { b.quantity = adj.actual_qty; adj.adj_status = 'APPROVED'; if (isSupabaseConfigured) { await supabase.from('batches').update({ quantity: b.quantity }).eq('id', b.id); await supabase.from('pending_adjustments').update({ adj_status: 'APPROVED' }).eq('id', id); } this.saveToLocalCache(); return true; }
+      return false;
+  }
+  async rejectAdjustment(id: string) { 
+      const adj = this.pendingAdjustments.find(a => a.id === id);
+      if (adj) { adj.adj_status = 'REJECTED'; if (isSupabaseConfigured) await supabase.from('pending_adjustments').update({ adj_status: 'REJECTED' }).eq('id', id); this.saveToLocalCache(); return true; }
+      return false;
+  }
+  async saveDailyClosing(data: any) { 
+      const dc = { ...this.createBase('dc-'), ...data };
+      this.dailyClosings.push(dc); if (isSupabaseConfigured) await supabase.from('daily_closings').insert(dc);
+      this.saveToLocalCache(); return true; 
+  }
+  async createPurchaseOrder(sid: string, items: any[]) { 
+      const po = { ...this.createBase('po-'), supplier_id: sid, items, order_number: this.generateSimpleSeq(this.purchaseOrders, 'PO', 'order_number'), date: new Date().toISOString(), order_status: 'PENDING' };
+      this.purchaseOrders.push(po); if (isSupabaseConfigured) await supabase.from('purchase_orders').insert(po);
+      this.saveToLocalCache(); return { success: true }; 
+  }
+  async updatePurchaseOrderStatus(id: string, status: any) { 
+      const po = this.purchaseOrders.find(x => x.id === id);
+      if (po) { po.order_status = status; if (isSupabaseConfigured) await supabase.from('purchase_orders').update({ order_status: status }).eq('id', id); this.saveToLocalCache(); return true; }
+      return false;
+  }
+  async addExpenseCategory(c: string) { 
+      if (!this.settings.expenseCategories) this.settings.expenseCategories = [];
+      if (!this.settings.expenseCategories.includes(c)) { this.settings.expenseCategories.push(c); await this.updateSettings(this.settings); }
+      return true; 
+  }
+  
+  // --- Data Management Methods (Security Operations) ---
+
+  /**
+   * Clears all sales records (invoices) from local and cloud storage.
+   */
+  async clearAllSales() {
+    this.invoices = [];
+    if (isSupabaseConfigured) {
+        await supabase.from('invoices').delete().neq('id', '0');
+    }
+    this.recalculateAllBalances();
+  }
+
+  /**
+   * Resets customer accounts by clearing sales and payments.
+   */
+  async resetCustomerAccounts() {
+    this.invoices = [];
+    this.cashTransactions = this.cashTransactions.filter(t => t.category !== 'CUSTOMER_PAYMENT');
+    if (isSupabaseConfigured) {
+        await supabase.from('invoices').delete().neq('id', '0');
+        await supabase.from('cash_transactions').delete().eq('category', 'CUSTOMER_PAYMENT');
+    }
+    this.customers.forEach(c => {
+        c.current_balance = c.opening_balance || 0;
+    });
+    this.recalculateAllBalances();
+  }
+
+  /**
+   * Clears all purchase records from local and cloud storage.
+   */
+  async clearAllPurchases() {
+    this.purchaseInvoices = [];
+    if (isSupabaseConfigured) {
+        await supabase.from('purchase_invoices').delete().neq('id', '0');
+    }
+    this.recalculateAllBalances();
+  }
+
+  /**
+   * Clears all draft purchase orders.
+   */
+  async clearAllOrders() {
+    this.purchaseOrders = [];
+    if (isSupabaseConfigured) {
+        await supabase.from('purchase_orders').delete().neq('id', '0');
+    }
+    this.saveToLocalCache();
+  }
+
+  /**
+   * Resets the entire cash register history.
+   */
+  async resetCashRegister() {
+    this.cashTransactions = [];
+    if (isSupabaseConfigured) {
+        await supabase.from('cash_transactions').delete().neq('id', '0');
+    }
+    this.recalculateAllBalances();
+  }
+
+  /**
+   * Resets stock levels for all products in a specific warehouse.
+   */
+  async clearWarehouseStock(warehouseId: string) {
+    this.batches.forEach(b => {
+      if (b.warehouse_id === warehouseId) b.quantity = 0;
+    });
+    if (isSupabaseConfigured) {
+        await supabase.from('batches').update({ quantity: 0 }).eq('warehouse_id', warehouseId);
+    }
+    this.updateMaps();
+    this.saveToLocalCache();
+  }
+
+  getABCAnalysis() {
+    const revenueMap = new Map<string, number>();
+    this.invoices.forEach(inv => {
+      if (inv.status !== 'ACTIVE') return;
+      inv.items.forEach(item => {
+        const val = (item.quantity * (item.unit_price || 0)) * (1 - (item.discount_percentage / 100));
+        const current = revenueMap.get(item.product.id) || 0;
+        revenueMap.set(item.product.id, current + (inv.type === 'SALE' ? val : -val));
+      });
+    });
+
+    const productsWithRevenue = this.products.filter(p => p.status !== 'INACTIVE').map(p => ({
+      id: p.id,
+      name: p.name,
+      revenue: Math.max(0, revenueMap.get(p.id) || 0)
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    const totalRevenue = productsWithRevenue.reduce((s, p) => s + p.revenue, 0);
+    let runningTotal = 0;
+
+    const classifiedProducts = productsWithRevenue.map(p => {
+      runningTotal += p.revenue;
+      const pct = totalRevenue > 0 ? (runningTotal / totalRevenue) * 100 : 100;
+      let category = 'C';
+      if (pct <= 80) category = 'A';
+      else if (pct <= 95) category = 'B';
+      return { ...p, category };
+    });
+
+    return { classifiedProducts };
+  }
 }
 
 export const db = new Database();

@@ -1,5 +1,5 @@
 
-// Domain Model (STRICT - ENTERPRISE READY)
+// Domain Model (V4.1 - SECURITY HARDENED)
 
 export enum BatchStatus {
   ACTIVE = 'ACTIVE',
@@ -13,7 +13,8 @@ export interface BaseEntity {
   id: string;
   created_at: string;
   updated_at: string;
-  version: number; // For Optimistic Locking
+  version: number; 
+  status: 'ACTIVE' | 'INACTIVE' | 'CANCELLED' | 'DELETED'; // Unified Status
 }
 
 export interface User extends BaseEntity {
@@ -46,15 +47,13 @@ export interface Batch extends BaseEntity {
   purchase_price: number;
   quantity: number;
   expiry_date: string; 
-  status: BatchStatus;
+  batch_status: BatchStatus; // Renamed to avoid confusion with entity status
 }
 
 export interface Representative extends BaseEntity {
   code: string; 
   name: string;
   phone: string;
-  supervisor_id?: string; 
-  distribution_line?: string; 
   commission_rate?: number; 
   commission_target?: number; 
 }
@@ -65,12 +64,13 @@ export interface Customer extends BaseEntity {
   phone: string;
   area: string;
   address: string;
-  distribution_line?: string; 
   opening_balance: number;
   current_balance: number;
   credit_limit?: number; 
   representative_code?: string; 
   default_discount_percent?: number; 
+  // distribution_line added for tracking customer routes
+  distribution_line?: string;
 }
 
 export interface Supplier extends BaseEntity {
@@ -105,7 +105,6 @@ export interface Invoice extends BaseEntity {
   payment_status: PaymentStatus;
   items: CartItem[]; 
   type: 'SALE' | 'RETURN'; 
-  status: 'ACTIVE' | 'CANCELLED'; 
 }
 
 export interface PurchaseInvoice extends BaseEntity {
@@ -117,7 +116,6 @@ export interface PurchaseInvoice extends BaseEntity {
   paid_amount: number;
   type: 'PURCHASE' | 'RETURN';
   items: PurchaseItem[];
-  status: 'ACTIVE' | 'CANCELLED'; // Added in V4
 }
 
 export interface PurchaseItem {
@@ -136,17 +134,9 @@ export interface PurchaseOrder extends BaseEntity {
   order_number: string;
   supplier_id: string;
   date: string;
-  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  order_status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
   notes?: string;
-  items: {
-      product_id: string;
-      quantity: number;
-      cost_price: number; 
-      selling_price?: number;
-      last_cost?: number; 
-      current_stock?: number;
-      monthly_avg?: number;
-  }[];
+  items: any[];
 }
 
 export enum CashTransactionType {
@@ -163,7 +153,6 @@ export interface CashTransaction extends BaseEntity {
   amount: number;
   date: string;
   notes: string;
-  status?: 'ACTIVE' | 'CANCELLED';
 }
 
 export interface PendingAdjustment extends BaseEntity {
@@ -173,8 +162,7 @@ export interface PendingAdjustment extends BaseEntity {
   actual_qty: number;
   diff: number;
   date: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  submitted_by?: string;
+  adj_status: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
 
 export interface DailyClosing extends BaseEntity {
