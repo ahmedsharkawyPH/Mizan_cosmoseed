@@ -125,17 +125,15 @@ class Database {
   async healthCheck() {
     console.log("Citadel Health Check started...");
     const issues = [];
-    // 1. فحص عينة من العملاء
     if (this.customers.length > 0) {
       const testCust = this.customers[0];
       const oldBal = testCust.current_balance;
       await this.recalculateEntityBalance('CUSTOMER', testCust.id);
       if (Math.abs(oldBal - testCust.current_balance) > 0.01) {
         issues.push(`تم تصحيح رصيد العميل: ${testCust.name}`);
-        this.recalculateAllBalances(); // إصلاح شامل في حال وجود خطأ في العينة
+        this.recalculateAllBalances(); 
       }
     }
-    // 2. فحص سلامة المخزون
     this.batches.forEach(b => {
       if (b.quantity < -100000) issues.push(`تحذير: رصيد سالب ضخم للتشغيلة ${b.batch_number}`);
     });
@@ -161,7 +159,14 @@ class Database {
   private notifySyncState() { this.syncListeners.forEach(l => l(this.activeOperations > 0)); }
 
   async init() {
-    if (isSupabaseConfigured) await this.syncFromCloud();
+    // تحميل الكاش أولاً لعرض بيانات فورية
+    this.loadFromLocalCache();
+    
+    // جلب كافة البيانات من السحابة قبل بدء التطبيق
+    if (isSupabaseConfigured) {
+        await this.syncFromCloud();
+    }
+    
     this.isFullyLoaded = true;
   }
 
@@ -175,11 +180,8 @@ class Database {
     if (!isSupabaseConfigured) return;
     try {
         this.incrementOp();
-        const [
-          { data: p }, { data: b }, { data: c }, { data: inv }, { data: tx },
-          { data: wh }, { data: rep }, { data: sup }, { data: pinv },
-          { data: po }, { data: dc }, { data: pa }, { data: sett }
-        ] = await Promise.all([
+        // جلب كافة الجداول في مصفوفة وعود واحدة لضمان السرعة القصوى (Parallel Fetching)
+        const results = await Promise.all([
           supabase.from('products').select('*'),
           supabase.from('batches').select('*'),
           supabase.from('customers').select('*'),
@@ -192,18 +194,30 @@ class Database {
           supabase.from('purchase_orders').select('*'),
           supabase.from('daily_closings').select('*'),
           supabase.from('pending_adjustments').select('*'),
-          supabase.from('settings').select('*').single()
+          supabase.from('settings').select('*').limit(1) // استبدال single بـ limit لتجنب الخطأ في الجداول الفارغة
         ]);
 
-        if (p) this.products = p; if (b) this.batches = b; if (c) this.customers = c;
-        if (inv) this.invoices = inv; if (tx) this.cashTransactions = tx;
-        if (wh) this.warehouses = wh; if (rep) this.representatives = rep;
-        if (sup) this.suppliers = sup; if (pinv) this.purchaseInvoices = pinv;
-        if (po) this.purchaseOrders = po; if (dc) this.dailyClosings = dc;
-        if (pa) this.pendingAdjustments = pa; if (sett) this.settings = sett;
+        const [p, b, c, inv, tx, wh, rep, sup, pinv, po, dc, pa, sett] = results;
+
+        if (p.data) this.products = p.data; 
+        if (b.data) this.batches = b.data; 
+        if (c.data) this.customers = c.data;
+        if (inv.data) this.invoices = inv.data; 
+        if (tx.data) this.cashTransactions = tx.data;
+        if (wh.data) this.warehouses = wh.data; 
+        if (rep.data) this.representatives = rep.data;
+        if (sup.data) this.suppliers = sup.data; 
+        if (pinv.data) this.purchaseInvoices = pinv.data;
+        if (po.data) this.purchaseOrders = po.data; 
+        if (dc.data) this.dailyClosings = dc.data;
+        if (pa.data) this.pendingAdjustments = pa.data; 
+        if (sett.data && sett.data.length > 0) this.settings = sett.data[0];
 
         this.updateMaps();
         this.saveToLocalCache(true);
+        console.log("Cloud Sync Completed Successfully - System Ready for Offline Search");
+    } catch (err) {
+        console.error("Cloud Sync Failed", err);
     } finally {
         this.decrementOp();
     }
@@ -250,8 +264,6 @@ class Database {
     if (force) perform(); else this.saveTimeout = setTimeout(perform, 300);
   }
 
-  // --- RECALCULATE ENGINE (O(N) PERFORMANCE) ---
-
   recalculateAllBalances() {
     const customerInvoiceMap = new Map<string, Invoice[]>();
     const supplierInvoiceMap = new Map<string, PurchaseInvoice[]>();
@@ -281,20 +293,15 @@ class Database {
       const invs = customerInvoiceMap.get(c.id) || [];
       const sales = invs.filter(i => i.type === 'SALE').reduce((s, i) => s + i.net_total, 0);
       const returns = invs.filter(i => i.type === 'RETURN').reduce((s, i) => s + i.net_total, 0);
-      
-      let paid = 0;
-      let refunded = 0;
-      
+      let paid = 0, refunded = 0;
       invs.forEach(inv => {
         const txs = txMap.get(inv.id) || [];
         paid += txs.filter(t => t.type === 'RECEIPT' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
         refunded += txs.filter(t => t.type === 'EXPENSE' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
       });
-
       const directTxs = txMap.get(c.id) || [];
       paid += directTxs.filter(t => t.type === 'RECEIPT' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
       refunded += directTxs.filter(t => t.type === 'EXPENSE' && t.category === 'CUSTOMER_PAYMENT').reduce((s, t) => s + t.amount, 0);
-
       c.current_balance = (c.opening_balance || 0) + sales - returns - paid + refunded;
     });
 
@@ -302,23 +309,17 @@ class Database {
       const pinvs = supplierInvoiceMap.get(s.id) || [];
       const purchases = pinvs.filter(p => p.type === 'PURCHASE').reduce((sum, p) => sum + p.total_amount, 0);
       const returns = pinvs.filter(p => p.type === 'RETURN').reduce((sum, p) => sum + p.total_amount, 0);
-      
       let paid = 0;
       pinvs.forEach(p => {
           const txs = txMap.get(p.id) || [];
           paid += txs.filter(t => t.type === 'EXPENSE' && t.category === 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
       });
-      
       const directTxs = txMap.get(s.id) || [];
       paid += directTxs.filter(t => t.type === 'EXPENSE' && t.category === 'SUPPLIER_PAYMENT').reduce((sum, t) => sum + t.amount, 0);
-
       s.current_balance = (s.opening_balance || 0) + purchases - returns - paid;
     });
-
     this.saveToLocalCache();
   }
-
-  // --- INVOICE OPERATIONS ---
 
   async createInvoice(customer_id: string, items: CartItem[], cash_paid: number, is_return: boolean, disc: number, creator: any, commission: number = 0): Promise<any> {
     return this.queueOperation(async () => {
@@ -352,12 +353,9 @@ class Database {
         
         this.invoices.push(invoice);
         if (cash_paid > 0) await this.recordInvoicePayment(invoice.id, cash_paid);
-        
         await this.recalculateEntityBalance('CUSTOMER', customer_id);
         return { success: true, id: invoice.id };
-      } catch (e: any) {
-          return { success: false, message: e.message };
-      }
+      } catch (e: any) { return { success: false, message: e.message }; }
     });
   }
 
@@ -365,7 +363,6 @@ class Database {
       return this.queueOperation(async () => {
           const invoice = this.invoices.find(i => i.id === id);
           if (!invoice) return { success: false, message: 'Invoice not found' };
-
           const relevantBatchIds = Array.from(new Set([...invoice.items.map(it => it.batch?.id), ...newItems.map(it => it.batch?.id)])).filter(Boolean) as string[];
           const stockSnapshot = new Map(relevantBatchIds.map(bid => [bid, this.batches.find(x => x.id === bid)?.quantity || 0]));
 
@@ -374,7 +371,6 @@ class Database {
               const b = this.batches.find(x => x.id === item.batch?.id);
               if (b) b.quantity += (invoice.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity));
             });
-
             newItems.forEach(item => {
               const b = this.batches.find(x => x.id === item.batch?.id);
               if (b) b.quantity -= (invoice.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity));
@@ -385,22 +381,14 @@ class Database {
             const itemDisc = newItems.reduce((s, i) => s + (i.quantity * (i.unit_price || 0) * (i.discount_percentage / 100)), 0);
             const net = Math.max(0, subtotal - itemDisc - (invoice.additional_discount || 0));
 
-            invoice.customer_id = customer_id;
-            invoice.items = newItems;
-            invoice.total_before_discount = subtotal;
-            invoice.total_discount = itemDisc;
-            invoice.net_total = net;
-            invoice.updated_at = new Date().toISOString();
-            invoice.version += 1;
+            invoice.customer_id = customer_id; invoice.items = newItems; invoice.total_before_discount = subtotal; invoice.total_discount = itemDisc; invoice.net_total = net;
+            invoice.updated_at = new Date().toISOString(); invoice.version += 1;
 
             await this.updateWithRetry('invoices', id, invoice, oldVersion);
             await this.recalculateEntityBalance('CUSTOMER', customer_id);
             return { success: true, id: invoice.id };
           } catch (e: any) {
-              stockSnapshot.forEach((qty, bid) => {
-                  const b = this.batches.find(x => x.id === bid);
-                  if (b) b.quantity = qty;
-              });
+              stockSnapshot.forEach((qty, bid) => { const b = this.batches.find(x => x.id === bid); if (b) b.quantity = qty; });
               return { success: false, message: e.message };
           }
       });
@@ -410,59 +398,45 @@ class Database {
     return this.queueOperation(async () => {
       const inv = this.invoices.find(i => i.id === id);
       if (!inv) return { success: false };
-      
       inv.items.forEach(item => {
           const b = this.batches.find(x => x.id === item.batch?.id);
           if (b) b.quantity += inv.type === 'SALE' ? (item.quantity + item.bonus_quantity) : -(item.quantity + item.bonus_quantity);
       });
-
-      inv.status = 'CANCELLED';
-      inv.updated_at = new Date().toISOString();
-      inv.version += 1;
-
+      inv.status = 'CANCELLED'; inv.updated_at = new Date().toISOString(); inv.version += 1;
       if (isSupabaseConfigured) {
           await supabase.from('invoices').update({ status: 'CANCELLED', version: inv.version }).eq('id', id);
           await supabase.from('cash_transactions').update({ status: 'CANCELLED' }).eq('reference_id', id);
       }
-
       this.cashTransactions.forEach(t => { if(t.reference_id === id) t.status = 'CANCELLED'; });
       await this.recalculateEntityBalance('CUSTOMER', inv.customer_id);
       return { success: true };
     });
   }
 
-  // --- CRUD (SOFT DELETE) ---
-
   async deleteProduct(id: string): Promise<any> {
-    const prod = this.products.find(p => p.id === id);
-    if (!prod) return { success: false };
+    const prod = this.products.find(p => p.id === id); if (!prod) return { success: false };
     prod.status = 'INACTIVE'; prod.version += 1;
     if (isSupabaseConfigured) await supabase.from('products').update({ status: 'INACTIVE', version: prod.version }).eq('id', id);
     this.saveToLocalCache(); return { success: true };
   }
 
   async deleteCustomer(id: string): Promise<any> {
-    const cust = this.customers.find(c => c.id === id);
-    if (!cust) return { success: false };
+    const cust = this.customers.find(c => c.id === id); if (!cust) return { success: false };
     cust.status = 'INACTIVE'; cust.version += 1;
     if (isSupabaseConfigured) await supabase.from('customers').update({ status: 'INACTIVE', version: cust.version }).eq('id', id);
     this.saveToLocalCache(); return { success: true };
   }
 
   async deleteSupplier(id: string): Promise<any> {
-    const supp = this.suppliers.find(s => s.id === id);
-    if (!supp) return { success: false };
+    const supp = this.suppliers.find(s => s.id === id); if (!supp) return { success: false };
     supp.status = 'INACTIVE'; supp.version += 1;
     if (isSupabaseConfigured) await supabase.from('suppliers').update({ status: 'INACTIVE', version: supp.version }).eq('id', id);
     this.saveToLocalCache(); return { success: true };
   }
 
-  // --- COMMON HELPERS ---
-
   private generateSimpleSeq(list: any[], prefix: string, key: string): string {
     const numbers = list.map(item => {
-        const val = item[key] || '';
-        const match = val.match(new RegExp(`^${prefix}(\\d+)$`));
+        const val = item[key] || ''; const match = val.match(new RegExp(`^${prefix}(\\d+)$`));
         return match ? parseInt(match[1]) : 0;
     }).filter(n => n > 0);
     const nextSeq = (numbers.length > 0 ? Math.max(...numbers) : 0) + 1;
@@ -489,16 +463,9 @@ class Database {
 
   getInventoryValuationReport() {
     const soldQtyMap = new Map<string, number>();
-    this.invoices.forEach(inv => { 
-        if(inv.type === 'SALE' && inv.status === 'ACTIVE') {
-            inv.items.forEach(it => soldQtyMap.set(it.product.id, (soldQtyMap.get(it.product.id) || 0) + it.quantity)); 
-        }
-    });
+    this.invoices.forEach(inv => { if(inv.type === 'SALE' && inv.status === 'ACTIVE') { inv.items.forEach(it => soldQtyMap.set(it.product.id, (soldQtyMap.get(it.product.id) || 0) + it.quantity)); } });
     const batchMapByProduct = new Map<string, Batch[]>();
-    this.batches.forEach(b => {
-        if (!batchMapByProduct.has(b.product_id)) batchMapByProduct.set(b.product_id, []);
-        batchMapByProduct.get(b.product_id)!.push(b);
-    });
+    this.batches.forEach(b => { if (!batchMapByProduct.has(b.product_id)) batchMapByProduct.set(b.product_id, []); batchMapByProduct.get(b.product_id)!.push(b); });
     return this.products.filter(p => p.status !== 'INACTIVE').map(p => {
       const pBatches = batchMapByProduct.get(p.id) || [];
       const totalQty = pBatches.reduce((s, b) => s + b.quantity, 0);
@@ -509,7 +476,6 @@ class Database {
     }).sort((a, b) => b.totalValue - a.totalValue);
   }
 
-  // Common Getters & Adders
   getSettings() { return this.settings; }
   getInvoices() { return this.invoices.filter(i => i.status !== 'DELETED'); }
   getCustomers() { return this.customers.filter(c => c.status !== 'INACTIVE'); }
@@ -575,27 +541,17 @@ class Database {
         b.quantity += is_return ? -item.quantity : item.quantity;
     });
     this.purchaseInvoices.push(invoice);
-    if (paid_amount > 0) {
-        await this.addCashTransaction({ type: CashTransactionType.EXPENSE, category: 'SUPPLIER_PAYMENT', reference_id: invoice.id, related_name: this.suppliers.find(s => s.id === supplier_id)?.name, amount: paid_amount, date: invoice.date, notes: `سداد فاتورة مشتريات #${invoice.invoice_number}` });
-    }
+    if (paid_amount > 0) { await this.addCashTransaction({ type: CashTransactionType.EXPENSE, category: 'SUPPLIER_PAYMENT', reference_id: invoice.id, related_name: this.suppliers.find(s => s.id === supplier_id)?.name, amount: paid_amount, date: invoice.date, notes: `سداد فاتورة مشتريات #${invoice.invoice_number}` }); }
     await this.recalculateEntityBalance('SUPPLIER', supplier_id); return { success: true, id: invoice.id };
   }
 
-  // FIX: Added updateBalance parameter to match call signature in PurchaseList.tsx and wrapped in queueOperation for consistency
   async deletePurchaseInvoice(id: string, updateInventory: boolean = false, updateBalance: boolean = true): Promise<any> {
     return this.queueOperation(async () => {
       const pinv = this.purchaseInvoices.find(p => p.id === id); if (!pinv) return { success: false };
-      if (updateInventory) {
-          pinv.items.forEach(item => {
-              const b = this.batches.find(x => x.product_id === item.product_id && x.warehouse_id === item.warehouse_id);
-              if (b) b.quantity -= (pinv.type === 'PURCHASE' ? item.quantity : -item.quantity);
-          });
-      }
-      pinv.status = 'CANCELLED';
-      if (isSupabaseConfigured) await supabase.from('purchase_invoices').update({ status: 'CANCELLED' }).eq('id', id);
+      if (updateInventory) { pinv.items.forEach(item => { const b = this.batches.find(x => x.product_id === item.product_id && x.warehouse_id === item.warehouse_id); if (b) b.quantity -= (pinv.type === 'PURCHASE' ? item.quantity : -item.quantity); }); }
+      pinv.status = 'CANCELLED'; if (isSupabaseConfigured) await supabase.from('purchase_invoices').update({ status: 'CANCELLED' }).eq('id', id);
       if (updateBalance) await this.recalculateEntityBalance('SUPPLIER', pinv.supplier_id); 
-      this.saveToLocalCache();
-      return { success: true };
+      this.saveToLocalCache(); return { success: true };
     });
   }
 
@@ -612,18 +568,8 @@ class Database {
 
   async resetDatabase() { localStorage.removeItem('mizan_db'); window.location.reload(); }
   exportDbData() { return JSON.stringify({ version: DB_VERSION, products: this.products, batches: this.batches, customers: this.customers, suppliers: this.suppliers, invoices: this.invoices, txs: this.cashTransactions, settings: this.settings }); }
-  importDbData(json: string) {
-      try {
-          const data = JSON.parse(json);
-          this.products = data.products || []; this.batches = data.batches || [];
-          this.customers = data.customers || []; this.suppliers = data.suppliers || [];
-          this.invoices = data.invoices || []; this.cashTransactions = data.txs || [];
-          this.settings = data.settings || this.settings;
-          this.updateMaps(); this.saveToLocalCache(true); return true;
-      } catch { return false; }
-  }
+  importDbData(json: string) { try { const data = JSON.parse(json); this.products = data.products || []; this.batches = data.batches || []; this.customers = data.customers || []; this.suppliers = data.suppliers || []; this.invoices = data.invoices || []; this.cashTransactions = data.txs || []; this.settings = data.settings || this.settings; this.updateMaps(); this.saveToLocalCache(true); return true; } catch { return false; } }
   
-  // Missing Stubs
   async addSupplier(data: any) { const s = { ...this.createBase('s-'), ...data, current_balance: data.opening_balance || 0 }; this.suppliers.push(s); this.saveToLocalCache(); return { success: true }; }
   async updateSupplier(id: string, data: any) { const s = this.suppliers.find(x => x.id === id); if (s) { Object.assign(s, { ...data, updated_at: new Date().toISOString() }); this.saveToLocalCache(); } return { success: true }; }
   async addWarehouse(name: string) { const w = { ...this.createBase('wh-'), name, is_default: this.warehouses.length === 0 }; this.warehouses.push(w); this.saveToLocalCache(); return { success: true }; }
@@ -648,21 +594,11 @@ class Database {
 
   getABCAnalysis() {
     const revenueMap = new Map<string, number>();
-    this.invoices.forEach(inv => {
-      if (inv.status !== 'ACTIVE') return;
-      inv.items.forEach(item => {
-        const val = (item.quantity * (item.unit_price || 0)) * (1 - (item.discount_percentage / 100));
-        revenueMap.set(item.product.id, (revenueMap.get(item.product.id) || 0) + (inv.type === 'SALE' ? val : -val));
-      });
-    });
+    this.invoices.forEach(inv => { if (inv.status !== 'ACTIVE') return; inv.items.forEach(item => { const val = (item.quantity * (item.unit_price || 0)) * (1 - (item.discount_percentage / 100)); revenueMap.set(item.product.id, (revenueMap.get(item.product.id) || 0) + (inv.type === 'SALE' ? val : -val)); }); });
     const productsWithRevenue = this.products.filter(p => p.status !== 'INACTIVE').map(p => ({ id: p.id, name: p.name, revenue: Math.max(0, revenueMap.get(p.id) || 0) })).sort((a, b) => b.revenue - a.revenue);
     const totalRevenue = productsWithRevenue.reduce((s, p) => s + p.revenue, 0);
     let runningTotal = 0;
-    const classifiedProducts = productsWithRevenue.map(p => {
-      runningTotal += p.revenue; const pct = totalRevenue > 0 ? (runningTotal / totalRevenue) * 100 : 100;
-      let category = 'C'; if (pct <= 80) category = 'A'; else if (pct <= 95) category = 'B';
-      return { ...p, category };
-    });
+    const classifiedProducts = productsWithRevenue.map(p => { runningTotal += p.revenue; const pct = totalRevenue > 0 ? (runningTotal / totalRevenue) * 100 : 100; let category = 'C'; if (pct <= 80) category = 'A'; else if (pct <= 95) category = 'B'; return { ...p, category }; });
     return { classifiedProducts };
   }
 }
