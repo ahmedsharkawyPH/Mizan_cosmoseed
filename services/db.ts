@@ -37,11 +37,8 @@ class Database {
   constructor() {
     this.loadFromLocalCache();
     this.initIndexedDB();
-    // تشغيل فحص الصحة التلقائي كل ساعة
     setInterval(() => this.healthCheck(), 3600000);
   }
-
-  // --- 1. CORE ENGINE & STORAGE (V4.2) ---
 
   private async initIndexedDB() {
     return new Promise((resolve) => {
@@ -87,14 +84,12 @@ class Database {
         if (current) {
           oldVersion = current.version;
           data.version = current.version + 1;
-          await new Promise(r => setTimeout(r, 200 * Math.pow(2, i))); // Exponential backoff
+          await new Promise(r => setTimeout(r, 200 * Math.pow(2, i))); 
         }
       }
     }
     throw new Error("فشل التحديث السحابي بعد عدة محاولات بسبب تعارض النسخ.");
   }
-
-  // --- 2. INCREMENTAL RECALCULATION (O(1) Performance) ---
 
   async recalculateEntityBalance(type: 'CUSTOMER' | 'SUPPLIER', entityId: string) {
     if (type === 'CUSTOMER') {
@@ -120,8 +115,6 @@ class Database {
     this.saveToLocalCache();
   }
 
-  // --- 3. HEALTH CHECK (Self-Healing) ---
-
   async healthCheck() {
     console.log("Citadel Health Check started...");
     const issues = [];
@@ -140,8 +133,6 @@ class Database {
     return { healthy: issues.length === 0, issues };
   }
 
-  // --- 4. DATA OPERATIONS ---
-
   private createBase(prefix: string): any {
     const now = new Date().toISOString();
     return {
@@ -159,14 +150,10 @@ class Database {
   private notifySyncState() { this.syncListeners.forEach(l => l(this.activeOperations > 0)); }
 
   async init() {
-    // تحميل الكاش أولاً لعرض بيانات فورية
     this.loadFromLocalCache();
-    
-    // جلب كافة البيانات من السحابة قبل بدء التطبيق
     if (isSupabaseConfigured) {
         await this.syncFromCloud();
     }
-    
     this.isFullyLoaded = true;
   }
 
@@ -180,7 +167,6 @@ class Database {
     if (!isSupabaseConfigured) return;
     try {
         this.incrementOp();
-        // جلب كافة الجداول في مصفوفة وعود واحدة لضمان السرعة القصوى (Parallel Fetching)
         const results = await Promise.all([
           supabase.from('products').select('*'),
           supabase.from('batches').select('*'),
@@ -194,7 +180,7 @@ class Database {
           supabase.from('purchase_orders').select('*'),
           supabase.from('daily_closings').select('*'),
           supabase.from('pending_adjustments').select('*'),
-          supabase.from('settings').select('*').limit(1) // استبدال single بـ limit لتجنب الخطأ في الجداول الفارغة
+          supabase.from('settings').select('*').limit(1) 
         ]);
 
         const [p, b, c, inv, tx, wh, rep, sup, pinv, po, dc, pa, sett] = results;
@@ -214,12 +200,71 @@ class Database {
         if (sett.data && sett.data.length > 0) this.settings = sett.data[0];
 
         this.updateMaps();
+        
+        // 🔥 إصلاح الفواتير القديمة تلقائياً عند أول مزامنة
+        this.fixOldPurchaseInvoices();
+
         this.saveToLocalCache(true);
-        console.log("Cloud Sync Completed Successfully - System Ready for Offline Search");
+        console.log("Cloud Sync Completed Successfully");
     } catch (err) {
         console.error("Cloud Sync Failed", err);
     } finally {
         this.decrementOp();
+    }
+  }
+
+  // 🔥 دالة إصلاح الفواتير القديمة المسجلة بدون أسماء أصناف
+  async fixOldPurchaseInvoices() {
+    let fixedLocally = 0;
+    const toUpdateInCloud = [];
+
+    for (const inv of this.purchaseInvoices) {
+      let changed = false;
+      
+      // 1. إثراء أسماء الأصناف
+      const enrichedItems = inv.items.map(item => {
+        if (!item.product_name) {
+          const product = this.productMap.get(item.product_id);
+          changed = true;
+          return {
+            ...item,
+            product_name: product?.name || 'صنف غير معروف',
+            product_code: product?.code || '',
+            _cached_at: new Date().toISOString()
+          };
+        }
+        return item;
+      });
+
+      // 2. إثراء اسم المورد
+      if (!inv.supplier_name) {
+        const supplier = this.suppliers.find(s => s.id === inv.supplier_id);
+        inv.supplier_name = supplier?.name || 'مورد غير معروف';
+        changed = true;
+      }
+
+      if (changed) {
+        inv.items = enrichedItems;
+        inv.updated_at = new Date().toISOString();
+        fixedLocally++;
+        if (isSupabaseConfigured) toUpdateInCloud.push(inv);
+      }
+    }
+
+    if (fixedLocally > 0) {
+      console.log(`Fixer: Fixed ${fixedLocally} purchase invoices locally.`);
+      this.saveToLocalCache(true);
+      
+      // تحديث السحابة في الخلفية
+      if (toUpdateInCloud.length > 0) {
+        for (const inv of toUpdateInCloud) {
+           await supabase.from('purchase_invoices').update({ 
+             items: inv.items, 
+             supplier_name: inv.supplier_name,
+             updated_at: inv.updated_at 
+           }).eq('id', inv.id);
+        }
+      }
     }
   }
 
@@ -530,18 +575,46 @@ class Database {
   }
 
   async createPurchaseInvoice(supplier_id: string, items: PurchaseItem[], paid_amount: number, is_return: boolean = false, docNo?: string, date?: string): Promise<any> {
-    const total = items.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
-    const invoice: PurchaseInvoice = { ...this.createBase('pinv-'), invoice_number: this.generateSimpleSeq(this.purchaseInvoices, is_return ? 'PR' : 'P', 'invoice_number'), supplier_id, document_number: docNo, date: date || new Date().toISOString(), total_amount: total, paid_amount, type: is_return ? 'RETURN' : 'PURCHASE' };
+    
+    // 🔥 إثراء بيانات الأصناف بالأسماء لحظة الحفظ
+    const enrichedItems = items.map(item => {
+        const product = this.productMap.get(item.product_id);
+        return {
+            ...item,
+            product_name: product?.name || 'صنف غير معروف',
+            product_code: product?.code || '',
+            _cached_at: new Date().toISOString()
+        };
+    });
+
+    const total = enrichedItems.reduce((s, i) => s + (i.quantity * i.cost_price), 0);
+    const supplier = this.suppliers.find(s => s.id === supplier_id);
+
+    const invoice: PurchaseInvoice = { 
+        ...this.createBase('pinv-'), 
+        invoice_number: this.generateSimpleSeq(this.purchaseInvoices, is_return ? 'PR' : 'P', 'invoice_number'), 
+        supplier_id, 
+        supplier_name: supplier?.name || 'مورد غير معروف',
+        document_number: docNo, 
+        date: date || new Date().toISOString(), 
+        total_amount: total, 
+        paid_amount, 
+        type: is_return ? 'RETURN' : 'PURCHASE',
+        items: enrichedItems 
+    };
+
     if (isSupabaseConfigured) await supabase.from('purchase_invoices').insert(invoice);
-    items.forEach(item => {
+    
+    enrichedItems.forEach(item => {
         const prod = this.products.find(p => p.id === item.product_id);
         if (prod) { prod.purchase_price = item.cost_price; prod.selling_price = item.selling_price; }
         let b = this.batches.find(x => x.product_id === item.product_id && x.warehouse_id === item.warehouse_id);
         if (!b) { b = { ...this.createBase('b-'), product_id: item.product_id, warehouse_id: item.warehouse_id, quantity: 0, purchase_price: item.cost_price, selling_price: item.selling_price, expiry_date: item.expiry_date, batch_number: item.batch_number, batch_status: BatchStatus.ACTIVE }; this.batches.push(b); }
         b.quantity += is_return ? -item.quantity : item.quantity;
     });
+
     this.purchaseInvoices.push(invoice);
-    if (paid_amount > 0) { await this.addCashTransaction({ type: CashTransactionType.EXPENSE, category: 'SUPPLIER_PAYMENT', reference_id: invoice.id, related_name: this.suppliers.find(s => s.id === supplier_id)?.name, amount: paid_amount, date: invoice.date, notes: `سداد فاتورة مشتريات #${invoice.invoice_number}` }); }
+    if (paid_amount > 0) { await this.addCashTransaction({ type: CashTransactionType.EXPENSE, category: 'SUPPLIER_PAYMENT', reference_id: invoice.id, related_name: supplier?.name, amount: paid_amount, date: invoice.date, notes: `سداد فاتورة مشتريات #${invoice.invoice_number}` }); }
     await this.recalculateEntityBalance('SUPPLIER', supplier_id); return { success: true, id: invoice.id };
   }
 

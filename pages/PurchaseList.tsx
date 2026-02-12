@@ -19,16 +19,13 @@ export default function PurchaseList() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'PURCHASE' | 'RETURN'>('ALL');
   
-  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPage, setJumpPage] = useState('');
 
-  // Modals State
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
   const [conversionInvoice, setConversionInvoice] = useState<PurchaseInvoice | null>(null);
   const [invoiceToDelete, setInvoiceToDelete] = useState<PurchaseInvoice | null>(null);
 
-  // تحديث البيانات مع ضمان جلب الأصناف
   const loadData = () => {
     setInvoices(db.getPurchaseInvoices());
     setProducts(db.getProductsWithBatches());
@@ -37,7 +34,6 @@ export default function PurchaseList() {
 
   useEffect(() => {
     loadData();
-    // آلية تحديث تلقائي في حال كانت البيانات قيد المزامنة من السحابة
     const checkInterval = setInterval(() => {
         if (db.isFullyLoaded) {
             loadData();
@@ -52,7 +48,7 @@ export default function PurchaseList() {
   const filtered = useMemo(() => {
       const results = invoices.filter(inv => {
           const supplier = suppliers.find(s => s.id === inv.supplier_id);
-          const supplierName = supplier?.name.toLowerCase() || '';
+          const supplierName = supplier?.name.toLowerCase() || inv.supplier_name?.toLowerCase() || '';
           const matchSearch = inv.invoice_number.toLowerCase().includes(search.toLowerCase()) || 
                               (inv.document_number && inv.document_number.toLowerCase().includes(search.toLowerCase())) ||
                               supplierName.includes(search.toLowerCase());
@@ -93,17 +89,13 @@ export default function PurchaseList() {
 
   const getSupplierName = (id: string) => suppliers.find(s => s.id === id)?.name || '...';
   
-  // إصلاح مشكلة الصنف غير المعروف عبر التأكد من القائمة
   const getProductName = (id: string) => {
       const product = products.find(p => p.id === id);
       if (product) return product.name;
-      
-      // محاولة أخيرة: الجلب المباشر من الداتا بيز في حال لم يتم تحديث الـ state
       const directProduct = db.getProductsWithBatches().find(p => p.id === id);
       return directProduct ? directProduct.name : 'جاري التحميل...';
   };
 
-  // Conversion Actions
   const goToReturn = () => {
       if (!conversionInvoice) return;
       navigate('/purchases/return-from-invoice', { state: { preselectInvoice: conversionInvoice } });
@@ -178,7 +170,7 @@ export default function PurchaseList() {
                             <td className="px-6 py-4 font-mono text-blue-600">{inv.invoice_number}</td>
                             <td className="px-6 py-4 font-mono text-slate-400">{inv.document_number || '-'}</td>
                             <td className="px-6 py-4 text-center text-slate-500">{new Date(inv.date).toLocaleDateString('ar-EG')}</td>
-                            <td className="px-6 py-4 font-black text-slate-800">{getSupplierName(inv.supplier_id)}</td>
+                            <td className="px-6 py-4 font-black text-slate-800">{inv.supplier_name || getSupplierName(inv.supplier_id)}</td>
                             <td className="px-6 py-4 text-center">
                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${inv.type === 'PURCHASE' ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
                                     {inv.type === 'PURCHASE' ? 'شراء' : 'مرتجع'}
@@ -274,7 +266,6 @@ export default function PurchaseList() {
         )}
       </div>
 
-      {/* --- Delete Confirmation Modal --- */}
       {invoiceToDelete && (
           <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border-2 border-red-100 animate-in zoom-in duration-200">
@@ -341,7 +332,6 @@ export default function PurchaseList() {
           </div>
       )}
 
-      {/* --- Conversion Smart Modal --- */}
       {conversionInvoice && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 animate-in zoom-in duration-200">
@@ -350,7 +340,7 @@ export default function PurchaseList() {
                           <h3 className="text-xl font-black flex items-center gap-3">
                               <ArrowRightLeft className="w-6 h-6" /> تحويل فاتورة المشتريات
                           </h3>
-                          <p className="text-xs text-indigo-100 font-bold mt-1">المرجع: {conversionInvoice.invoice_number} | المورد: {getSupplierName(conversionInvoice.supplier_id)}</p>
+                          <p className="text-xs text-indigo-100 font-bold mt-1">المرجع: {conversionInvoice.invoice_number} | المورد: {conversionInvoice.supplier_name || getSupplierName(conversionInvoice.supplier_id)}</p>
                       </div>
                       <button onClick={() => setConversionInvoice(null)} className="p-2 hover:bg-white/20 rounded-full transition-colors">
                           <X className="w-6 h-6" />
@@ -365,7 +355,7 @@ export default function PurchaseList() {
                           <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
                               {conversionInvoice.items.map((item, i) => (
                                   <div key={i} className="flex justify-between items-center text-xs font-bold text-slate-600">
-                                      <span className="truncate max-w-[180px]">{getProductName(item.product_id)}</span>
+                                      <span className="truncate max-w-[180px]">{item.product_name || getProductName(item.product_id)}</span>
                                       <span className="font-mono bg-white px-2 py-0.5 rounded border border-slate-100 text-indigo-600">{item.quantity} قطعة</span>
                                   </div>
                               ))}
@@ -410,7 +400,6 @@ export default function PurchaseList() {
           </div>
       )}
 
-      {/* Detail Modal */}
       {selectedInvoice && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
@@ -422,7 +411,7 @@ export default function PurchaseList() {
                           </h3>
                           <div className="flex items-center gap-4 mt-2">
                               <p className="text-xs text-slate-500 font-bold">
-                                {new Date(selectedInvoice.date).toLocaleString('ar-EG')} • المورد: <span className="text-blue-600">{getSupplierName(selectedInvoice.supplier_id)}</span>
+                                {new Date(selectedInvoice.date).toLocaleString('ar-EG')} • المورد: <span className="text-blue-600">{selectedInvoice.supplier_name || getSupplierName(selectedInvoice.supplier_id)}</span>
                               </p>
                           </div>
                       </div>
@@ -449,7 +438,10 @@ export default function PurchaseList() {
                                                   {item.serial_number || idx + 1}
                                               </span>
                                           </td>
-                                          <td className="p-4 font-black text-slate-800">{getProductName(item.product_id)}</td>
+                                          <td className="p-4 font-black text-slate-800">
+                                              {/* 🔥 استخدام الاسم المحفوظ داخل الفاتورة فوراً */}
+                                              {item.product_name || getProductName(item.product_id)}
+                                          </td>
                                           <td className="p-4 text-center font-black text-slate-700 bg-slate-50/30">{item.quantity}</td>
                                           <td className="p-4 text-center font-bold text-slate-600">{currency}{item.cost_price.toLocaleString()}</td>
                                           <td className="p-4 text-left font-black text-slate-900">{currency}{(item.quantity * item.cost_price).toLocaleString()}</td>
@@ -472,7 +464,6 @@ export default function PurchaseList() {
   );
 }
 
-// أيقونة الحذف من سجلات فقط للاستخدام داخل الزر
 const FileMinus = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
 );

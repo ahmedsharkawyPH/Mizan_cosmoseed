@@ -69,7 +69,6 @@ export interface Customer extends BaseEntity {
   credit_limit?: number; 
   representative_code?: string; 
   default_discount_percent?: number; 
-  // distribution_line added for tracking customer routes
   distribution_line?: string;
 }
 
@@ -111,6 +110,7 @@ export interface PurchaseInvoice extends BaseEntity {
   invoice_number: string;
   document_number?: string; 
   supplier_id: string;
+  supplier_name?: string; // مضاف لحفظ التاريخ المالي
   date: string;
   total_amount: number;
   paid_amount: number;
@@ -121,6 +121,8 @@ export interface PurchaseInvoice extends BaseEntity {
 export interface PurchaseItem {
   serial_number?: number; 
   product_id: string;
+  product_name?: string; // مضاف لضمان ظهور الاسم دائماً
+  product_code?: string; // مضاف للباركود التاريخي
   warehouse_id: string; 
   batch_number: string; 
   quantity: number;
@@ -128,6 +130,7 @@ export interface PurchaseItem {
   cost_price: number;
   selling_price: number;
   expiry_date: string;
+  _cached_at?: string;
 }
 
 export interface PurchaseOrder extends BaseEntity {
