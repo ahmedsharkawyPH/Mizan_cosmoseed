@@ -30,7 +30,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const [cart, setCart] = useState<PurchaseItem[]>([]);
   const [cashPaid, setCashPaid] = useState<number>(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null); 
-  const [isLoadingInvoice, setIsLoadingInvoice] = useState(false);
+  const [isLoadingInvoice, setIsLoadingInvoice] = useState(true); // افتراضياً جاري التحميل حتى تجهز القاعدة
   
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
@@ -53,30 +53,38 @@ export default function PurchaseInvoice({ type }: Props) {
   
   const lastProcessedProdId = useRef<string>('');
 
+  // 🛡️ المخطط المحسن لمعالجة الـ Race Condition
   useEffect(() => {
-    const def = warehouses.find(w => w.is_default);
-    if(def) setSelectedWarehouse(def.id);
+    const readyCheck = setInterval(() => {
+      if (db.isFullyLoaded) {
+        clearInterval(readyCheck);
 
-    if (id) {
-        const inv = db.getPurchaseInvoices().find(i => i.id === id);
-        if (inv) {
-            setIsLoadingInvoice(true);
+        // 1. تحميل الأساسيات
+        const allProducts = db.getProductsWithBatches();
+        const allSuppliers = db.getSuppliers();
+        setProducts(allProducts);
+        setSuppliers(allSuppliers);
+
+        const def = warehouses.find(w => w.is_default);
+        if (def) setSelectedWarehouse(def.id);
+
+        // 2. تحميل الفاتورة للتعديل (فقط بعد جاهزية المنتجات)
+        if (id) {
+          const inv = db.getPurchaseInvoices().find(i => i.id === id);
+          if (inv) {
             setSelectedSupplier(inv.supplier_id);
             setDocumentNo(inv.document_number || '');
             setManualDate(inv.date.split('T')[0]);
             setCart(inv.items);
             setCashPaid(inv.paid_amount);
-            setIsLoadingInvoice(false);
+          }
         }
-    }
+        
+        setIsLoadingInvoice(false);
+      }
+    }, 300); // فحص كل 300 مللي ثانية
 
-    const checkSync = setInterval(() => {
-        if (db.isFullyLoaded) {
-            setProducts(db.getProductsWithBatches());
-            setSuppliers(db.getSuppliers());
-        }
-    }, 2000);
-    return () => clearInterval(checkSync);
+    return () => clearInterval(readyCheck);
   }, [id, warehouses]);
 
   const lastPurchasesIntelligence = useMemo(() => {
@@ -167,8 +175,11 @@ export default function PurchaseInvoice({ type }: Props) {
         return;
     }
 
+    const currentP = products.find(x => x.id === selProd);
+
     const newItem: PurchaseItem = {
       product_id: selProd,
+      product_name: currentP?.name, // حفظ الاسم لضمان استقراره
       warehouse_id: selectedWarehouse,
       batch_number: editingIndex !== null ? cart[editingIndex].batch_number : `BATCH-${Date.now().toString().slice(-6)}`,
       quantity: Number(qty),
@@ -269,7 +280,14 @@ export default function PurchaseInvoice({ type }: Props) {
 
   const totalAmount = cart.reduce((acc, item) => acc + (item.quantity * item.cost_price), 0);
 
-  if (isLoadingInvoice) return <div className="p-20 text-center font-bold">جاري تحميل بيانات الفاتورة...</div>;
+  if (isLoadingInvoice) {
+    return (
+      <div className="h-[60vh] flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
+        <p className="text-slate-500 font-black animate-pulse">جاري تهيئة البيانات وربط المخازن...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -446,7 +464,9 @@ export default function PurchaseInvoice({ type }: Props) {
                       {cart.map((item, idx) => (
                          <tr key={idx} className={`hover:bg-slate-50 transition-colors font-bold ${editingIndex === idx ? 'bg-orange-50' : ''}`}>
                             <td className="px-4 py-4 text-center text-slate-400 text-xs">{idx + 1}</td>
-                            <td className="px-4 py-4 text-slate-800">{products.find(x => x.id === item.product_id)?.name}</td>
+                            <td className="px-4 py-4 text-slate-800">
+                                {item.product_name || products.find(x => x.id === item.product_id)?.name || '---'}
+                            </td>
                             <td className="px-4 py-4 text-center">{item.quantity}</td>
                             <td className="px-4 py-4 text-center">
                                {item.bonus_quantity > 0 ? (
@@ -569,3 +589,7 @@ export default function PurchaseInvoice({ type }: Props) {
     </div>
   );
 }
+
+const FileMinus = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+);
