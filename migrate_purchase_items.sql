@@ -1,16 +1,19 @@
 -- ============================================================
--- سكربت ترحيل البيانات: إضافة أسماء الأصناف لفواتير المشتريات
--- الإصدار: 1.0
--- الهدف: إثراء بيانات JSONB بأسماء الأصناف لتجنب فقدانها عند حذف الصنف
--- ملاحظة: يرجى أخذ نسخة احتياطية من جدول purchase_invoices قبل التشغيل
+-- سكربت ترحيل البيانات المطور: إضافة الأعمدة الناقصة وتحديث البيانات
+-- الإصدار: 1.1
 -- ============================================================
 
 BEGIN;
 
+-- 1. التأكد من وجود عمود الإصدار وتحديث الوقت (لتجنب الخطأ 42703)
+ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
+ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- 2. تحديث بيانات الأصناف وإضافة الأسماء داخل الـ JSONB
 UPDATE purchase_invoices
 SET items = enriched_data.new_items,
     updated_at = NOW(),
-    version = version + 1
+    version = COALESCE(version, 0) + 1
 FROM (
     SELECT 
         pi.id,
@@ -33,8 +36,5 @@ WHERE
     purchase_invoices.id = enriched_data.id
     AND purchase_invoices.items IS NOT NULL
     AND jsonb_array_length(purchase_invoices.items) > 0;
-
--- التحقق من عدد السجلات المحدثة
--- SELECT count(*) FROM purchase_invoices WHERE updated_at > NOW() - interval '1 minute';
 
 COMMIT;

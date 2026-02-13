@@ -102,10 +102,10 @@ const Dashboard: React.FC = () => {
           </div>
       </div>
 
-      {/* 1. Key Metrics */}
+      {/* 1. Key Metrics - Updated with Math.round() */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title={t('dash.total_sales')} value={`${currency}${stats.totalSales.toLocaleString()}`} icon={TrendingUp} color="bg-emerald-500" />
-        <StatCard title={t('dash.cash_balance')} value={`${currency}${stats.cash.toLocaleString()}`} icon={Coins} color="bg-blue-600" />
+        <StatCard title={t('dash.total_sales')} value={`${currency}${Math.round(stats.totalSales).toLocaleString()}`} icon={TrendingUp} color="bg-emerald-500" />
+        <StatCard title={t('dash.cash_balance')} value={`${currency}${Math.round(stats.cash).toLocaleString()}`} icon={Coins} color="bg-blue-600" />
         <StatCard title={t('dash.customers')} value={stats.customerCount.toString()} icon={Users} color="bg-indigo-500" />
         <StatCard title={t('dash.low_stock')} value={stats.lowStockCount.toString()} icon={AlertTriangle} color="bg-amber-500" subtext={`أقل من ${stats.lowStockThreshold} قطعة`} />
       </div>
