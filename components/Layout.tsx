@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
+import { ExitApp } from './ExitApp';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -188,10 +189,7 @@ export default function Layout() {
               <p className="text-xs text-white/50 truncate uppercase tracking-tighter">{user?.role}</p>
             </div>
           </div>
-          <button onClick={() => authService.logout()} className="flex items-center w-full px-4 py-2 text-sm font-bold text-red-400 rounded-lg hover:bg-red-950/30 transition-colors">
-            <LogOut className="w-5 h-5 ltr:mr-3 rtl:ml-3" />
-            {t('nav.logout') || 'تسجيل الخروج'}
-          </button>
+          <ExitApp />
         </div>
       </aside>
 

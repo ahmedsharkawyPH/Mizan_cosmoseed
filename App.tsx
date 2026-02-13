@@ -59,7 +59,7 @@ function App() {
     init();
   }, []);
 
-  // إضافة حماية الخروج (Exit Guard)
+  // إضافة حماية الخروج (Exit Guard) - حماية معززة
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
         if (db.activeOperations > 0) {
