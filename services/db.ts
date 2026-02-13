@@ -201,7 +201,7 @@ class Database {
 
         this.updateMaps();
         
-        // 🔥 إصلاح الفواتير القديمة تلقائياً عند أول مزامنة
+        // التحقق من الحاجة لإصلاح الفواتير محلياً فقط إذا لم تكن محدثة
         this.fixOldPurchaseInvoices();
 
         this.saveToLocalCache(true);
@@ -213,22 +213,20 @@ class Database {
     }
   }
 
-  // 🔥 دالة إصلاح الفواتير القديمة المسجلة بدون أسماء أصناف
+  // دالة إصلاح الفواتير القديمة المسجلة بدون أسماء أصناف (للكاش المحلي)
   async fixOldPurchaseInvoices() {
     let fixedLocally = 0;
-    const toUpdateInCloud = [];
 
     for (const inv of this.purchaseInvoices) {
       let changed = false;
       
-      // 1. إثراء أسماء الأصناف
       const enrichedItems = inv.items.map(item => {
         if (!item.product_name) {
           const product = this.productMap.get(item.product_id);
           changed = true;
           return {
             ...item,
-            product_name: product?.name || 'صنف غير معروف',
+            product_name: product?.name || '--- صنف غير موجود ---',
             product_code: product?.code || '',
             _cached_at: new Date().toISOString()
           };
@@ -236,7 +234,6 @@ class Database {
         return item;
       });
 
-      // 2. إثراء اسم المورد
       if (!inv.supplier_name) {
         const supplier = this.suppliers.find(s => s.id === inv.supplier_id);
         inv.supplier_name = supplier?.name || 'مورد غير معروف';
@@ -247,24 +244,12 @@ class Database {
         inv.items = enrichedItems;
         inv.updated_at = new Date().toISOString();
         fixedLocally++;
-        if (isSupabaseConfigured) toUpdateInCloud.push(inv);
       }
     }
 
     if (fixedLocally > 0) {
-      console.log(`Fixer: Fixed ${fixedLocally} purchase invoices locally.`);
+      console.log(`Local Data Fixer: Fixed ${fixedLocally} records for UI consistency.`);
       this.saveToLocalCache(true);
-      
-      // تحديث السحابة في الخلفية
-      if (toUpdateInCloud.length > 0) {
-        for (const inv of toUpdateInCloud) {
-           await supabase.from('purchase_invoices').update({ 
-             items: inv.items, 
-             supplier_name: inv.supplier_name,
-             updated_at: inv.updated_at 
-           }).eq('id', inv.id);
-        }
-      }
     }
   }
 
