@@ -14,16 +14,10 @@ interface DataContextType {
   invoices: Invoice[];
   purchaseInvoices: PurchaseInvoice[];
   warehouses: Warehouse[];
-  representatives: Representative[];
   settings: any;
   isLoading: boolean;
   loadingMessage: string;
   refreshData: () => void;
-  addProduct: (pData: any, bData: any) => Promise<any>;
-  updateProduct: (id: string, data: any) => Promise<any>;
-  deleteProduct: (id: string) => Promise<any>;
-  addTransaction: (data: any) => Promise<any>;
-  recalculateBalance: (type: 'CUSTOMER' | 'SUPPLIER', id: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -36,7 +30,7 @@ export const useData = () => {
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState("جاري الاتصال بقاعدة بيانات ميزان...");
+  const [loadingMessage, setLoadingMessage] = useState("جاري الاتصال...");
 
   const [products, setProducts] = useState<ProductWithBatches[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -44,26 +38,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [representatives, setRepresentatives] = useState<Representative[]>([]);
   const [cashTransactions, setCashTransactions] = useState<CashTransaction[]>([]);
   const [settings, setSettings] = useState(db.getSettings());
 
   const loadAndPatchData = useCallback(async () => {
     setIsLoading(true);
     try {
-        // --- الخطوة 1: جلب القائمة الكاملة وقائمة التحديثات (بالتوازي) ---
-        setLoadingMessage("جاري جلب بيانات الـ 23,000 صنف والأسعار المحدثة...");
+        // --- المرحلة 1: جلب البيانات الضخمة (الـ Baseline) ---
+        setLoadingMessage("جاري جلب قائمة الأصناف (23,000 صنف)...");
         
         const [
-            allProductsFromDB, // القائمة الكاملة (Baseline)
-            latestPricesMap,   // تحديثات الأسعار من التشغيلات (Patch)
+            allProductsFromDB, // الخط الأساسي
+            latestPricesMap,   // خريطة التحديثات (الـ Patch)
             allBatches,
             allCustomers,
             allSuppliers,
             allInvoices,
             allPurchaseInvoices,
             allWarehouses,
-            allReps,
             allTxs
         ] = await Promise.all([
             db.fetchAllFromTable('products'),
@@ -74,19 +66,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             db.fetchAllFromTable('invoices'),
             db.fetchAllFromTable('purchase_invoices'),
             db.fetchAllFromTable('warehouses'),
-            db.fetchAllFromTable('representatives'),
             db.fetchAllFromTable('cash_transactions')
         ]);
 
-        // --- الخطوة 2: عملية التحديث الانتقائي للأصناف (The Pyramid of Truth) ---
-        setLoadingMessage("جاري تطبيق تحديثات الأسعار الذكية...");
+        // --- المرحلة 2: عملية الدمج الانتقائي (The Pyramid of Truth) ---
+        setLoadingMessage("جاري تحديث الأسعار اللحظية...");
 
         const patchedProducts: ProductWithBatches[] = allProductsFromDB.map((product: Product) => {
             const priceUpdate = latestPricesMap.get(product.id);
             const productBatches = allBatches.filter((b: any) => b.product_id === product.id);
 
+            // تطبيق هرم الحقيقة
             if (priceUpdate) {
-                // الأولوية القصوى: السعر الأحدث من التشغيلات
+                // الأولوية القصوى: آخر سعر في التشغيلات
                 return {
                     ...product,
                     selling_price: priceUpdate.selling,
@@ -94,7 +86,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     batches: productBatches
                 };
             } else {
-                // الحقيقة الاحتياطية: السعر الافتراضي من جدول المنتجات
+                // الحقيقة الاحتياطية: السعر المسجل في جدول المنتجات
                 return {
                     ...product,
                     batches: productBatches
@@ -109,7 +101,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setInvoices(allInvoices);
         setPurchaseInvoices(allPurchaseInvoices);
         setWarehouses(allWarehouses);
-        setRepresentatives(allReps);
         setCashTransactions(allTxs);
         
         // مزامنة قاعدة البيانات المحلية
@@ -120,14 +111,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         db.invoices = allInvoices;
         db.purchaseInvoices = allPurchaseInvoices;
         db.warehouses = allWarehouses;
-        db.representatives = allReps;
         db.cashTransactions = allTxs;
         db.saveToLocalCache(true);
 
         setLoadingMessage("اكتمل التحميل بنجاح.");
     } catch (error) {
         console.error("Fatal Error during data loading:", error);
-        setLoadingMessage("فشل تحميل البيانات. يرجى التأكد من اتصال الإنترنت وإعادة المحاولة.");
+        setLoadingMessage("فشل تحميل البيانات. يرجى التأكد من اتصال الإنترنت.");
     } finally {
         setIsLoading(false);
     }
@@ -144,40 +134,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setInvoices(db.getInvoices());
     setPurchaseInvoices(db.getPurchaseInvoices());
     setWarehouses(db.getWarehouses());
-    setRepresentatives(db.getRepresentatives());
     setCashTransactions(db.getCashTransactions());
     setSettings(db.getSettings());
   }, []);
-
-  // Actions
-  const addProduct = async (pData: any, bData: any) => {
-    const res = await db.addProduct(pData, bData);
-    if (res.success) refreshData();
-    return res;
-  };
-
-  const updateProduct = async (id: string, data: any) => {
-    const res = await db.updateProduct(id, data);
-    if (res.success) refreshData();
-    return res;
-  };
-
-  const deleteProduct = async (id: string) => {
-    const res = await db.deleteProduct(id);
-    if (res.success) refreshData();
-    return res;
-  };
-
-  const addTransaction = async (txData: any) => {
-    const result = await db.addCashTransaction(txData);
-    if (result.success) refreshData();
-    return result;
-  };
-
-  const recalculateBalance = async (type: 'CUSTOMER' | 'SUPPLIER', id: string) => {
-    await db.recalculateEntityBalance(type, id);
-    refreshData();
-  };
 
   const value = useMemo(() => ({
     txs: cashTransactions,
@@ -187,17 +146,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     invoices,
     purchaseInvoices,
     warehouses,
-    representatives,
     settings,
     isLoading,
     loadingMessage,
-    refreshData,
-    addProduct,
-    updateProduct,
-    deleteProduct,
-    addTransaction,
-    recalculateBalance
-  }), [cashTransactions, customers, suppliers, products, invoices, purchaseInvoices, warehouses, representatives, settings, isLoading, loadingMessage, refreshData]);
+    refreshData
+  }), [cashTransactions, customers, suppliers, products, invoices, purchaseInvoices, warehouses, settings, isLoading, loadingMessage, refreshData]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
