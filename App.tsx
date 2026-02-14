@@ -4,8 +4,8 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { db } from './services/db';
-import { DataProvider } from './context/DataContext';
-import { Loader2, Cloud, ShieldCheck, Sparkles } from 'lucide-react';
+import { DataProvider, useData } from './context/DataContext';
+import { Loader2 } from 'lucide-react';
 // @ts-ignore
 import { Toaster } from 'react-hot-toast';
 
@@ -23,17 +23,15 @@ const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
 const Customers = lazy(() => import('./pages/Customers'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
 const Representatives = lazy(() => import('./pages/Representatives'));
-const Telesales = lazy(() => import('./pages/Telesales'));
 const Warehouses = lazy(() => import('./pages/Warehouses'));
 const StockTake = lazy(() => import('./pages/StockTake'));
 const DailyClosing = lazy(() => import('./pages/DailyClosing'));
-const CashRegister = lazy(() => import('./pages/CashRegister'));
+const CashRegister = lazy(() => import('./pages/CashRegister/index'));
+const Commissions = lazy(() => import('./pages/Commissions'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Login = lazy(() => import('./pages/Login'));
 const SalesReturn = lazy(() => import('./pages/SalesReturn'));
-const PurchaseReturn = lazy(() => import('./pages/PurchaseReturn'));
-const Commissions = lazy(() => import('./pages/Commissions'));
 
 const PageLoader = () => (
     <div className="h-full w-full flex flex-col items-center justify-center p-20 gap-4">
@@ -42,29 +40,26 @@ const PageLoader = () => (
     </div>
 );
 
-function App() {
-  const [isDbReady, setIsDbReady] = useState(false);
+const AppContent = () => {
+  const { isLoading, loadingMessage } = useData();
 
-  useEffect(() => {
-    const init = async () => {
-        await db.init();
-        setIsDbReady(true);
-    };
-    init();
-  }, []);
-
-  if (!isDbReady) {
+  if (isLoading) {
       return (
-          <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900 text-white">
-              <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-              <p className="text-lg font-bold animate-pulse">جاري تشغيل محرك ميزان Pro...</p>
+          <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900 text-white p-10 text-center">
+              <div className="relative mb-8">
+                  <div className="absolute inset-0 bg-blue-500 blur-2xl opacity-20 animate-pulse"></div>
+                  <Loader2 className="w-16 h-16 text-blue-500 animate-spin relative z-10" />
+              </div>
+              <h2 className="text-2xl font-black mb-2 tracking-tight tracking-wide">Mizan Online Pro</h2>
+              <p className="text-slate-400 font-bold animate-pulse max-w-md leading-relaxed">{loadingMessage}</p>
+              <div className="mt-10 text-[10px] text-slate-600 uppercase tracking-widest font-black border-t border-slate-800 pt-4">
+                  CITADEL ENGINE V4.2 • DATA PATCHING ACTIVE
+              </div>
           </div>
       );
   }
 
   return (
-    <DataProvider>
-      <Toaster position="top-right" />
       <HashRouter>
         <Suspense fallback={<PageLoader />}>
             <Routes>
@@ -100,6 +95,26 @@ function App() {
             </Routes>
         </Suspense>
       </HashRouter>
+  );
+}
+
+function App() {
+  const [isDbReady, setIsDbReady] = useState(false);
+
+  useEffect(() => {
+    const init = async () => {
+        await db.init();
+        setIsDbReady(true);
+    };
+    init();
+  }, []);
+
+  if (!isDbReady) return null;
+
+  return (
+    <DataProvider>
+      <Toaster position="top-right" />
+      <AppContent />
     </DataProvider>
   );
 }
