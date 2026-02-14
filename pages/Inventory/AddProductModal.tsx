@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import { db } from '../../services/db'; // مضاف لاستدعاء دالة توليد الكود
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -33,15 +34,35 @@ const AddProductModal: React.FC<Props> = ({ isOpen, onClose, product, onSave, wa
 
     const handleSave = async () => {
         if (!form.name) return toast.error("اسم الصنف مطلوب");
+        
         setIsSubmitting(true);
+        
+        // --- الذكاء الاصطناعي لتوليد الكود ---
+        let finalCode = form.code?.trim();
+        
+        // إذا كان الكود فارغاً وهي عملية إضافة جديدة، نولد كوداً تلقائياً
+        if (!finalCode && !product) {
+            finalCode = db.getNextProductCode();
+            toast.success(`تم توليد كود تلقائي: ${finalCode}`);
+        }
+
         const res = await onSave(
-            { name: form.name, code: form.code }, 
-            { quantity: form.initial_qty, purchase_price: form.purchase_price, selling_price: form.selling_price, warehouse_id: form.warehouse_id }
+            { name: form.name, code: finalCode }, 
+            { 
+                quantity: form.initial_qty, 
+                purchase_price: form.purchase_price, 
+                selling_price: form.selling_price, 
+                warehouse_id: form.warehouse_id || warehouses[0]?.id 
+            }
         );
+
         if (res.success) {
-            toast.success(product ? "تم التحديث" : "تمت الإضافة");
+            toast.success(product ? "تم التحديث بنجاح" : "تمت الإضافة بنجاح");
             onClose();
-        } else toast.error(res.message);
+        } else {
+            toast.error(res.message || "فشل الحفظ بسبب تعارض في البيانات (تأكد من الكود)");
+        }
+        
         setIsSubmitting(false);
     };
 
@@ -51,34 +72,34 @@ const AddProductModal: React.FC<Props> = ({ isOpen, onClose, product, onSave, wa
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100">
                 <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
-                    <h3 className="text-xl font-black">{product ? "تعديل الصنف" : "صنف جديد"}</h3>
+                    <h3 className="text-xl font-black">{product ? "تعديل بيانات الصنف" : "إضافة صنف جديد للمخزن"}</h3>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-6 h-6" /></button>
                 </div>
                 <div className="p-8 grid grid-cols-2 gap-5">
                     <div className="col-span-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase">اسم الصنف</label>
-                        <input className="w-full border-2 p-3 rounded-xl font-bold focus:border-blue-500 outline-none" value={form.name} onChange={e => setForm({...form, name: e.target.value})} autoFocus />
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">اسم الصنف (مطلوب)</label>
+                        <input className="w-full border-2 p-3 rounded-xl font-bold focus:border-blue-500 outline-none transition-all" value={form.name} onChange={e => setForm({...form, name: e.target.value})} autoFocus placeholder="أدخل اسم المنتج..." />
                     </div>
                     <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase">الكود</label>
-                        <input className="w-full border-2 p-3 rounded-xl font-mono focus:border-blue-500 outline-none" value={form.code} onChange={e => setForm({...form, code: e.target.value})} />
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">الكود / الباركود</label>
+                        <input className="w-full border-2 p-3 rounded-xl font-mono focus:border-blue-500 outline-none transition-all" value={form.code} onChange={e => setForm({...form, code: e.target.value})} placeholder="اتركه فارغاً للتوليد التلقائي" />
                     </div>
                     {!product && (
                         <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase">الرصيد الافتتاحي</label>
-                            <input type="number" className="w-full border-2 p-3 rounded-xl font-black focus:border-blue-500 outline-none" value={form.initial_qty} onChange={e => setForm({...form, initial_qty: parseInt(e.target.value)||0})} />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">الرصيد الافتتاحي</label>
+                            <input type="number" className="w-full border-2 p-3 rounded-xl font-black focus:border-blue-500 outline-none transition-all" value={form.initial_qty} onChange={e => setForm({...form, initial_qty: parseInt(e.target.value)||0})} />
                         </div>
                     )}
                     <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase">سعر التكلفة</label>
-                        <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-red-600 focus:border-red-500 outline-none" value={form.purchase_price} onChange={e => setForm({...form, purchase_price: parseFloat(e.target.value)||0})} />
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">سعر التكلفة</label>
+                        <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-red-600 focus:border-red-500 outline-none transition-all" value={form.purchase_price} onChange={e => setForm({...form, purchase_price: parseFloat(e.target.value)||0})} />
                     </div>
                     <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase">سعر البيع</label>
-                        <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-emerald-600 focus:border-emerald-500 outline-none" value={form.selling_price} onChange={e => setForm({...form, selling_price: parseFloat(e.target.value)||0})} />
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">سعر البيع</label>
+                        <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-emerald-600 focus:border-emerald-500 outline-none transition-all" value={form.selling_price} onChange={e => setForm({...form, selling_price: parseFloat(e.target.value)||0})} />
                     </div>
                     <button onClick={handleSave} disabled={isSubmitting} className="col-span-2 bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:bg-slate-400">
-                        {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "حفظ الصنف في المخزن"}
+                        {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "حفظ بيانات الصنف"}
                     </button>
                 </div>
             </div>

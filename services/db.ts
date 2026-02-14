@@ -519,6 +519,16 @@ class Database {
   getPurchaseOrders() { return this.purchaseOrders; }
   getProductsWithBatches(): ProductWithBatches[] { return this.products.filter(p => p.status !== 'INACTIVE').map(p => ({ ...p, batches: this.batches.filter(b => b.product_id === p.id) })); }
   getAllProducts(): Product[] { return this.products; }
+  
+  // دالة توليد الكود القادم للأصناف
+  getNextProductCode(): string {
+    const codes = this.products
+      .map(p => parseInt(p.code || '0'))
+      .filter(n => !isNaN(n) && n > 0);
+    const max = codes.length > 0 ? Math.max(...codes) : 1000;
+    return (max + 1).toString();
+  }
+
   getCashBalance() { return this.cashTransactions.filter(t => t.status !== 'CANCELLED').reduce((s, t) => s + (t.type === 'RECEIPT' ? t.amount : -t.amount), 0); }
   getNextTransactionRef(type: CashTransactionType): string { return this.generateSimpleSeq(this.cashTransactions, type === 'RECEIPT' ? 'REC' : 'EXP', 'ref_number'); }
 
