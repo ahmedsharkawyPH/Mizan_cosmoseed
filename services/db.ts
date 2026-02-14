@@ -46,7 +46,7 @@ class Database {
     this.isFullyLoaded = true;
   }
 
-  // --- دوال الجلب الضخمة (Big Data Handlers) ---
+  // --- دوال الجلب الضخمة ---
   async fetchAllFromTable(table: string) {
     if (!isSupabaseConfigured) return [];
     try {
@@ -131,15 +131,15 @@ class Database {
   }
 
   // --- Actions ---
-  // Fix: Explicitly typed return object to include message for UI error handling
-  async createInvoice(customerId: string, items: CartItem[], cashPayment: number, isReturn: boolean, addDisc: number, createdBy?: any, commission: number = 0): Promise<{ success: boolean; id?: string; message?: string }> {
+  async createInvoice(customerId: string, items: CartItem[], cashPayment: number, isReturn: boolean, addDisc: number, createdBy?: any, commission: number = 0): Promise<{ success: boolean; id: string; message?: string }> {
     const customer = this.customers.find(c => c.id === customerId);
-    if (!customer) return { success: false, message: 'العميل غير موجود' };
+    if (!customer) return { success: false, id: '', message: 'العميل غير موجود' };
     const total_before = items.reduce((s, it) => s + (it.quantity * (it.unit_price || it.batch?.selling_price || it.product.selling_price || 0)), 0);
     const total_disc = items.reduce((s, it) => s + (it.quantity * (it.unit_price || 0) * (it.discount_percentage / 100)), 0);
     const net = Math.max(0, total_before - total_disc - addDisc);
+    const invoiceId = Math.random().toString(36).substring(7);
     const invoice: Invoice = {
-        id: Math.random().toString(36).substring(7), invoice_number: `INV-${Date.now().toString().slice(-6)}`,
+        id: invoiceId, invoice_number: `INV-${Date.now().toString().slice(-6)}`,
         customer_id: customerId, date: new Date().toISOString(), total_before_discount: total_before,
         total_discount: total_disc, additional_discount: addDisc, net_total: net,
         previous_balance: customer.current_balance, final_balance: isReturn ? customer.current_balance - net : customer.current_balance + net,
@@ -149,56 +149,31 @@ class Database {
     this.invoices.push(invoice);
     customer.current_balance = invoice.final_balance;
     if (cashPayment > 0) await this.addCashTransaction({ type: isReturn ? 'EXPENSE' : 'RECEIPT', category: 'CUSTOMER_PAYMENT', reference_id: invoice.id, related_name: customer.name, amount: cashPayment, notes: `سداد فاتورة #${invoice.invoice_number}`, date: invoice.date });
-    this.saveToLocalCache(); return { success: true, id: invoice.id };
+    this.saveToLocalCache(); return { success: true, id: invoiceId };
   }
 
-  // Fix: Implemented updateInvoice as required by NewInvoice.tsx
-  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPayment: number): Promise<{ success: boolean; message?: string }> {
+  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPayment: number): Promise<{ success: boolean; id: string; message?: string }> {
     const idx = this.invoices.findIndex(inv => inv.id === id);
-    if (idx === -1) return { success: false, message: 'الفاتورة غير موجودة' };
-    
+    if (idx === -1) return { success: false, id: '', message: 'الفاتورة غير موجودة' };
     const oldInv = this.invoices[idx];
     const customer = this.customers.find(c => c.id === customerId);
-    if (!customer) return { success: false, message: 'العميل غير موجود' };
-
+    if (!customer) return { success: false, id: '', message: 'العميل غير موجود' };
     const total_before = items.reduce((s, it) => s + (it.quantity * (it.unit_price || it.batch?.selling_price || it.product.selling_price || 0)), 0);
     const total_disc = items.reduce((s, it) => s + (it.quantity * (it.unit_price || 0) * (it.discount_percentage / 100)), 0);
     const net = Math.max(0, total_before - total_disc - (oldInv.additional_discount || 0));
-    
-    if (oldInv.type === 'SALE') customer.current_balance -= oldInv.net_total;
-    else customer.current_balance += oldInv.net_total;
-    
-    if (oldInv.type === 'SALE') customer.current_balance += net;
-    else customer.current_balance -= net;
-
-    Object.assign(this.invoices[idx], {
-        customer_id: customerId,
-        items,
-        net_total: net,
-        total_before_discount: total_before,
-        total_discount: total_disc,
-        updated_at: new Date().toISOString(),
-        version: oldInv.version + 1
-    });
-
-    this.saveToLocalCache();
-    return { success: true };
+    if (oldInv.type === 'SALE') customer.current_balance -= oldInv.net_total; else customer.current_balance += oldInv.net_total;
+    if (oldInv.type === 'SALE') customer.current_balance += net; else customer.current_balance -= net;
+    Object.assign(this.invoices[idx], { customer_id: customerId, items, net_total: net, total_before_discount: total_before, total_discount: total_disc, updated_at: new Date().toISOString(), version: oldInv.version + 1 });
+    this.saveToLocalCache(); return { success: true, id };
   }
 
-  // Fix: Implemented deleteInvoice as required by Invoices.tsx
   async deleteInvoice(id: string): Promise<{ success: boolean; message?: string }> {
     const inv = this.invoices.find(i => i.id === id);
     if (!inv) return { success: false, message: 'الفاتورة غير موجودة' };
-    
     const customer = this.customers.find(c => c.id === inv.customer_id);
-    if (customer) {
-        if (inv.type === 'SALE') customer.current_balance -= inv.net_total;
-        else customer.current_balance += inv.net_total;
-    }
-    
+    if (customer) { if (inv.type === 'SALE') customer.current_balance -= inv.net_total; else customer.current_balance += inv.net_total; }
     this.invoices = this.invoices.filter(i => i.id !== id);
-    this.saveToLocalCache();
-    return { success: true };
+    this.saveToLocalCache(); return { success: true };
   }
 
   async addCashTransaction(data: any) {
@@ -206,28 +181,14 @@ class Database {
       this.cashTransactions.push(tx); this.saveToLocalCache(); return { success: true };
   }
 
-  // Fix: Implemented recordInvoicePayment as required by Representatives.tsx
   async recordInvoicePayment(invoiceId: string, amount: number): Promise<{ success: boolean; message?: string }> {
       const inv = this.invoices.find(i => i.id === invoiceId);
       if (!inv) return { success: false, message: 'الفاتورة غير موجودة' };
-      
       const customer = this.customers.find(c => c.id === inv.customer_id);
       if (!customer) return { success: false, message: 'العميل غير موجود' };
-      
-      await this.addCashTransaction({
-          type: inv.type === 'SALE' ? 'RECEIPT' : 'EXPENSE',
-          category: 'CUSTOMER_PAYMENT',
-          reference_id: inv.id,
-          related_name: customer.name,
-          amount,
-          notes: `سداد فاتورة #${inv.invoice_number}`,
-          date: new Date().toISOString()
-      });
-      
+      await this.addCashTransaction({ type: inv.type === 'SALE' ? 'RECEIPT' : 'EXPENSE', category: 'CUSTOMER_PAYMENT', reference_id: inv.id, related_name: customer.name, amount, notes: `سداد فاتورة #${inv.invoice_number}`, date: new Date().toISOString() });
       customer.current_balance -= (inv.type === 'SALE' ? amount : -amount);
-      
-      this.saveToLocalCache();
-      return { success: true };
+      this.saveToLocalCache(); return { success: true };
   }
 
   async addProduct(pData: any, bData: any) {
@@ -240,132 +201,57 @@ class Database {
       const idx = this.products.findIndex(x => x.id === id); if (idx !== -1) { Object.assign(this.products[idx], data); this.saveToLocalCache(); return { success: true }; } return { success: false };
   }
 
-  async deleteProduct(id: string) {
-      this.products = this.products.filter(p => p.id !== id); this.saveToLocalCache(); return { success: true };
-  }
-
-  async addCustomer(data: any) {
-      this.customers.push({ id: Math.random().toString(36).substring(7), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' });
-      this.saveToLocalCache(); return { success: true };
-  }
-
-  async updateCustomer(id: string, data: any) {
-      const idx = this.customers.findIndex(c => c.id === id); if (idx !== -1) { Object.assign(this.customers[idx], data); this.saveToLocalCache(); return { success: true }; } return { success: false };
-  }
-
+  async deleteProduct(id: string) { this.products = this.products.filter(p => p.id !== id); this.saveToLocalCache(); return { success: true }; }
+  async addCustomer(data: any) { this.customers.push({ id: Math.random().toString(36).substring(7), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }); this.saveToLocalCache(); return { success: true }; }
+  async updateCustomer(id: string, data: any) { const idx = this.customers.findIndex(c => c.id === id); if (idx !== -1) { Object.assign(this.customers[idx], data); this.saveToLocalCache(); return { success: true }; } return { success: false }; }
   async deleteCustomer(id: string) { this.customers = this.customers.filter(c => c.id !== id); this.saveToLocalCache(); return { success: true }; }
-
   async addSupplier(data: any) { this.suppliers.push({ id: Math.random().toString(36).substring(7), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }); this.saveToLocalCache(); return { success: true }; }
   async updateSupplier(id: string, data: any) { const idx = this.suppliers.findIndex(s => s.id === id); if (idx !== -1) { Object.assign(this.suppliers[idx], data); this.saveToLocalCache(); return { success: true }; } return { success: false }; }
   async deleteSupplier(id: string) { this.suppliers = this.suppliers.filter(s => s.id !== id); this.saveToLocalCache(); return { success: true }; }
-
   async addWarehouse(name: string) { this.warehouses.push({ id: Math.random().toString(36).substring(7), name, is_default: this.warehouses.length === 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }); this.saveToLocalCache(); return { success: true }; }
   async updateWarehouse(id: string, name: string) { const idx = this.warehouses.findIndex(w => w.id === id); if (idx !== -1) { this.warehouses[idx].name = name; this.saveToLocalCache(); return { success: true }; } return { success: false }; }
-  
-  // Fix: Updated deleteWarehouse to return an object with a message, as used in Warehouses.tsx
   async deleteWarehouse(id: string): Promise<{ success: boolean; message?: string }> { 
     const warehouse = this.warehouses.find(w => w.id === id);
     if (!warehouse) return { success: false, message: 'المخزن غير موجود' };
     if (warehouse.is_default) return { success: false, message: 'لا يمكن حذف المخزن الافتراضي' };
-    
     const hasStock = this.batches.some(b => b.warehouse_id === id && b.quantity > 0);
     if (hasStock) return { success: false, message: 'لا يمكن حذف المخزن لوجود أرصدة' };
-
     this.warehouses = this.warehouses.filter(w => w.id !== id); 
-    this.saveToLocalCache(); 
-    return { success: true }; 
+    this.saveToLocalCache(); return { success: true }; 
   }
 
   async addRepresentative(data: any) { this.representatives.push({ id: Math.random().toString(36).substring(7), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }); this.saveToLocalCache(); return { success: true }; }
   async updateRepresentative(id: string, data: any) { const idx = this.representatives.findIndex(r => r.id === id); if (idx !== -1) { Object.assign(this.representatives[idx], data); this.saveToLocalCache(); return { success: true }; } return { success: false }; }
   async deleteRepresentative(id: string) { this.representatives = this.representatives.filter(r => r.id !== id); this.saveToLocalCache(); return { success: true }; }
 
-  // Fix: Updated createPurchaseInvoice to include error messages in the return object for better UI feedback
-  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean, docNo?: string, date?: string): Promise<{ success: boolean; id?: string; message?: string }> {
+  async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean, docNo?: string, date?: string): Promise<{ success: boolean; id: string; message?: string }> {
       try {
           const supplier = this.suppliers.find(s => s.id === supplierId);
-          if (!supplier && supplierId) return { success: false, message: 'المورد غير موجود' };
-
+          if (!supplier && supplierId) return { success: false, id: '', message: 'المورد غير موجود' };
           const total = items.reduce((s, it) => s + (it.quantity * it.cost_price), 0);
-          const inv: PurchaseInvoice = { 
-              id: Math.random().toString(36).substring(7), 
-              invoice_number: `PUR-${Date.now().toString().slice(-6)}`, 
-              document_number: docNo, 
-              supplier_id: supplierId, 
-              date: date || new Date().toISOString(), 
-              total_amount: total, 
-              paid_amount: cashPaid, 
-              type: isReturn ? 'RETURN' : 'PURCHASE', 
-              items, 
-              created_at: new Date().toISOString(), 
-              updated_at: new Date().toISOString(), 
-              version: 1, 
-              status: 'ACTIVE' 
-          };
+          const invId = Math.random().toString(36).substring(7);
+          const inv: PurchaseInvoice = { id: invId, invoice_number: `PUR-${Date.now().toString().slice(-6)}`, document_number: docNo, supplier_id: supplierId, date: date || new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
           this.purchaseInvoices.push(inv);
-          
-          if (supplier) {
-              if (isReturn) supplier.current_balance -= total;
-              else supplier.current_balance += total;
-              
-              if (cashPaid > 0) {
-                  await this.addCashTransaction({
-                      type: isReturn ? 'RECEIPT' : 'EXPENSE',
-                      category: 'SUPPLIER_PAYMENT',
-                      reference_id: supplier.id,
-                      related_name: supplier.name,
-                      amount: cashPaid,
-                      notes: `سداد فاتورة مشتريات #${inv.invoice_number}`,
-                      date: inv.date
-                  });
-                  supplier.current_balance -= cashPaid;
-              }
-          }
-
-          this.saveToLocalCache(); 
-          return { success: true, id: inv.id };
-      } catch (err: any) {
-          return { success: false, message: err.message };
-      }
+          if (supplier) { if (isReturn) supplier.current_balance -= total; else supplier.current_balance += total; if (cashPaid > 0) { await this.addCashTransaction({ type: isReturn ? 'RECEIPT' : 'EXPENSE', category: 'SUPPLIER_PAYMENT', reference_id: supplier.id, related_name: supplier.name, amount: cashPaid, notes: `سداد فاتورة مشتريات #${inv.invoice_number}`, date: inv.date }); supplier.current_balance -= cashPaid; } }
+          this.saveToLocalCache(); return { success: true, id: invId };
+      } catch (err: any) { return { success: false, id: '', message: err.message }; }
   }
 
-  // Fix: Adjusted deletePurchaseInvoice signature to match multiple arguments call in PurchaseList.tsx
   async deletePurchaseInvoice(id: string, updateInventory: boolean = true, updateBalance: boolean = true): Promise<{ success: boolean; message?: string }> { 
       const inv = this.purchaseInvoices.find(i => i.id === id);
       if (!inv) return { success: false, message: 'الفاتورة غير موجودة' };
-
-      if (updateBalance) {
-          const supplier = this.suppliers.find(s => s.id === inv.supplier_id);
-          if (supplier) {
-              if (inv.type === 'PURCHASE') supplier.current_balance -= inv.total_amount;
-              else supplier.current_balance += inv.total_amount;
-          }
-      }
-
+      if (updateBalance) { const supplier = this.suppliers.find(s => s.id === inv.supplier_id); if (supplier) { if (inv.type === 'PURCHASE') supplier.current_balance -= inv.total_amount; else supplier.current_balance += inv.total_amount; } }
       this.purchaseInvoices = this.purchaseInvoices.filter(i => i.id !== id); 
-      this.saveToLocalCache(); 
-      return { success: true }; 
+      this.saveToLocalCache(); return { success: true }; 
   }
 
-  async createPurchaseOrder(supplierId: string, items: any[]) {
-      const po: PurchaseOrder = { id: Math.random().toString(36).substring(7), order_number: `ORD-${Date.now().toString().slice(-6)}`, supplier_id: supplierId, date: new Date().toISOString(), order_status: 'PENDING', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
-      this.purchaseOrders.push(po); this.saveToLocalCache(); return { success: true };
-  }
-
+  async createPurchaseOrder(supplierId: string, items: any[]) { const po: PurchaseOrder = { id: Math.random().toString(36).substring(7), order_number: `ORD-${Date.now().toString().slice(-6)}`, supplier_id: supplierId, date: new Date().toISOString(), order_status: 'PENDING', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }; this.purchaseOrders.push(po); this.saveToLocalCache(); return { success: true }; }
   async updatePurchaseOrderStatus(id: string, status: any) { const idx = this.purchaseOrders.findIndex(o => o.id === id); if (idx !== -1) { this.purchaseOrders[idx].order_status = status; this.saveToLocalCache(); } }
-
   async submitStockTake(adjs: any[]) { adjs.forEach(a => this.pendingAdjustments.push({ id: Math.random().toString(36).substring(7), ...a, date: new Date().toISOString(), adj_status: 'PENDING', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' })); this.saveToLocalCache(); }
   async approveAdjustment(id: string) { const idx = this.pendingAdjustments.findIndex(a => a.id === id); if (idx !== -1) { this.pendingAdjustments[idx].adj_status = 'APPROVED'; this.saveToLocalCache(); return true; } return false; }
   async rejectAdjustment(id: string) { const idx = this.pendingAdjustments.findIndex(a => a.id === id); if (idx !== -1) { this.pendingAdjustments[idx].adj_status = 'REJECTED'; this.saveToLocalCache(); return true; } return false; }
-
   async saveDailyClosing(data: any) { this.dailyClosings.push({ id: Math.random().toString(36).substring(7), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }); this.saveToLocalCache(); return true; }
-  getDailySummary(date: string) { 
-      const sales = this.invoices.filter(i => i.date.startsWith(date) && i.type === 'SALE').reduce((s, i) => s + i.net_total, 0);
-      const exp = this.cashTransactions.filter(t => t.date.startsWith(date) && t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
-      const cash = this.getCashBalance();
-      return { cashSales: sales, expenses: exp, cashPurchases: 0, expectedCash: cash, openingCash: cash - (sales - exp), inventoryValue: 0 };
-  }
-
+  getDailySummary(date: string) { const sales = this.invoices.filter(i => i.date.startsWith(date) && i.type === 'SALE').reduce((s, i) => s + i.net_total, 0); const exp = this.cashTransactions.filter(t => t.date.startsWith(date) && t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0); const cash = this.getCashBalance(); return { cashSales: sales, expenses: exp, cashPurchases: 0, expectedCash: cash, openingCash: cash - (sales - exp), inventoryValue: 0 }; }
   async updateSettings(s: any) { this.settings = { ...this.settings, ...s }; this.saveToLocalCache(); return true; }
   async resetDatabase() { localStorage.removeItem('mizan_db'); window.location.reload(); }
   async clearAllSales() { this.invoices = []; this.saveToLocalCache(); }
@@ -376,14 +262,11 @@ class Database {
   async clearWarehouseStock(id: string) { this.batches = this.batches.filter(b => b.warehouse_id !== id); this.saveToLocalCache(); }
   async recalculateAllBalances() { console.log("Recalculating..."); }
   async syncFromCloud() { console.log("Syncing..."); }
-  
   getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
   getNextProductCode() { return `P-${Math.floor(1000 + Math.random() * 9000)}`; }
   addExpenseCategory(cat: string) { if (!this.settings.expenseCategories.includes(cat)) { this.settings.expenseCategories.push(cat); this.saveToLocalCache(); } }
-  
   getABCAnalysis() { return { classifiedProducts: [] }; }
   getInventoryValuationReport() { return []; }
-
   exportDbData() { return JSON.stringify(this); }
   importDbData(json: string) { try { const d = JSON.parse(json); Object.assign(this, d); this.saveToLocalCache(true); return true; } catch { return false; } }
 }

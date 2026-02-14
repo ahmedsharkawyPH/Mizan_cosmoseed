@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
+import { useData } from '../context/DataContext';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
 import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins } from 'lucide-react';
@@ -20,10 +21,11 @@ export default function NewInvoice() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
+  const { createInvoice, updateInvoice } = useData();
+  
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<ProductWithBatches[]>([]);
   const [warehouses] = useState(db.getWarehouses());
-  const [isDbFullyLoaded, setIsDbFullyLoaded] = useState(db.isFullyLoaded);
   
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -34,14 +36,6 @@ export default function NewInvoice() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [isReturnMode, setIsReturnMode] = useState(false);
-  const [showLastCost, setShowLastCost] = useState(false);
-  const [showPriceWarning, setShowPriceWarning] = useState(false);
-  const [confirmationInput, setConfirmationInput] = useState('');
-
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editingField, setEditingField] = useState<'qty' | 'price' | null>(null);
-  const [tempVal, setTempVal] = useState<number>(0);
-
   const [showSettings, setShowSettings] = useState(false);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceSettings>(() => {
       const saved = localStorage.getItem('invoice_settings');
@@ -67,35 +61,20 @@ export default function NewInvoice() {
   const discountRef = useRef<HTMLInputElement>(null);
   const cashRef = useRef<HTMLInputElement>(null);
 
-  const lastProcessedProdId = useRef<string>('');
   const currency = db.getSettings().currency;
 
   useEffect(() => {
-    // 1. تحميل العملاء
     setCustomers(db.getCustomers());
-    
-    // 2. معالجة وتجهيز قائمة المنتجات الكاملة (Fix: Enrichment Logic)
     const allBaseProducts = db.getAllProducts().filter(p => p.status !== 'INACTIVE');
     const productsWithStockInfo = db.getProductsWithBatches();
-    
     const completeProductsList = allBaseProducts.map(p => {
-        // ابحث عن بيانات المخزون المتاحة للصنف
         const enriched = productsWithStockInfo.find(pb => pb.id === p.id);
-        return {
-            ...p,
-            batches: enriched ? enriched.batches : [] // مصفوفة فارغة إذا لم يكن له تشغيلات
-        } as ProductWithBatches;
+        return { ...p, batches: enriched ? enriched.batches : [] } as ProductWithBatches;
     });
-
     setProducts(completeProductsList);
-
     const def = db.getWarehouses().find(w => w.is_default);
     if(def) setSelectedWarehouse(def.id);
-    
-    if (location.state && (location.state as any).prefillItems) {
-        setCart((location.state as any).prefillItems);
-    }
-
+    if (location.state && (location.state as any).prefillItems) setCart((location.state as any).prefillItems);
     if (id) {
       const inv = db.getInvoices().find(i => i.id === id);
       if (inv) {
@@ -123,13 +102,7 @@ export default function NewInvoice() {
     const subtotal = totalGross - totalItemDiscount;
     const discountFromPercent = (subtotal * additionalDiscountPercent / 100);
     const totalAddVal = discountFromPercent + additionalDiscount;
-    return { 
-      gross: totalGross, 
-      itemDiscount: totalItemDiscount, 
-      subtotal, 
-      totalAdditionalDiscount: totalAddVal,
-      net: Math.max(0, subtotal - totalAddVal) 
-    };
+    return { gross: totalGross, itemDiscount: totalItemDiscount, subtotal, totalAdditionalDiscount: totalAddVal, net: Math.max(0, subtotal - totalAddVal) };
   }, [cart, additionalDiscount, additionalDiscountPercent]);
 
   const handleCheckout = async (print: boolean = false) => {
@@ -139,23 +112,26 @@ export default function NewInvoice() {
     const user = authService.getCurrentUser();
     try {
       const result = id 
-        ? await db.updateInvoice(id, selectedCustomer, cart, cashPayment)
-        : await db.createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined, commissionValue);
+        ? await updateInvoice(id, selectedCustomer, cart, cashPayment)
+        : await createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined, commissionValue);
       
-      if (result.success) {
-          toast.success("تم الحفظ بنجاح");
-          navigate('/invoices', result.id ? { state: { autoPrintId: result.id } } : undefined);
-      } else {
-          toast.error(result.message);
+      if (!result.success) {
+          toast.error(result.message || "حدث خطأ أثناء حفظ الفاتورة");
+          setIsSubmitting(false);
+          return;
       }
+
+      // بمجرد التحقق من !result.success، يفهم TypeScript أن result.id موجود
+      toast.success("تم الحفظ بنجاح");
+      navigate('/invoices', { state: { autoPrintId: result.id } });
+      
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message || "فشل النظام في معالجة الطلب");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Helper logic for adding items
   const currentProduct = useMemo(() => products.find(p => p.id === selectedProduct), [selectedProduct, products]);
   const availableBatch = useMemo(() => {
     if (!currentProduct || !selectedWarehouse) return null;
@@ -282,6 +258,26 @@ export default function NewInvoice() {
             </div>
         </div>
       </div>
+
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+             <div className="bg-white p-8 rounded-3xl border shadow-2xl w-full max-w-sm relative">
+                <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+                <h3 className="font-black text-lg mb-6 flex items-center gap-2"><SettingsIcon className="w-5 h-5 text-blue-600" /> إعدادات الفاتورة</h3>
+                <div className="space-y-4">
+                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-blue-50 transition-colors">
+                        <input type="checkbox" className="w-5 h-5 rounded text-blue-600" checked={invoiceConfig.enableManualPrice} onChange={e => setInvoiceConfig({...invoiceConfig, enableManualPrice: e.target.checked})} />
+                        <span className="text-sm font-bold text-slate-700">تعديل الأسعار يدوياً</span>
+                    </label>
+                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer hover:bg-blue-50 transition-colors">
+                        <input type="checkbox" className="w-5 h-5 rounded text-blue-600" checked={invoiceConfig.enableDiscount} onChange={e => setInvoiceConfig({...invoiceConfig, enableDiscount: e.target.checked})} />
+                        <span className="text-sm font-bold text-slate-700">تفعيل الخصم على الصنف</span>
+                    </label>
+                </div>
+                <button onClick={() => setShowSettings(false)} className="w-full mt-8 bg-slate-900 text-white py-3 rounded-xl font-black">حفظ وإغلاق</button>
+             </div>
+        </div>
+      )}
     </div>
   );
 }
