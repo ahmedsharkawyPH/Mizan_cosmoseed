@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { db } from '../services/db';
 import { 
   CashTransaction, Customer, Supplier, ProductWithBatches, 
-  Invoice, PurchaseInvoice, Warehouse 
+  Invoice, PurchaseInvoice, Warehouse, Representative 
 } from '../types';
 
 interface DataContextType {
@@ -14,12 +14,16 @@ interface DataContextType {
   invoices: Invoice[];
   purchaseInvoices: PurchaseInvoice[];
   warehouses: Warehouse[];
+  representatives: Representative[];
   settings: any;
   isLoading: boolean;
   refreshData: () => void;
   // Actions
   addTransaction: (data: any) => Promise<any>;
   recalculateBalance: (type: 'CUSTOMER' | 'SUPPLIER', id: string) => Promise<void>;
+  addProduct: (pData: any, bData: any) => Promise<any>;
+  updateProduct: (id: string, data: any) => Promise<any>;
+  deleteProduct: (id: string) => Promise<any>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -39,6 +43,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     invoices: db.getInvoices(),
     purchaseInvoices: db.getPurchaseInvoices(),
     warehouses: db.getWarehouses(),
+    representatives: db.getRepresentatives(),
     settings: db.getSettings(),
   });
   
@@ -53,28 +58,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       invoices: [...db.getInvoices()],
       purchaseInvoices: [...db.getPurchaseInvoices()],
       warehouses: [...db.getWarehouses()],
+      representatives: [...db.getRepresentatives()],
       settings: { ...db.getSettings() },
     });
     setIsLoading(false);
   }, []);
 
-  // المراقبة التلقائية لتحديثات قاعدة البيانات (سواء يدوية أو سحابية)
   useEffect(() => {
     const interval = setInterval(() => {
-        if (db.isFullyLoaded && isLoading) {
-            refreshData();
-        }
+        if (db.isFullyLoaded && isLoading) refreshData();
     }, 500);
-
-    // الاشتراك في أحداث المزامنة إذا كانت db.ts تدعم ذلك
     const unsub = db.onSyncStateChange((isBusy) => {
         if (!isBusy) refreshData();
     });
-
-    return () => {
-        clearInterval(interval);
-        unsub();
-    };
+    return () => { clearInterval(interval); unsub(); };
   }, [refreshData, isLoading]);
 
   const addTransaction = useCallback(async (txData: any) => {
@@ -88,13 +85,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshData();
   }, [refreshData]);
 
+  const addProduct = useCallback(async (pData: any, bData: any) => {
+    const res = await db.addProduct(pData, bData);
+    if (res.success) refreshData();
+    return res;
+  }, [refreshData]);
+
+  const updateProduct = useCallback(async (id: string, pData: any) => {
+    const res = await db.updateProduct(id, pData);
+    if (res.success) refreshData();
+    return res;
+  }, [refreshData]);
+
+  const deleteProduct = useCallback(async (id: string) => {
+    const res = await db.deleteProduct(id);
+    if (res.success) refreshData();
+    return res;
+  }, [refreshData]);
+
   const value = useMemo(() => ({
     ...data,
     isLoading,
     refreshData,
     addTransaction,
-    recalculateBalance
-  }), [data, isLoading, refreshData, addTransaction, recalculateBalance]);
+    recalculateBalance,
+    addProduct,
+    updateProduct,
+    deleteProduct
+  }), [data, isLoading, refreshData, addTransaction, recalculateBalance, addProduct, updateProduct, deleteProduct]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
