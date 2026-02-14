@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useMemo, useId } from 'react';
 import { Search, ChevronDown, Check, Zap, History, X } from 'lucide-react';
-import { ArabicSmartSearch } from '../utils/search';
+import { ArabicSmartSearch, SEARCH_CONFIG } from '../utils/search';
 
 interface Option {
   value: string;
@@ -23,7 +23,7 @@ interface SearchableSelectProps {
   name?: string;
   minSearchChars?: number;
   disabled?: boolean;
-  persistSearch?: boolean; // خاصية جديدة للحفاظ على النص بعد الاختيار
+  persistSearch?: boolean; 
 }
 
 export interface SearchableSelectRef {
@@ -46,7 +46,6 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const internalId = id || `searchable-${generatedId}`;
   const internalName = name || internalId;
 
-  // تحميل سجل البحث من التخزين المحلي
   useEffect(() => {
     const savedHistory = localStorage.getItem(`search_hist_${internalId}`);
     if (savedHistory) setHistory(JSON.parse(savedHistory));
@@ -70,11 +69,11 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       code: opt.subLabel || ''
     }));
 
+    // تم تغيير هذا السطر لعرض كافة النتائج التي يسمح بها محرك البحث (50 ألف) بدلاً من 100 فقط
     const results = ArabicSmartSearch.smartSearch(searchableItems, searchTerm);
-    return results.slice(0, 100); 
+    return results; 
   }, [options, searchTerm, isOpen]);
 
-  // دالة حفظ كلمة البحث في السجل
   const addToHistory = (term: string) => {
     if (!term || term.trim().length < 2) return;
     const cleanTerm = term.trim();
@@ -154,16 +153,13 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const selectOption = (opt: Option) => {
     if (!opt || opt.disabled) return;
     
-    // حفظ كلمة البحث الحالية قبل تغييرها لاسم الصنف
     if (searchTerm && searchTerm !== opt.label) {
         addToHistory(searchTerm);
     }
 
     onChange(opt.value);
     
-    if (persistSearch) {
-        // في وضع الحفاظ على البحث، لا نغير الـ Input ونتركه للاختيار التالي
-    } else {
+    if (!persistSearch) {
         setSearchTerm(opt.label);
     }
     
@@ -217,7 +213,6 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       {isOpen && !disabled && (
         <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1">
           
-          {/* قسم سجل البحث (History) */}
           {history.length > 0 && !searchTerm && (
               <div className="bg-slate-50/50 border-b border-slate-100">
                   <div className="px-4 py-2 flex justify-between items-center">
@@ -228,6 +223,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                       {history.map((term, i) => (
                           <button 
                             key={i} 
+                            type="button"
                             onClick={() => setSearchTerm(term)}
                             className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-all"
                           >
@@ -257,7 +253,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                   onClick={() => selectOption(opt)}
                   onMouseEnter={() => setHighlightedIndex(idx)}
                 >
-                  <div className="flex-1">
+                  <div className="flex-1 text-right">
                     <div className="font-bold flex items-center gap-2">
                        {opt.label}
                        {opt._searchScore > 50 && <Zap className={`w-3 h-3 ${idx === highlightedIndex ? 'text-yellow-400' : 'text-emerald-500'}`} />}

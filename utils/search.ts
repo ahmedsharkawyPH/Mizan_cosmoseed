@@ -1,3 +1,4 @@
+
 export const SEARCH_CONFIG = {
   DEBOUNCE_TIME: 200,
   MIN_CHARS: 1,
@@ -67,10 +68,11 @@ export class ArabicSmartSearch {
 
   static smartSearch<T>(items: T[], query: string): T[] {
     if (!query || query.trim().length < 1) {
-      return items; // إرجاع كافة العناصر عند عدم وجود استعلام
+      // إرجاع كافة العناصر عند عدم وجود استعلام، بحد أقصى 50 ألف
+      return items.slice(0, SEARCH_CONFIG.MAX_RESULTS);
     }
     const tokens = this.tokenizeQuery(query);
-    if (tokens.length === 0) return items;
+    if (tokens.length === 0) return items.slice(0, SEARCH_CONFIG.MAX_RESULTS);
     
     return items
       .map(item => ({ item, score: this.calculateMatchScore(item, tokens) }))
