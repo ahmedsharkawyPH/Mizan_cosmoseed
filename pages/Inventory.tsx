@@ -3,6 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { useData } from '../context/DataContext';
 import { useInventoryFilter } from '../hooks/useInventoryFilter';
 import { useBestSuppliers } from '../hooks/useBestSuppliers';
+import { useLatestPrices } from '../hooks/useLatestPrices'; // مضاف
 import { generatePriceListPdf } from '../services/pdfGenerator';
 import { exportInventoryToExcel } from '../utils/excel';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -18,15 +19,18 @@ import ItemCardModal from './Inventory/ItemCardModal';
 export default function Inventory() {
   const { products, settings, warehouses, addProduct, updateProduct, deleteProduct } = useData();
   
-  // 1. استخراج خريطة أفضل الموردين
+  // 1. حساب أفضل الموردين
   const bestSuppliersMap = useBestSuppliers();
 
-  // 2. استخدام نظام الفلترة المحدث مع تمرير خريطة الموردين
+  // 2. حساب أحدث الأسعار بناءً على فواتير المشتريات
+  const latestPricesMap = useLatestPrices();
+
+  // 3. الفلترة والإثراء مع تمرير خرائط البيانات المساعدة
   const { 
     searchQuery, setSearchQuery, warehouseFilter, setWarehouseFilter, 
     hideZero, setHideZero, showLow, setShowLow, currentPage, setCurrentPage, 
     paginatedProducts, totalCount, totalPages, allFiltered 
-  } = useInventoryFilter(products, settings, bestSuppliersMap);
+  } = useInventoryFilter(products, settings, bestSuppliersMap, latestPricesMap);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);

@@ -21,7 +21,7 @@ const InventoryTable: React.FC<Props> = ({
                         <th className="px-6 py-4">الصنف</th>
                         <th className="px-6 py-4 text-center">كود</th>
                         <th className="px-6 py-4 text-center">أفضل مورد</th>
-                        <th className="px-6 py-4 text-center">سعر البيع</th>
+                        <th className="px-6 py-4 text-center">سعر البيع المعتمد</th>
                         <th className="px-6 py-4 text-center">الرصيد</th>
                         <th className="px-6 py-4 text-center">إجراء</th>
                     </tr>
@@ -36,7 +36,14 @@ const InventoryTable: React.FC<Props> = ({
                                     {p.best_supplier_name}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 text-center text-blue-600">{currency}{(p.selling_price || 0).toLocaleString()}</td>
+                            <td className="px-6 py-4 text-center">
+                                <div className="flex flex-col items-center">
+                                    <span className="text-blue-600 font-black">{currency}{(p.display_selling_price || 0).toLocaleString()}</span>
+                                    {p.display_selling_price !== p.selling_price && (
+                                        <span className="text-[9px] text-slate-300 line-through">قاعدة: {p.selling_price}</span>
+                                    )}
+                                </div>
+                            </td>
                             <td className="px-6 py-4 text-center">
                                 <span className={`px-3 py-1 rounded-lg text-sm font-black ${p.display_quantity <= 0 ? 'text-red-600 bg-red-50' : 'text-emerald-600 bg-emerald-50'}`}>
                                     {p.display_quantity}
