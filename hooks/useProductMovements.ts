@@ -20,6 +20,7 @@ export function useProductMovements(productId: string | null) {
       if (!productId) return [];
       const all: ProductMovement[] = [];
 
+      // 1. معالجة المبيعات ومرتجعاتها
       invoices.forEach(inv => {
           const item = inv.items.find(it => it.product.id === productId);
           if (item) {
@@ -37,6 +38,7 @@ export function useProductMovements(productId: string | null) {
           }
       });
 
+      // 2. معالجة المشتريات ومرتجعاتها
       purchaseInvoices.forEach(inv => {
           const item = inv.items.find(it => it.product_id === productId);
           if (item) {
@@ -54,7 +56,9 @@ export function useProductMovements(productId: string | null) {
           }
       });
 
+      // 3. الترتيب الزمني وحساب الرصيد التراكمي
       all.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
       let runningBalance = 0;
       return all.map(m => {
           runningBalance += (m.qtyIn - m.qtyOut);
