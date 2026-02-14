@@ -4,7 +4,7 @@ import { db } from '../services/db';
 import { useData } from '../context/DataContext';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins, TrendingDown, Layers, ShoppingBag } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins, TrendingDown, Layers, ShoppingBag } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
@@ -52,6 +52,7 @@ export default function NewInvoice() {
   const [bonus, setBonus] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
   const [manualPrice, setManualPrice] = useState<number>(0);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   const customerRef = useRef<SearchableSelectRef>(null);
   const productRef = useRef<SearchableSelectRef>(null);
@@ -105,7 +106,6 @@ export default function NewInvoice() {
     return { gross: totalGross, itemDiscount: totalItemDiscount, subtotal, totalAdditionalDiscount: totalAddVal, net: Math.max(0, subtotal - totalAddVal) };
   }, [cart, additionalDiscount, additionalDiscountPercent]);
 
-  // ذكاء المنتج: حساب أحدث سعر شراء
   const lastPurchaseCost = useMemo(() => {
     if (!selectedProduct) return null;
     const allPurchases = db.getPurchaseInvoices();
@@ -120,18 +120,16 @@ export default function NewInvoice() {
     return null;
   }, [selectedProduct]);
 
-  // تحديث سعر البيع الافتراضي عند اختيار صنف
   useEffect(() => {
-    if (selectedProduct) {
+    if (selectedProduct && editingIndex === null) {
         const p = products.find(prod => prod.id === selectedProduct);
         if (p) {
             setManualPrice(p.selling_price || 0);
             setQty(1);
-            // توجيه المستخدم للكمية فور الاختيار
             setTimeout(() => qtyRef.current?.focus(), 100);
         }
     }
-  }, [selectedProduct, products]);
+  }, [selectedProduct, products, editingIndex]);
 
   const handleCheckout = async (print: boolean = false) => {
     if (!selectedCustomer || cart.length === 0) return toast.error(t('inv.select_customer'));
@@ -176,9 +174,31 @@ export default function NewInvoice() {
       discount_percentage: invoiceConfig.enableDiscount ? Number(discount) : 0,
       unit_price: finalPrice
     };
-    setCart([...cart, newItem]);
+
+    if (editingIndex !== null) {
+        const newCart = [...cart];
+        newCart[editingIndex] = newItem;
+        setCart(newCart);
+        setEditingIndex(null);
+        toast.success("تم تحديث الصنف");
+    } else {
+        setCart([...cart, newItem]);
+    }
+
     setSelectedProduct(''); setQty(1); setBonus(0); setDiscount(0); setManualPrice(0);
     productRef.current?.focus();
+  };
+
+  const handleEditItem = (idx: number) => {
+    const item = cart[idx];
+    setEditingIndex(idx);
+    setSelectedProduct(item.product.id);
+    setManualPrice(item.unit_price || 0);
+    setQty(item.quantity);
+    setBonus(item.bonus_quantity || 0);
+    setDiscount(item.discount_percentage || 0);
+    // توجيه المستخدم للكمية فوراً
+    setTimeout(() => qtyRef.current?.focus(), 150);
   };
 
   return (
@@ -202,9 +222,12 @@ export default function NewInvoice() {
              <SearchableSelect ref={customerRef} label={t('inv.customer')} options={customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone }))} value={selectedCustomer} onChange={setSelectedCustomer} />
           </div>
 
-          <div className="bg-white p-8 rounded-3xl shadow-card border border-slate-100">
+          <div className={`bg-white p-8 rounded-3xl shadow-card border-2 transition-all duration-300 ${editingIndex !== null ? 'border-orange-400 ring-4 ring-orange-50' : 'border-slate-100'}`}>
             <div className="flex justify-between items-center mb-6">
-                 <h3 className="font-black text-slate-700 flex items-center gap-2"><Package className="w-5 h-5 text-blue-600" /> إضافة أصناف</h3>
+                 <h3 className="font-black text-slate-700 flex items-center gap-2">
+                    {editingIndex !== null ? <Edit2 className="w-5 h-5 text-orange-600" /> : <Package className="w-5 h-5 text-blue-600" />} 
+                    {editingIndex !== null ? 'تعديل الصنف الحالي' : 'إضافة أصناف جديدة'}
+                 </h3>
                  <div className="flex items-center gap-2">
                     <label className="text-[10px] font-black text-slate-400">المخزن:</label>
                     <select disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-xl p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
@@ -214,12 +237,10 @@ export default function NewInvoice() {
             </div>
             
             <div className="space-y-6">
-              {/* اختيار الصنف في سطر كامل */}
               <div className="w-full">
                 <SearchableSelect ref={productRef} placeholder="ابحث عن الصنف بالاسم أو الكود..." options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} value={selectedProduct} onChange={setSelectedProduct} disabled={!selectedCustomer} />
               </div>
 
-              {/* شريط معلومات الصنف اللحظي */}
               {selectedProduct && (
                   <div className="grid grid-cols-3 gap-4 animate-in slide-in-from-top-2 duration-300">
                       <div className="bg-orange-50 border border-orange-100 p-3 rounded-2xl flex flex-col items-center">
@@ -237,7 +258,6 @@ export default function NewInvoice() {
                   </div>
               )}
 
-              {/* سطر الإدخال الثاني */}
               <div className="grid grid-cols-12 gap-4">
                 <div className="col-span-6 md:col-span-4">
                   <label className="block text-[10px] font-black text-slate-400 mb-1">سعر البيع ({currency})</label>
@@ -247,9 +267,13 @@ export default function NewInvoice() {
                   <label className="block text-[10px] font-black text-slate-400 mb-1">الكمية</label>
                   <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center focus:border-blue-500 outline-none" value={qty} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItemToCart()} disabled={!selectedProduct} />
                 </div>
-                <div className="col-span-3 md:col-span-5 flex items-end">
-                  <button onClick={addItemToCart} disabled={!selectedProduct} className="w-full bg-blue-600 text-white h-[46px] rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2">
-                      <Plus className="w-5 h-5" /> إضافة
+                <div className="col-span-3 md:col-span-5 flex items-end gap-2">
+                  {editingIndex !== null && (
+                    <button onClick={() => {setEditingIndex(null); setSelectedProduct(''); setQty(1); setManualPrice(0);}} className="flex-1 bg-slate-100 text-slate-500 h-[46px] rounded-xl font-black hover:bg-slate-200 transition-all">إلغاء</button>
+                  )}
+                  <button onClick={addItemToCart} disabled={!selectedProduct} className={`flex-[2] text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2 ${editingIndex !== null ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                      {editingIndex !== null ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                      {editingIndex !== null ? 'تحديث السطر' : 'إضافة'}
                   </button>
                 </div>
               </div>
@@ -272,12 +296,17 @@ export default function NewInvoice() {
                   const price = item.unit_price !== undefined ? item.unit_price : (item.batch?.selling_price || 0);
                   const total = (item.quantity * price) * (1 - item.discount_percentage / 100);
                   return (
-                    <tr key={idx} className="hover:bg-slate-50/50">
+                    <tr key={idx} className={`group transition-colors ${editingIndex === idx ? 'bg-orange-50/50' : 'hover:bg-slate-50/50'}`}>
                       <td className="px-6 py-4 text-slate-800">{item.product.name}</td>
                       <td className="px-6 py-4 text-center">{item.quantity}</td>
                       <td className="px-6 py-4 text-center text-blue-600">{currency}{price.toLocaleString()}</td>
                       <td className="px-6 py-4 text-left font-black">{currency}{total.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-center"><button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button></td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex justify-center gap-2">
+                           <button onClick={() => handleEditItem(idx)} className="text-blue-400 hover:text-blue-600 p-1.5 hover:bg-white rounded-lg transition-all shadow-sm" title="تعديل السطر"><Edit2 className="w-4 h-4" /></button>
+                           <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1.5 hover:bg-white rounded-lg transition-all shadow-sm" title="حذف السطر"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
