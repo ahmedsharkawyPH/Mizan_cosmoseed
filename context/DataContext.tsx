@@ -26,7 +26,7 @@ interface DataContextType {
   updateCustomer: (id: string, data: any) => Promise<any>;
   deleteCustomer: (id: string) => Promise<any>;
   addTransaction: (data: any) => Promise<any>;
-  createInvoice: (cId: string, items: any[], cash: number, isRet: boolean, disc: number, user?: any) => Promise<{ success: boolean; id: string; message?: string }>;
+  createInvoice: (cId: string, items: any[], cash: number, isRet: boolean, disc: number, user?: any, commission?: number) => Promise<{ success: boolean; id: string; message?: string }>;
   updateInvoice: (id: string, cId: string, items: any[], cash: number) => Promise<{ success: boolean; id: string; message?: string }>;
 }
 
@@ -78,7 +78,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateCustomer: async (id: string, d: any) => { const r = await db.updateCustomer(id, d); refreshData(); return r; },
       deleteCustomer: async (id: string) => { const r = await db.deleteCustomer(id); refreshData(); return r; },
       addTransaction: async (d: any) => { const r = await db.addCashTransaction(d); refreshData(); return r; },
-      createInvoice: async (cId: string, i: any[], c: number, r: boolean, d: number, u?: any) => { const res = await db.createInvoice(cId, i, c, r, d, u); refreshData(); return res; },
+      createInvoice: async (cId: string, i: any[], c: number, r: boolean, d: number, u?: any, comm?: number) => { 
+          const res = await db.createInvoice(cId, i, c, r, d, u, comm); 
+          refreshData(); 
+          return res; 
+      },
       updateInvoice: async (id: string, cId: string, i: any[], c: number) => { const res = await db.updateInvoice(id, cId, i, c); refreshData(); return res; }
   };
 
