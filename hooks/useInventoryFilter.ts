@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { ArabicSmartSearch } from '../utils/search';
 import { ProductWithBatches } from '../types';
 
-export function useInventoryFilter(products: ProductWithBatches[], settings: any) {
+export function useInventoryFilter(products: ProductWithBatches[], settings: any, bestSuppliersMap: Record<string, string>) {
   const [searchQuery, setSearchQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('ALL');
   const [hideZero, setHideZero] = useState(false);
@@ -12,22 +12,14 @@ export function useInventoryFilter(products: ProductWithBatches[], settings: any
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 50;
 
-  const filtered = useMemo(() => {
+  const enrichedAndFiltered = useMemo(() => {
     let results = [...products];
     
+    // 1. الفلترة الأساسية (المخزن، البحث، النواقص)
     if (warehouseFilter !== 'ALL') {
         results = results.filter(p => p.batches?.some(b => b.warehouse_id === warehouseFilter));
     }
     
-    if (hideZero) {
-        results = results.filter(p => {
-            const qty = warehouseFilter === 'ALL' 
-                ? (p.batches?.reduce((s, b) => s + b.quantity, 0) || 0)
-                : (p.batches?.find(b => b.warehouse_id === warehouseFilter)?.quantity || 0);
-            return qty > 0;
-        });
-    }
-
     if (searchQuery.trim()) {
         results = ArabicSmartSearch.smartSearch(results, searchQuery);
     }
@@ -44,13 +36,25 @@ export function useInventoryFilter(products: ProductWithBatches[], settings: any
         results = results.filter(p => (p.batches?.reduce((sum, b) => sum + b.quantity, 0) || 0) === 0);
     }
 
-    return results;
-  }, [products, searchQuery, warehouseFilter, hideZero, showLow, showOut, settings.lowStockThreshold]);
+    // 2. الإثراء والفلترة النهائية (تجهيز الحقول المباشرة للعرض)
+    return results.map(p => {
+        const display_quantity = warehouseFilter === 'ALL' 
+            ? (p.batches?.reduce((s, b) => s + b.quantity, 0) || 0)
+            : (p.batches?.find(b => b.warehouse_id === warehouseFilter)?.quantity || 0);
+            
+        return {
+            ...p,
+            display_quantity,
+            best_supplier_name: bestSuppliersMap[p.id] || '---',
+        };
+    }).filter(p => !hideZero || p.display_quantity > 0);
+
+  }, [products, searchQuery, warehouseFilter, hideZero, showLow, showOut, settings.lowStockThreshold, bestSuppliersMap]);
 
   const paginated = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filtered.slice(start, start + ITEMS_PER_PAGE);
-  }, [filtered, currentPage]);
+    return enrichedAndFiltered.slice(start, start + ITEMS_PER_PAGE);
+  }, [enrichedAndFiltered, currentPage]);
 
   useEffect(() => setCurrentPage(1), [searchQuery, warehouseFilter, hideZero, showLow, showOut]);
 
@@ -62,8 +66,8 @@ export function useInventoryFilter(products: ProductWithBatches[], settings: any
     showOut, setShowOut,
     currentPage, setCurrentPage,
     paginatedProducts: paginated,
-    totalCount: filtered.length,
-    totalPages: Math.ceil(filtered.length / ITEMS_PER_PAGE),
-    allFiltered: filtered
+    totalCount: enrichedAndFiltered.length,
+    totalPages: Math.ceil(enrichedAndFiltered.length / ITEMS_PER_PAGE),
+    allFiltered: enrichedAndFiltered
   };
 }
