@@ -4,7 +4,7 @@ import { db } from '../services/db';
 import { useData } from '../context/DataContext';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
-import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins } from 'lucide-react';
+import { Plus, Trash2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins, TrendingDown, Layers, ShoppingBag } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
@@ -105,6 +105,34 @@ export default function NewInvoice() {
     return { gross: totalGross, itemDiscount: totalItemDiscount, subtotal, totalAdditionalDiscount: totalAddVal, net: Math.max(0, subtotal - totalAddVal) };
   }, [cart, additionalDiscount, additionalDiscountPercent]);
 
+  // ذكاء المنتج: حساب أحدث سعر شراء
+  const lastPurchaseCost = useMemo(() => {
+    if (!selectedProduct) return null;
+    const allPurchases = db.getPurchaseInvoices();
+    const productHistory = allPurchases
+        .filter(inv => inv.type === 'PURCHASE')
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    for (const inv of productHistory) {
+        const item = inv.items.find(i => i.product_id === selectedProduct);
+        if (item) return item.cost_price;
+    }
+    return null;
+  }, [selectedProduct]);
+
+  // تحديث سعر البيع الافتراضي عند اختيار صنف
+  useEffect(() => {
+    if (selectedProduct) {
+        const p = products.find(prod => prod.id === selectedProduct);
+        if (p) {
+            setManualPrice(p.selling_price || 0);
+            setQty(1);
+            // توجيه المستخدم للكمية فور الاختيار
+            setTimeout(() => qtyRef.current?.focus(), 100);
+        }
+    }
+  }, [selectedProduct, products]);
+
   const handleCheckout = async (print: boolean = false) => {
     if (!selectedCustomer || cart.length === 0) return toast.error(t('inv.select_customer'));
     
@@ -121,7 +149,6 @@ export default function NewInvoice() {
           return;
       }
 
-      // بمجرد التحقق من !result.success، يفهم TypeScript أن result.id موجود
       toast.success("تم الحفظ بنجاح");
       navigate('/invoices', { state: { autoPrintId: result.id } });
       
@@ -178,25 +205,53 @@ export default function NewInvoice() {
           <div className="bg-white p-8 rounded-3xl shadow-card border border-slate-100">
             <div className="flex justify-between items-center mb-6">
                  <h3 className="font-black text-slate-700 flex items-center gap-2"><Package className="w-5 h-5 text-blue-600" /> إضافة أصناف</h3>
-                 <select disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-xl p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
-                    {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                 </select>
+                 <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-black text-slate-400">المخزن:</label>
+                    <select disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-xl p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                    </select>
+                 </div>
             </div>
             
-            <div className="grid grid-cols-12 gap-4">
-              <div className="col-span-12 md:col-span-6">
-                <SearchableSelect ref={productRef} placeholder="ابحث عن الصنف..." options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} value={selectedProduct} onChange={setSelectedProduct} disabled={!selectedCustomer} />
+            <div className="space-y-6">
+              {/* اختيار الصنف في سطر كامل */}
+              <div className="w-full">
+                <SearchableSelect ref={productRef} placeholder="ابحث عن الصنف بالاسم أو الكود..." options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} value={selectedProduct} onChange={setSelectedProduct} disabled={!selectedCustomer} />
               </div>
-              <div className="col-span-4 md:col-span-2">
-                <label className="block text-[10px] font-black text-slate-400 mb-1">السعر</label>
-                <input ref={priceRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold" value={manualPrice} onChange={e => setManualPrice(Number(e.target.value))} />
-              </div>
-              <div className="col-span-4 md:col-span-2">
-                <label className="block text-[10px] font-black text-slate-400 mb-1">الكمية</label>
-                <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold text-center" value={qty} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItemToCart()} />
-              </div>
-              <div className="col-span-4 md:col-span-2 flex items-end">
-                <button onClick={addItemToCart} disabled={!selectedProduct} className="w-full bg-blue-600 text-white h-[46px] rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 disabled:opacity-30">إضافة</button>
+
+              {/* شريط معلومات الصنف اللحظي */}
+              {selectedProduct && (
+                  <div className="grid grid-cols-3 gap-4 animate-in slide-in-from-top-2 duration-300">
+                      <div className="bg-orange-50 border border-orange-100 p-3 rounded-2xl flex flex-col items-center">
+                          <span className="text-[9px] font-black text-orange-400 uppercase tracking-tighter">آخر تكلفة شراء</span>
+                          <span className="text-sm font-black text-orange-700">{lastPurchaseCost !== null ? `${currency}${lastPurchaseCost.toLocaleString()}` : 'لا يوجد'}</span>
+                      </div>
+                      <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-2xl flex flex-col items-center">
+                          <span className="text-[9px] font-black text-emerald-400 uppercase tracking-tighter">الرصيد المتاح</span>
+                          <span className="text-sm font-black text-emerald-700">{availableBatch?.quantity || 0} قطعة</span>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex flex-col items-center">
+                          <span className="text-[9px] font-black text-blue-400 uppercase tracking-tighter">سعر البيع المسجل</span>
+                          <span className="text-sm font-black text-blue-700">{currency}{currentProduct?.selling_price?.toLocaleString()}</span>
+                      </div>
+                  </div>
+              )}
+
+              {/* سطر الإدخال الثاني */}
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-6 md:col-span-4">
+                  <label className="block text-[10px] font-black text-slate-400 mb-1">سعر البيع ({currency})</label>
+                  <input ref={priceRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-blue-600 focus:border-blue-500 outline-none" value={manualPrice} onChange={e => setManualPrice(Number(e.target.value))} disabled={!selectedProduct} />
+                </div>
+                <div className="col-span-3 md:col-span-3">
+                  <label className="block text-[10px] font-black text-slate-400 mb-1">الكمية</label>
+                  <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center focus:border-blue-500 outline-none" value={qty} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItemToCart()} disabled={!selectedProduct} />
+                </div>
+                <div className="col-span-3 md:col-span-5 flex items-end">
+                  <button onClick={addItemToCart} disabled={!selectedProduct} className="w-full bg-blue-600 text-white h-[46px] rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2">
+                      <Plus className="w-5 h-5" /> إضافة
+                  </button>
+                </div>
               </div>
             </div>
           </div>
