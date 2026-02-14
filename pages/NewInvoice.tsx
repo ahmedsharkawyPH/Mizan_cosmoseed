@@ -71,8 +71,24 @@ export default function NewInvoice() {
   const currency = db.getSettings().currency;
 
   useEffect(() => {
+    // 1. تحميل العملاء
     setCustomers(db.getCustomers());
-    setProducts(db.getProductsWithBatches());
+    
+    // 2. معالجة وتجهيز قائمة المنتجات الكاملة (Fix: Enrichment Logic)
+    const allBaseProducts = db.getAllProducts().filter(p => p.status !== 'INACTIVE');
+    const productsWithStockInfo = db.getProductsWithBatches();
+    
+    const completeProductsList = allBaseProducts.map(p => {
+        // ابحث عن بيانات المخزون المتاحة للصنف
+        const enriched = productsWithStockInfo.find(pb => pb.id === p.id);
+        return {
+            ...p,
+            batches: enriched ? enriched.batches : [] // مصفوفة فارغة إذا لم يكن له تشغيلات
+        } as ProductWithBatches;
+    });
+
+    setProducts(completeProductsList);
+
     const def = db.getWarehouses().find(w => w.is_default);
     if(def) setSelectedWarehouse(def.id);
     
