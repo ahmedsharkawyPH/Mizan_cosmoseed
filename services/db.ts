@@ -1,4 +1,3 @@
-
 import { supabase, isSupabaseConfigured } from './supabase';
 import { 
   Warehouse, Product, Batch, Representative, Customer, Supplier, 
@@ -79,13 +78,33 @@ class Database {
 
   // --- إدارة الكاش المحلي ---
   loadFromLocalCache() {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      console.log('📱 Mobile DB Check: Current Engine Version', DB_VERSION);
+    }
+
     const raw = localStorage.getItem('mizan_db');
     if (raw) {
       try {
         const data = JSON.parse(raw);
+        
+        if (isMobile) {
+          console.log('📱 Cache Info: Version', data.dbVersion, '| Items:', data.products?.length);
+        }
+
+        // إذا كانت نسخة الداتابيز قديمة جداً على الموبايل، امسحها لفرض التحميل من السحابة
+        if (isMobile && (!data.dbVersion || data.dbVersion < 4.0)) {
+          console.warn('⚠️ Critical: Old cache schema on mobile. Purging...');
+          localStorage.removeItem('mizan_db');
+          return;
+        }
+
         Object.assign(this, data);
         this.settings = { ...this.settings, ...(data.settings || {}) };
-      } catch (e) {}
+      } catch (e) {
+        if (isMobile) console.error('📱 Cache Error:', e);
+      }
     }
   }
 

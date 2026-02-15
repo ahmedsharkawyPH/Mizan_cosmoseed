@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { authService, PERMISSIONS } from '../services/auth';
@@ -181,6 +180,27 @@ export default function Settings() {
       }
   };
 
+  const handleForceRefresh = () => {
+    if (confirm('سيتم مسح جميع البيانات المخزنة مؤقتاً وإعادة تحميل التطبيق بالكامل لحل مشكلة عدم ظهور الأصناف. هل أنت متأكد؟')) {
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        if ('indexedDB' in window) {
+            indexedDB.databases().then(dbs => {
+                dbs.forEach(db => { if (db.name) indexedDB.deleteDatabase(db.name); });
+            });
+        }
+        
+        if ('caches' in window) {
+            caches.keys().then(names => {
+                names.forEach(name => { caches.delete(name); });
+            });
+        }
+        
+        window.location.reload();
+    }
+  };
+
   const handleClearSales = async () => {
       if (confirm("تحذير نهائي: هل أنت متأكد من مسح كافة حركات وفواتير المبيعات؟ هذا الإجراء لا يمكن التراجع عنه وسيؤثر على أرصدة العملاء.")) {
           await db.clearAllSales();
@@ -283,6 +303,27 @@ export default function Settings() {
       <div className="bg-white p-8 rounded-3xl shadow-card border border-slate-100 min-h-[450px]">
         {activeTab === 'general' && (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2">
+                
+                {/* قسم الموبايل وتحديث التطبيق */}
+                <div className="bg-red-50 border border-red-200 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shadow-inner">
+                            <RefreshCcw className="w-6 h-6 animate-spin-slow" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-black text-red-900">مشاكل في تحميل الأصناف على الموبايل؟</h3>
+                            <p className="text-xs text-red-700 font-bold">إذا كنت تلاحظ ظهور عدد قليل من الأصناف، اضغط على زر التحديث لمسح الكاش نهائياً.</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={handleForceRefresh}
+                        className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-red-200 active:scale-95 flex items-center gap-2"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        تحديث التطبيق (مسح شامل للكاش)
+                    </button>
+                </div>
+
                 <div className="flex items-center gap-3 border-b pb-4 border-slate-50">
                     <Building2 className="w-6 h-6 text-blue-600" />
                     <h3 className="text-xl font-black text-slate-800">{t('set.company_info')}</h3>
@@ -527,6 +568,7 @@ export default function Settings() {
                                         <div className="flex justify-center gap-3">
                                             <button onClick={() => handleOpenUserModal(u)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 className="w-4 h-4" /></button>
                                             {u.username !== 'admin' && (
+                                                /* Fix: Use 'u.id' instead of undefined 'id' */
                                                 <button onClick={() => handleDeleteUser(u.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
                                             )}
                                         </div>
