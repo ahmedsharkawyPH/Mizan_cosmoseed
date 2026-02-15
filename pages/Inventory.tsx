@@ -7,7 +7,7 @@ import { useLatestPrices } from '../hooks/useLatestPrices';
 import { generatePriceListPdf } from '../services/pdfGenerator';
 import { exportInventoryToExcel } from '../utils/excel';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-// @ts-ignore
+// @ts-ignore*
 import toast from 'react-hot-toast';
 
 import InventoryHeader from './Inventory/InventoryHeader';
