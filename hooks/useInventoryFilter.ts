@@ -7,7 +7,7 @@ export function useInventoryFilter(
   products: ProductWithBatches[], 
   settings: any, 
   bestSuppliersMap: Record<string, string>,
-  latestPricesMap: Record<string, number> // مضاف لاستقبال خريطة الأسعار
+  latestPricesMap: Record<string, number>
 ) {
   const [searchQuery, setSearchQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('ALL');
@@ -17,18 +17,24 @@ export function useInventoryFilter(
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 50;
 
-  const enrichedAndFiltered = useMemo(() => {
-    let results = [...products];
+  // 1. ضمان وجود مصفوفة حتى لو كانت البيانات لم تحمل بعد
+  const allProductsBase = useMemo(() => products || [], [products]);
+
+  // 2. تطبيق كافة عمليات التصفية على المصفوفة الكاملة أولاً
+  const allFiltered = useMemo(() => {
+    let results = [...allProductsBase];
     
-    // 1. الفلترة الأساسية
+    // فلترة المستودع
     if (warehouseFilter !== 'ALL') {
         results = results.filter(p => p.batches?.some(b => b.warehouse_id === warehouseFilter));
     }
     
+    // فلترة البحث الذكي (يدعم حتى 50 ألف سجل)
     if (searchQuery.trim()) {
         results = ArabicSmartSearch.smartSearch(results, searchQuery);
     }
 
+    // فلترة النواقص بناءً على الحد المذكور في الإعدادات
     if (showLow) {
         const threshold = settings.lowStockThreshold || 10;
         results = results.filter(p => {
@@ -37,35 +43,42 @@ export function useInventoryFilter(
         });
     }
 
+    // فلترة الأصناف المنتهية تماماً
     if (showOut) {
         results = results.filter(p => (p.batches?.reduce((sum, b) => sum + b.quantity, 0) || 0) === 0);
     }
 
-    // 2. الإثراء مع التسعير الديناميكي
-    return results.map(p => {
+    // إثراء النتائج بالبيانات المحسوبة (الكمية الحالية وسعر البيع المعتمد)
+    const enriched = results.map(p => {
         const display_quantity = warehouseFilter === 'ALL' 
             ? (p.batches?.reduce((s, b) => s + b.quantity, 0) || 0)
             : (p.batches?.find(b => b.warehouse_id === warehouseFilter)?.quantity || 0);
             
-        // تحديد السعر المعتمد: أحدث سعر من فاتورة مشتريات أو سعر الصنف الافتراضي
         const display_selling_price = latestPricesMap[p.id] ?? p.selling_price ?? 0;
 
         return {
             ...p,
             display_quantity,
             best_supplier_name: bestSuppliersMap[p.id] || '---',
-            display_selling_price, // الحقل الجديد المعتمد للعرض
+            display_selling_price,
         };
-    }).filter(p => !hideZero || p.display_quantity > 0);
+    });
 
-  }, [products, searchQuery, warehouseFilter, hideZero, showLow, showOut, settings.lowStockThreshold, bestSuppliersMap, latestPricesMap]);
+    // إخفاء الأرصدة الصفرية إذا تم تفعيل الخيار
+    return hideZero ? enriched.filter(p => p.display_quantity > 0) : enriched;
 
-  const paginated = useMemo(() => {
+  }, [allProductsBase, searchQuery, warehouseFilter, hideZero, showLow, showOut, settings.lowStockThreshold, bestSuppliersMap, latestPricesMap]);
+
+  // 3. تطبيق التقسيم إلى صفحات (Pagination) على النتائج المصفاة فقط
+  const paginatedProducts = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return enrichedAndFiltered.slice(start, start + ITEMS_PER_PAGE);
-  }, [enrichedAndFiltered, currentPage]);
+    return allFiltered.slice(start, start + ITEMS_PER_PAGE);
+  }, [allFiltered, currentPage]);
 
-  useEffect(() => setCurrentPage(1), [searchQuery, warehouseFilter, hideZero, showLow, showOut]);
+  // 4. إعادة تعيين الصفحة إلى 1 فور تغيير أي معيار بحث أو تصفية
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, warehouseFilter, hideZero, showLow, showOut]);
 
   return {
     searchQuery, setSearchQuery,
@@ -74,9 +87,9 @@ export function useInventoryFilter(
     showLow, setShowLow,
     showOut, setShowOut,
     currentPage, setCurrentPage,
-    paginatedProducts: paginated,
-    totalCount: enrichedAndFiltered.length,
-    totalPages: Math.ceil(enrichedAndFiltered.length / ITEMS_PER_PAGE),
-    allFiltered: enrichedAndFiltered
+    paginatedProducts,
+    totalCount: allFiltered.length,
+    totalPages: Math.ceil(allFiltered.length / ITEMS_PER_PAGE),
+    allFiltered // تصدير كافة النتائج المصفاة لاستخدامها في التقارير والإكسيل
   };
 }
