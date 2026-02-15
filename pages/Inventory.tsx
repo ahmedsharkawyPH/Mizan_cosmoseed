@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { useData } from '../context/DataContext';
 import { useInventoryFilter } from '../hooks/useInventoryFilter';
@@ -61,7 +60,18 @@ export default function Inventory() {
       <div className="max-w-7xl mx-auto space-y-6">
         <InventoryHeader onAddNew={handleOpenAdd} onExportPdf={() => generatePriceListPdf(allFiltered, settings)} onExportExcel={() => exportInventoryToExcel(allFiltered)} />
         <InventoryControls searchQuery={searchQuery} setSearchQuery={setSearchQuery} warehouseFilter={warehouseFilter} setWarehouseFilter={setWarehouseFilter} hideZero={hideZero} setHideZero={setHideZero} showLow={showLow} setShowLow={setShowLow} warehouses={warehouses} totalCount={totalCount} />
-        <InventoryTable products={paginatedProducts} currency={settings.currency} onViewCard={setViewingProduct} onEdit={handleEdit} onDelete={handleDelete} />
+        
+        {/* تم تمرير فلتر المخزن وقائمة المخازن هنا */}
+        <InventoryTable 
+            products={paginatedProducts} 
+            currency={settings.currency} 
+            onViewCard={setViewingProduct} 
+            onEdit={handleEdit} 
+            onDelete={handleDelete}
+            warehouseFilter={warehouseFilter}
+            warehouses={warehouses}
+        />
+        
         {totalPages > 1 && (
             <div className="p-6 bg-white rounded-2xl shadow-sm border border-slate-100 flex items-center justify-center gap-4">
                <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="p-2 rounded-xl bg-white border border-slate-200 hover:text-blue-600 disabled:opacity-30 transition-all shadow-sm"><ChevronRight className="w-5 h-5" /></button>
