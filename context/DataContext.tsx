@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '../services/db';
 import { 
@@ -40,14 +39,15 @@ export const useData = () => {
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState("جاري الاتصال...");
+  const [loadingMessage, setLoadingMessage] = useState("جاري الاتصال بالمحرك...");
   const [dataVersion, setDataVersion] = useState(0);
 
   const refreshData = useCallback(() => {
     setDataVersion(v => v + 1);
   }, []);
 
-  const data = useMemo(() => ({
+  // دالة لجلب البيانات الطازجة من الذاكرة الحية للداتابيز
+  const getLiveStats = useCallback(() => ({
       txs: db.getCashTransactions(),
       customers: db.getCustomers(),
       suppliers: db.getSuppliers(),
@@ -56,17 +56,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       purchaseInvoices: db.getPurchaseInvoices(),
       warehouses: db.getWarehouses(),
       settings: db.getSettings()
-  }), [dataVersion]);
+  }), []);
+
+  const currentData = useMemo(() => getLiveStats(), [dataVersion]);
 
   useEffect(() => {
-    const init = async () => {
+    const startApp = async () => {
       setIsLoading(true);
-      setLoadingMessage("جاري جلب البيانات...");
+      setLoadingMessage("جاري مزامنة قواعد البيانات...");
+      
+      // تنفيذ عملية التهيئة (التي قد تتضمن مزامنة سحابية كاملة للموبايل)
       await db.init();
-      setIsLoading(false);
+      
+      // تحديث الحالة فوراً بالبيانات التي تم جلبها من السحابة
       refreshData();
+      setIsLoading(false);
     };
-    init();
+    
+    startApp();
   }, [refreshData]);
 
   // Wrapped Actions
@@ -87,12 +94,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const value = useMemo(() => ({
-    ...data,
+    ...currentData,
     ...actions,
     isLoading,
     loadingMessage,
     refreshData
-  }), [data, isLoading, loadingMessage, refreshData, actions]);
+  }), [currentData, isLoading, loadingMessage, refreshData, actions]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };

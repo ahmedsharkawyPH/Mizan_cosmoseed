@@ -42,11 +42,14 @@ class Database {
   }
 
   async init() {
-    // إذا كانت البيانات فارغة (مثل أول مرة على الموبايل)، قم بجلبها من السحابة
-    if (this.products.length === 0 && isSupabaseConfigured) {
-      console.log('📱 Initializing empty mobile database. Fetching from cloud...');
+    // فحص شامل: إذا كان أي جدول أساسي فارغاً، ابدأ مزامنة سحابية كاملة فوراً (حل مشكلة الموبايل)
+    const isActuallyEmpty = this.products.length === 0 || this.customers.length === 0 || this.warehouses.length === 0;
+    
+    if (isActuallyEmpty && isSupabaseConfigured) {
+      console.log('📱 Mobile Database missing core entities. Triggering Full Cloud Recovery...');
       await this.syncFromCloud();
     }
+    
     this.isFullyLoaded = true;
   }
 
@@ -86,29 +89,17 @@ class Database {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     
     if (isMobile) {
-      console.log('📱 Mobile DB Check: Current Engine Version', DB_VERSION);
+      console.log('📱 Mobile Engine Check: Version', DB_VERSION);
     }
 
     const raw = localStorage.getItem('mizan_db');
     if (raw) {
       try {
         const data = JSON.parse(raw);
-        
-        if (isMobile) {
-          console.log('📱 Cache Info: Version', data.dbVersion, '| Items:', data.products?.length);
-        }
-
-        // إذا كانت نسخة الداتابيز قديمة جداً على الموبايل، امسحها لفرض التحميل من السحابة
-        if (isMobile && (!data.dbVersion || data.dbVersion < 4.0)) {
-          console.warn('⚠️ Critical: Old cache schema on mobile. Purging...');
-          localStorage.removeItem('mizan_db');
-          return;
-        }
-
         Object.assign(this, data);
         this.settings = { ...this.settings, ...(data.settings || {}) };
       } catch (e) {
-        if (isMobile) console.error('📱 Cache Error:', e);
+        if (isMobile) console.error('📱 Cache parsing error on mobile.');
       }
     }
   }
@@ -291,7 +282,7 @@ class Database {
     this.activeOperations++;
     this.notifySyncState();
     try {
-        console.log('🔄 Citadel Engine: Starting Full Cloud Sync...');
+        console.log('🔄 Mizan Sync: Starting Deep Fetch...');
         const [p, b, c, s, i, pi, t, w, r, dc, pa, po] = await Promise.all([
             this.fetchAllFromTable('products'),
             this.fetchAllFromTable('batches'),
@@ -320,7 +311,7 @@ class Database {
         this.pendingAdjustments = pa;
         this.purchaseOrders = po;
         
-        console.log('✅ Sync Completed:', p.length, 'Products loaded.');
+        console.log('✅ Deep Fetch Complete. Live Memory Updated.');
         this.saveToLocalCache(true);
     } catch (err) {
         console.error('❌ Sync Failed:', err);
