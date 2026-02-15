@@ -42,6 +42,11 @@ class Database {
   }
 
   async init() {
+    // إذا كانت البيانات فارغة (مثل أول مرة على الموبايل)، قم بجلبها من السحابة
+    if (this.products.length === 0 && isSupabaseConfigured) {
+      console.log('📱 Initializing empty mobile database. Fetching from cloud...');
+      await this.syncFromCloud();
+    }
     this.isFullyLoaded = true;
   }
 
@@ -280,7 +285,51 @@ class Database {
   async resetCashRegister() { this.cashTransactions = []; this.saveToLocalCache(); }
   async clearWarehouseStock(id: string) { this.batches = this.batches.filter(b => b.warehouse_id !== id); this.saveToLocalCache(); }
   async recalculateAllBalances() { console.log("Recalculating..."); }
-  async syncFromCloud() { console.log("Syncing..."); }
+
+  async syncFromCloud() {
+    if (!isSupabaseConfigured) return;
+    this.activeOperations++;
+    this.notifySyncState();
+    try {
+        console.log('🔄 Citadel Engine: Starting Full Cloud Sync...');
+        const [p, b, c, s, i, pi, t, w, r, dc, pa, po] = await Promise.all([
+            this.fetchAllFromTable('products'),
+            this.fetchAllFromTable('batches'),
+            this.fetchAllFromTable('customers'),
+            this.fetchAllFromTable('suppliers'),
+            this.fetchAllFromTable('invoices'),
+            this.fetchAllFromTable('purchase_invoices'),
+            this.fetchAllFromTable('cash_transactions'),
+            this.fetchAllFromTable('warehouses'),
+            this.fetchAllFromTable('representatives'),
+            this.fetchAllFromTable('daily_closings'),
+            this.fetchAllFromTable('pending_adjustments'),
+            this.fetchAllFromTable('purchase_orders')
+        ]);
+        
+        this.products = p;
+        this.batches = b;
+        this.customers = c;
+        this.suppliers = s;
+        this.invoices = i;
+        this.purchaseInvoices = pi;
+        this.cashTransactions = t;
+        this.warehouses = w;
+        this.representatives = r;
+        this.dailyClosings = dc;
+        this.pendingAdjustments = pa;
+        this.purchaseOrders = po;
+        
+        console.log('✅ Sync Completed:', p.length, 'Products loaded.');
+        this.saveToLocalCache(true);
+    } catch (err) {
+        console.error('❌ Sync Failed:', err);
+    } finally {
+        this.activeOperations--;
+        this.notifySyncState();
+    }
+  }
+
   getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
   getNextProductCode() { return `P-${Math.floor(1000 + Math.random() * 9000)}`; }
   addExpenseCategory(cat: string) { if (!this.settings.expenseCategories.includes(cat)) { this.settings.expenseCategories.push(cat); this.saveToLocalCache(); } }

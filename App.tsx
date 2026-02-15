@@ -43,33 +43,29 @@ const AppContent = () => {
     
     if (isMobile && !isLoading) {
       const count = products.length;
-      console.log(`📱 Mobile Audit: Found ${count} products in local state.`);
+      console.log(`📱 Mobile Audit: Found ${count} products in state.`);
 
-      if (count > 0 && count < 1000) {
-        // تأخير بسيط للتأكد من اكتمال المزامنة
-        setTimeout(() => {
-          if (db.getAllProducts().length < 1000) {
-            toast.error(
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 font-black">
-                  <AlertTriangle className="w-5 h-5 text-red-500" />
-                  <span>تنبيه: تم تحميل {db.getAllProducts().length} صنف فقط</span>
-                </div>
-                <p className="text-xs">يوجد تحديث للنظام لم يتم تحميله بشكل كامل على هاتفك.</p>
-                <button 
-                  onClick={() => {
-                    localStorage.clear();
-                    window.location.reload();
-                  }}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-lg active:scale-95"
-                >
-                  تحديث وتحميل كافة الأصناف الآن
-                </button>
-              </div>,
-              { duration: 15000, position: 'bottom-center' }
-            );
-          }
-        }, 5000);
+      if (count === 0) {
+        // إذا لم توجد أصناف نهائياً، فهذا يعني أن المزامنة الأولى فشلت أو أن القاعدة فارغة
+        toast.error(
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 font-black">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              <span>تنبيه: لم يتم تحميل أي أصناف!</span>
+            </div>
+            <p className="text-xs">قد تكون هناك مشكلة في اتصال الإنترنت أو الكاش.</p>
+            <button 
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-lg active:scale-95"
+            >
+              إعادة تحميل قسرية
+            </button>
+          </div>,
+          { duration: 15000, position: 'bottom-center' }
+        );
       }
     }
   }, [isLoading, products.length]);
