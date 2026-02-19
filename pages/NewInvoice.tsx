@@ -89,10 +89,17 @@ export default function NewInvoice() {
     setCustomers(db.getCustomers());
     const allBaseProducts = db.getAllProducts().filter(p => p.status !== 'INACTIVE');
     const productsWithStockInfo = db.getProductsWithBatches();
-    const completeProductsList = allBaseProducts.map(p => {
-        const enriched = productsWithStockInfo.find(pb => pb.id === p.id);
-        return { ...p, batches: enriched ? enriched.batches : [] } as ProductWithBatches;
-    });
+    
+    // Build a Map from id → batches once for O(N) lookup
+    const stockMap = new Map(
+      productsWithStockInfo.map(pb => [pb.id, pb.batches] as const)
+    );
+
+    const completeProductsList = allBaseProducts.map(p => ({
+      ...p,
+      batches: stockMap.get(p.id) || []
+    }) as ProductWithBatches);
+
     setProducts(completeProductsList);
     const def = db.getWarehouses().find(w => w.is_default);
     if(def) setSelectedWarehouse(def.id);

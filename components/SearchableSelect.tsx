@@ -35,8 +35,8 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   options, value, onChange, placeholder, label, className, autoFocus, onComplete, id, name, minSearchChars = 0, disabled = false, persistSearch = false
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,11 +49,11 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, SEARCH_CONFIG.DEBOUNCE_TIME || 300);
+      setDebouncedQuery(inputValue);
+    }, SEARCH_CONFIG.DEBOUNCE_TIME || 250);
 
     return () => clearTimeout(timer);
-  }, [searchTerm]);
+  }, [inputValue]);
 
   useEffect(() => {
     const savedHistory = localStorage.getItem(`search_hist_${internalId}`);
@@ -65,8 +65,8 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       inputRef.current?.focus();
     },
     setInputValue: (val: string) => {
-      setSearchTerm(val);
-      setDebouncedSearchTerm(val);
+      setInputValue(val);
+      setDebouncedQuery(val);
     }
   }));
 
@@ -79,10 +79,10 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       code: opt.subLabel || ''
     }));
 
-    // Use debouncedSearchTerm for actual search to avoid heavy calculations on every keystroke
-    const results = ArabicSmartSearch.smartSearch(searchableItems, debouncedSearchTerm);
+    // Use debouncedQuery for actual search to avoid heavy calculations on every keystroke
+    const results = ArabicSmartSearch.smartSearch(searchableItems, debouncedQuery);
     return results; 
-  }, [options, debouncedSearchTerm, isOpen]);
+  }, [options, debouncedQuery, isOpen]);
 
   const addToHistory = (term: string) => {
     if (!term || term.trim().length < 2) return;
@@ -106,11 +106,11 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
   useEffect(() => {
     if (!value) {
-      if (!isOpen && !persistSearch) setSearchTerm('');
+      if (!isOpen && !persistSearch) setInputValue('');
     } else {
       const selected = options.find(o => o.value === value);
       if (selected && !isOpen) {
-        setSearchTerm(selected.label);
+        setInputValue(selected.label);
       }
     }
   }, [value, options, isOpen, persistSearch]);
@@ -121,7 +121,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
         setIsOpen(false);
         if (!persistSearch) {
           const selected = options.find(o => o.value === value);
-          setSearchTerm(selected ? selected.label : '');
+          setInputValue(selected ? selected.label : '');
         }
       }
     };
@@ -163,14 +163,14 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const selectOption = (opt: Option) => {
     if (!opt || opt.disabled) return;
     
-    if (searchTerm && searchTerm !== opt.label) {
-        addToHistory(searchTerm);
+    if (inputValue && inputValue !== opt.label) {
+        addToHistory(inputValue);
     }
 
     onChange(opt.value);
     
     if (!persistSearch) {
-        setSearchTerm(opt.label);
+        setInputValue(opt.label);
     }
     
     setIsOpen(false);
@@ -201,9 +201,9 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
           disabled={disabled}
           className="w-full border-slate-200 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 border p-2.5 pr-10 font-bold bg-slate-50 focus:bg-white transition-all disabled:cursor-not-allowed"
           placeholder={disabled ? "يرجى اختيار العميل أولاً..." : placeholder}
-          value={searchTerm}
+          value={inputValue}
           onChange={(e) => {
-            setSearchTerm(e.target.value);
+            setInputValue(e.target.value);
             setIsOpen(true);
             setHighlightedIndex(0);
             if(e.target.value === '') onChange('');
@@ -223,7 +223,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       {isOpen && !disabled && (
         <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1">
           
-          {history.length > 0 && !searchTerm && (
+          {history.length > 0 && !inputValue && (
               <div className="bg-slate-50/50 border-b border-slate-100">
                   <div className="px-4 py-2 flex justify-between items-center">
                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">عمليات البحث الأخيرة</span>
@@ -234,7 +234,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
                           <button 
                             key={i} 
                             type="button"
-                            onClick={() => setSearchTerm(term)}
+                            onClick={() => setInputValue(term)}
                             className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-600 hover:border-blue-400 hover:text-blue-600 transition-all"
                           >
                               <History className="w-3 h-3" />
@@ -279,12 +279,12 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
               ))}
             </ul>
           ) : (
-            searchTerm.length >= minSearchChars && searchTerm.trim() !== '' && (
+            inputValue.length >= minSearchChars && inputValue.trim() !== '' && (
                 <div className="p-8 text-center">
                     <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
                         <Search className="w-6 h-6 text-slate-300" />
                     </div>
-                    <p className="text-xs text-slate-400 font-bold">عفواً، لا توجد نتائج تطابق "{searchTerm}"</p>
+                    <p className="text-xs text-slate-400 font-bold">عفواً، لا توجد نتائج تطابق "{inputValue}"</p>
                 </div>
             )
           )}
