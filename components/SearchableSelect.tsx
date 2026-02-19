@@ -41,7 +41,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   
   const generatedId = useId();
   const internalId = id || `searchable-${generatedId}`;
@@ -81,7 +81,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
     // Use debouncedQuery for actual search to avoid heavy calculations on every keystroke
     const results = ArabicSmartSearch.smartSearch(searchableItems, debouncedQuery);
-    return results; 
+    return results.slice(0, 100); 
   }, [options, debouncedQuery, isOpen]);
 
   const addToHistory = (term: string) => {
@@ -94,7 +94,8 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
   useEffect(() => {
     if (isOpen && listRef.current && filteredOptions.length > 0) {
-      const highlightedElement = listRef.current.children[highlightedIndex] as HTMLElement;
+      const listElement = listRef.current.tagName === 'UL' ? listRef.current : listRef.current.querySelector('ul');
+      const highlightedElement = listElement?.children[highlightedIndex] as HTMLElement;
       if (highlightedElement) {
         highlightedElement.scrollIntoView({
           block: 'nearest',
@@ -221,7 +222,11 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       </div>
 
       {isOpen && !disabled && (
-        <div className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl max-h-80 overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1">
+        <div 
+          ref={listRef}
+          className="absolute z-[100] w-full bg-white mt-1 border border-slate-200 rounded-xl shadow-xl overflow-y-auto flex flex-col animate-in fade-in slide-in-from-top-1"
+          style={{ maxHeight: '320px' }}
+        >
           
           {history.length > 0 && !inputValue && (
               <div className="bg-slate-50/50 border-b border-slate-100">
@@ -247,9 +252,8 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 
           {filteredOptions.length > 0 ? (
             <ul 
-              ref={listRef}
               role="listbox"
-              className="overflow-y-auto scroll-smooth"
+              className="scroll-smooth"
             >
               {filteredOptions.map((opt: any, idx) => (
                 <li
