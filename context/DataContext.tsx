@@ -62,7 +62,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const init = async () => {
       setIsLoading(true);
       setLoadingMessage("جاري جلب البيانات...");
-      await db.init();
+      await db.init((msg) => setLoadingMessage(msg));
       setIsLoading(false);
       refreshData();
     };

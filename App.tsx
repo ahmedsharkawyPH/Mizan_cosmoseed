@@ -128,18 +128,6 @@ const AppContent = () => {
 }
 
 function App() {
-  const [isDbReady, setIsDbReady] = useState(false);
-
-  useEffect(() => {
-    const init = async () => {
-        await db.init();
-        setIsDbReady(true);
-    };
-    init();
-  }, []);
-
-  if (!isDbReady) return null;
-
   return (
     <DataProvider>
       <Toaster position="top-right" />

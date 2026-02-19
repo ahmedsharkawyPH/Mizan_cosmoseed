@@ -42,8 +42,72 @@ class Database {
     this.syncListeners.forEach(l => l(this.activeOperations > 0));
   }
 
-  async init() {
+  async init(onProgress?: (msg: string) => void) {
+    if (!isSupabaseConfigured) {
+      console.warn("Supabase is not configured. Running in local mode.");
+      this.isFullyLoaded = true;
+      return;
+    }
+
+    // Check if we have data in localStorage
+    const hasData = this.products.length > 0 || this.invoices.length > 0;
+    
+    if (!hasData) {
+      console.log("No local data found. Starting full cloud sync...");
+      await this.syncFromCloud(onProgress);
+    } else {
+      console.log("Local data found. Ready.");
+    }
+
     this.isFullyLoaded = true;
+  }
+
+  async syncFromCloud(onProgress?: (msg: string) => void) {
+    if (!isSupabaseConfigured) return;
+    
+    this.activeOperations++;
+    this.notifySyncState();
+    
+    try {
+      const tables = [
+        { name: 'warehouses', prop: 'warehouses', label: 'المخازن' },
+        { name: 'products', prop: 'products', label: 'المنتجات' },
+        { name: 'batches', prop: 'batches', label: 'التشغيلات' },
+        { name: 'customers', prop: 'customers', label: 'العملاء' },
+        { name: 'suppliers', prop: 'suppliers', label: 'الموردين' },
+        { name: 'representatives', prop: 'representatives', label: 'المناديب' },
+        { name: 'invoices', prop: 'invoices', label: 'الفواتير' },
+        { name: 'purchase_invoices', prop: 'purchaseInvoices', label: 'فواتير الشراء' },
+        { name: 'cash_transactions', prop: 'cashTransactions', label: 'الخزينة' },
+        { name: 'purchase_orders', prop: 'purchaseOrders', label: 'طلبات الشراء' },
+        { name: 'daily_closings', prop: 'dailyClosings', label: 'الإغلاق اليومي' },
+        { name: 'pending_adjustments', prop: 'pendingAdjustments', label: 'التسويات' }
+      ];
+
+      for (const table of tables) {
+        if (onProgress) onProgress(`جاري جلب ${table.label}...`);
+        console.log(`Syncing table: ${table.name}`);
+        const data = await this.fetchAllFromTable(table.name);
+        (this as any)[table.prop] = data;
+        console.log(`Loaded ${data.length} items from ${table.name}`);
+      }
+
+      // Special case for settings
+      if (onProgress) onProgress("جاري جلب الإعدادات...");
+      const { data: settingsData, error: settingsError } = await supabase.from('settings').select('*').single();
+      if (!settingsError && settingsData) {
+        this.settings = { ...this.settings, ...settingsData };
+      }
+
+      this.saveToLocalCache(true);
+      if (onProgress) onProgress("تمت المزامنة بنجاح");
+    } catch (err) {
+      console.error("Cloud sync failed:", err);
+      if (onProgress) onProgress("فشلت المزامنة، جاري العمل بالوضع المحلي");
+    } finally {
+      this.activeOperations--;
+      this.notifySyncState();
+    }
   }
 
   // --- دوال الجلب الضخمة ---
@@ -53,17 +117,37 @@ class Database {
         let allData: any[] = [];
         let from = 0;
         let hasMore = true;
+        let retryCount = 0;
+        const maxRetries = 3;
+
         while (hasMore) {
-            const { data, error } = await supabase.from(table).select('*').range(from, from + 999).order('created_at', { ascending: false });
-            if (error) throw error;
+            const { data, error } = await supabase.from(table).select('*').range(from, from + 999);
+            
+            if (error) {
+                console.error(`Error fetching ${table} at range ${from}-${from+999}:`, error);
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    console.log(`Retrying ${table} (${retryCount}/${maxRetries})...`);
+                    await new Promise(r => setTimeout(r, 1000 * retryCount));
+                    continue;
+                }
+                throw error;
+            }
+
             if (data && data.length > 0) {
                 allData = [...allData, ...data];
-                from += 1000;
+                from += data.length;
                 if (data.length < 1000) hasMore = false;
-            } else hasMore = false;
+                retryCount = 0; // Reset retry on success
+            } else {
+                hasMore = false;
+            }
         }
         return allData;
-    } catch (err) { return []; }
+    } catch (err) { 
+        console.error(`Failed to fetch all from ${table}:`, err);
+        return []; 
+    }
   }
 
   async fetchLatestPricesMap() {
@@ -261,7 +345,6 @@ class Database {
   async resetCashRegister() { this.cashTransactions = []; this.saveToLocalCache(); }
   async clearWarehouseStock(id: string) { this.batches = this.batches.filter(b => b.warehouse_id !== id); this.saveToLocalCache(); }
   async recalculateAllBalances() { console.log("Recalculating..."); }
-  async syncFromCloud() { console.log("Syncing..."); }
   getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
   getNextProductCode() { return `P-${Math.floor(1000 + Math.random() * 9000)}`; }
   addExpenseCategory(cat: string) { if (!this.settings.expenseCategories.includes(cat)) { this.settings.expenseCategories.push(cat); this.saveToLocalCache(); } }
