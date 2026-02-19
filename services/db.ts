@@ -1,6 +1,7 @@
 
 import { supabase, isSupabaseConfigured } from './supabase';
 import { localStore, OutboxItem } from './localStore';
+import { openDB } from 'idb'; // DEXIE MIGRATION: Used for one-time migration
 import { 
   Warehouse, Product, Batch, Representative, Customer, Supplier, 
   Invoice, PurchaseInvoice, PurchaseOrder, CashTransaction, 
@@ -45,6 +46,12 @@ class Database {
   }
 
   async init(onProgress?: (msg: string) => void) {
+    if (onProgress) onProgress("جاري تهيئة قاعدة البيانات...");
+    await localStore.init(); // DEXIE MIGRATION: Ensure Dexie is ready
+
+    // DEXIE MIGRATION: Check if we need to migrate from old idb
+    await this.migrateFromOldIdb(onProgress);
+
     if (onProgress) onProgress("جاري تحميل البيانات المحلية...");
     await this.loadFromLocalStore();
 
@@ -67,6 +74,63 @@ class Database {
     }
 
     this.isFullyLoaded = true;
+  }
+
+  // DEXIE MIGRATION: One-time migration from old idb database
+  private async migrateFromOldIdb(onProgress?: (msg: string) => void) {
+    const OLD_DB_NAME = 'mizan_db_v4';
+    const MIGRATION_KEY = 'mizan_dexie_migrated';
+    
+    if (localStorage.getItem(MIGRATION_KEY)) return;
+
+    try {
+      // Check if old DB exists by trying to open it without upgrade
+      // Note: openDB doesn't have an easy "exists" check, so we just try to see if it has stores
+      const oldDb = await openDB(OLD_DB_NAME, 1).catch(() => null);
+      if (!oldDb) {
+        localStorage.setItem(MIGRATION_KEY, 'true');
+        return;
+      }
+
+      if (oldDb.objectStoreNames.length === 0) {
+        oldDb.close();
+        localStorage.setItem(MIGRATION_KEY, 'true');
+        return;
+      }
+
+      if (onProgress) onProgress("جاري ترقية قاعدة البيانات إلى Dexie...");
+      
+      const tables = [
+        'products', 'batches', 'customers', 'suppliers', 'invoices',
+        'purchaseInvoices', 'cashTransactions', 'warehouses', 'representatives',
+        'dailyClosings', 'pendingAdjustments', 'purchaseOrders', 'outbox'
+      ];
+
+      const migrationData: any = {};
+      for (const table of tables) {
+        if (oldDb.objectStoreNames.contains(table)) {
+          migrationData[table] = await oldDb.getAll(table);
+        }
+      }
+
+      if (oldDb.objectStoreNames.contains('settings')) {
+        migrationData.settings = await oldDb.get('settings', 'main');
+      }
+
+      if (Object.keys(migrationData).length > 0) {
+        await localStore.saveAll(migrationData);
+        console.log("Migration to Dexie completed successfully.");
+      }
+
+      oldDb.close();
+      localStorage.setItem(MIGRATION_KEY, 'true');
+      
+      // Optionally delete old DB
+      // await deleteDB(OLD_DB_NAME); 
+    } catch (err) {
+      console.error("Migration to Dexie failed:", err);
+      // We don't set the migration key so we can try again
+    }
   }
 
   async syncToCloud() {

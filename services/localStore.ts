@@ -1,45 +1,18 @@
-import { openDB, IDBPDatabase } from 'idb';
+import { mizanDb, OutboxItem } from './mizanDb';
 
-const DB_NAME = 'mizan_db_v4';
-const DB_VERSION = 1;
-
-export interface OutboxItem {
-  id?: number;
-  entityType: string;
-  operation: 'insert' | 'update' | 'delete';
-  payload: any;
-  createdAt: string;
-}
+export type { OutboxItem };
 
 export class LocalStore {
-  private db: IDBPDatabase | null = null;
-
   async init() {
-    if (this.db) return;
-    this.db = await openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const tables = [
-          'products', 'batches', 'customers', 'suppliers', 'invoices',
-          'purchaseInvoices', 'cashTransactions', 'warehouses', 'representatives',
-          'dailyClosings', 'pendingAdjustments', 'purchaseOrders', 'settings', 'outbox'
-        ];
-        tables.forEach(table => {
-          if (!db.objectStoreNames.contains(table)) {
-            if (table === 'outbox') {
-              db.createObjectStore(table, { keyPath: 'id', autoIncrement: true });
-            } else if (table === 'settings') {
-              db.createObjectStore(table);
-            } else {
-              db.createObjectStore(table, { keyPath: 'id' });
-            }
-          }
-        });
-      },
-    });
+    // Dexie opens automatically on first use, but we can call open() to be explicit
+    if (!mizanDb.isOpen()) {
+      await mizanDb.open();
+    }
   }
 
   async loadAll() {
-    if (!this.db) await this.init();
+    await this.init();
+    
     const tables = [
       'products', 'batches', 'customers', 'suppliers', 'invoices',
       'purchaseInvoices', 'cashTransactions', 'warehouses', 'representatives',
@@ -48,70 +21,80 @@ export class LocalStore {
     
     const result: any = {};
     for (const table of tables) {
-      result[table] = await this.db!.getAll(table);
+      result[table] = await (mizanDb as any)[table].toArray();
     }
     
-    const settings = await this.db!.get('settings', 'main');
-    result.settings = settings || null;
+    const settingsRow = await mizanDb.settings.get('main');
+    result.settings = settingsRow ? settingsRow.value : null;
     
-    const outbox = await this.db!.getAll('outbox');
+    const outbox = await mizanDb.outbox.orderBy('id').toArray();
     result.outbox = outbox || [];
     
     return result;
   }
 
   async saveAll(data: any) {
-    if (!this.db) await this.init();
-    const tx = this.db!.transaction(Object.keys(data), 'readwrite');
-    for (const table of Object.keys(data)) {
-      if (table === 'settings') {
-        await tx.objectStore(table).put(data[table], 'main');
-      } else if (table === 'outbox') {
-        // Handle outbox separately or clear and refill?
-        // Usually outbox is managed incrementally.
-      } else {
-        const store = tx.objectStore(table);
-        await store.clear();
-        for (const item of data[table]) {
-          await store.put(item);
+    await this.init();
+    
+    return await mizanDb.transaction('rw', mizanDb.tables, async () => {
+      for (const table of Object.keys(data)) {
+        if (table === 'settings') {
+          await mizanDb.settings.put({ id: 'main', value: data[table] });
+        } else if (table === 'outbox') {
+          // Outbox is usually managed incrementally, but if we're forcing a saveAll...
+          await mizanDb.outbox.clear();
+          if (Array.isArray(data[table])) {
+            await mizanDb.outbox.bulkAdd(data[table]);
+          }
+        } else if ((mizanDb as any)[table]) {
+          const dexieTable = (mizanDb as any)[table];
+          await dexieTable.clear();
+          if (Array.isArray(data[table])) {
+            await dexieTable.bulkAdd(data[table]);
+          }
         }
       }
-    }
-    await tx.done;
+    });
   }
 
   async upsert(table: string, item: any) {
-    if (!this.db) await this.init();
+    await this.init();
     if (table === 'settings') {
-      await this.db!.put('settings', item, 'main');
-    } else {
-      await this.db!.put(table, item);
+      await mizanDb.settings.put({ id: 'main', value: item });
+    } else if ((mizanDb as any)[table]) {
+      await (mizanDb as any)[table].put(item);
     }
   }
 
   async delete(table: string, id: string) {
-    if (!this.db) await this.init();
-    await this.db!.delete(table, id);
+    await this.init();
+    if ((mizanDb as any)[table]) {
+      await (mizanDb as any)[table].delete(id);
+    }
   }
 
   async addToOutbox(item: OutboxItem) {
-    if (!this.db) await this.init();
-    return await this.db!.add('outbox', item);
+    await this.init();
+    return await mizanDb.outbox.add(item);
   }
 
   async getOutbox() {
-    if (!this.db) await this.init();
-    return await this.db!.getAll('outbox');
+    await this.init();
+    return await mizanDb.outbox.orderBy('id').toArray();
   }
 
   async removeFromOutbox(id: number) {
-    if (!this.db) await this.init();
-    await this.db!.delete('outbox', id);
+    await this.init();
+    await mizanDb.outbox.delete(id);
   }
 
   async clearTable(table: string) {
-    if (!this.db) await this.init();
-    await this.db!.clear(table);
+    await this.init();
+    if (table === 'settings') {
+      await mizanDb.settings.clear();
+    } else if ((mizanDb as any)[table]) {
+      await (mizanDb as any)[table].clear();
+    }
   }
 }
 
