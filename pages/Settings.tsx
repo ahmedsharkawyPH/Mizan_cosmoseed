@@ -169,11 +169,12 @@ export default function Settings() {
               try {
                   const content = event.target?.result as string;
                   if (confirm("تحذير: سيؤدي ذلك لاستبدال كافة البيانات الحالية. هل أنت متأكد؟")) {
-                      const success = db.importDbData(content);
-                      if (success) {
-                          toast.success("تمت الاستعادة بنجاح");
-                          setTimeout(() => window.location.reload(), 1000);
-                      }
+                      db.importDbData(content).then(success => {
+                          if (success) {
+                              toast.success("تمت الاستعادة بنجاح");
+                              setTimeout(() => window.location.reload(), 1000);
+                          }
+                      });
                   }
               } catch (err) { toast.error("خطأ في قراءة الملف."); }
           };
