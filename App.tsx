@@ -1,12 +1,13 @@
+
 import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { db } from './services/db';
 import { DataProvider, useData } from './context/DataContext';
-import { Loader2, Database, ShieldCheck, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Loader2, Database, ShieldCheck, RefreshCw } from 'lucide-react';
 // @ts-ignore
-import { Toaster, toast } from 'react-hot-toast';
+import { Toaster } from 'react-hot-toast';
 
 // Lazy load pages
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -35,40 +36,7 @@ const DailyClosing = lazy(() => import('./pages/DailyClosing'));
 const Commissions = lazy(() => import('./pages/Commissions'));
 
 const AppContent = () => {
-  const { isLoading, loadingMessage, products } = useData();
-
-  // نظام حماية الموبايل من الكاش التالف
-  useEffect(() => {
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile && !isLoading) {
-      const count = products.length;
-      console.log(`📱 Mobile Audit: Found ${count} products in state.`);
-
-      if (count === 0) {
-        // إذا لم توجد أصناف نهائياً، فهذا يعني أن المزامنة الأولى فشلت أو أن القاعدة فارغة
-        toast.error(
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 font-black">
-              <AlertTriangle className="w-5 h-5 text-red-500" />
-              <span>تنبيه: لم يتم تحميل أي أصناف!</span>
-            </div>
-            <p className="text-xs">قد تكون هناك مشكلة في اتصال الإنترنت أو الكاش.</p>
-            <button 
-              onClick={() => {
-                localStorage.clear();
-                window.location.reload();
-              }}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-xs shadow-lg active:scale-95"
-            >
-              إعادة تحميل قسرية
-            </button>
-          </div>,
-          { duration: 15000, position: 'bottom-center' }
-        );
-      }
-    }
-  }, [isLoading, products.length]);
+  const { isLoading, loadingMessage } = useData();
 
   if (isLoading) {
       return (

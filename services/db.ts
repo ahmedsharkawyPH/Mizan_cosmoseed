@@ -1,3 +1,4 @@
+
 import { supabase, isSupabaseConfigured } from './supabase';
 import { 
   Warehouse, Product, Batch, Representative, Customer, Supplier, 
@@ -42,14 +43,6 @@ class Database {
   }
 
   async init() {
-    // فحص شامل: إذا كان أي جدول أساسي فارغاً، ابدأ مزامنة سحابية كاملة فوراً (حل مشكلة الموبايل)
-    const isActuallyEmpty = this.products.length === 0 || this.customers.length === 0 || this.warehouses.length === 0;
-    
-    if (isActuallyEmpty && isSupabaseConfigured) {
-      console.log('📱 Mobile Database missing core entities. Triggering Full Cloud Recovery...');
-      await this.syncFromCloud();
-    }
-    
     this.isFullyLoaded = true;
   }
 
@@ -86,21 +79,13 @@ class Database {
 
   // --- إدارة الكاش المحلي ---
   loadFromLocalCache() {
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-      console.log('📱 Mobile Engine Check: Version', DB_VERSION);
-    }
-
     const raw = localStorage.getItem('mizan_db');
     if (raw) {
       try {
         const data = JSON.parse(raw);
         Object.assign(this, data);
         this.settings = { ...this.settings, ...(data.settings || {}) };
-      } catch (e) {
-        if (isMobile) console.error('📱 Cache parsing error on mobile.');
-      }
+      } catch (e) {}
     }
   }
 
@@ -276,51 +261,7 @@ class Database {
   async resetCashRegister() { this.cashTransactions = []; this.saveToLocalCache(); }
   async clearWarehouseStock(id: string) { this.batches = this.batches.filter(b => b.warehouse_id !== id); this.saveToLocalCache(); }
   async recalculateAllBalances() { console.log("Recalculating..."); }
-
-  async syncFromCloud() {
-    if (!isSupabaseConfigured) return;
-    this.activeOperations++;
-    this.notifySyncState();
-    try {
-        console.log('🔄 Mizan Sync: Starting Deep Fetch...');
-        const [p, b, c, s, i, pi, t, w, r, dc, pa, po] = await Promise.all([
-            this.fetchAllFromTable('products'),
-            this.fetchAllFromTable('batches'),
-            this.fetchAllFromTable('customers'),
-            this.fetchAllFromTable('suppliers'),
-            this.fetchAllFromTable('invoices'),
-            this.fetchAllFromTable('purchase_invoices'),
-            this.fetchAllFromTable('cash_transactions'),
-            this.fetchAllFromTable('warehouses'),
-            this.fetchAllFromTable('representatives'),
-            this.fetchAllFromTable('daily_closings'),
-            this.fetchAllFromTable('pending_adjustments'),
-            this.fetchAllFromTable('purchase_orders')
-        ]);
-        
-        this.products = p;
-        this.batches = b;
-        this.customers = c;
-        this.suppliers = s;
-        this.invoices = i;
-        this.purchaseInvoices = pi;
-        this.cashTransactions = t;
-        this.warehouses = w;
-        this.representatives = r;
-        this.dailyClosings = dc;
-        this.pendingAdjustments = pa;
-        this.purchaseOrders = po;
-        
-        console.log('✅ Deep Fetch Complete. Live Memory Updated.');
-        this.saveToLocalCache(true);
-    } catch (err) {
-        console.error('❌ Sync Failed:', err);
-    } finally {
-        this.activeOperations--;
-        this.notifySyncState();
-    }
-  }
-
+  async syncFromCloud() { console.log("Syncing..."); }
   getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
   getNextProductCode() { return `P-${Math.floor(1000 + Math.random() * 9000)}`; }
   addExpenseCategory(cat: string) { if (!this.settings.expenseCategories.includes(cat)) { this.settings.expenseCategories.push(cat); this.saveToLocalCache(); } }
