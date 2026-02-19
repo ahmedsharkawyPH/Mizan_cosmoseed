@@ -110,7 +110,7 @@ export default function PurchaseReturn() {
         setCashRefund(0);
         navigate('/purchases/list');
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "حدث خطأ ما");
       }
     } catch (err: any) {
       toast.error(err.message || "حدث خطأ غير متوقع");

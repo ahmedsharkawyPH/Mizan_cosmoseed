@@ -169,8 +169,8 @@ export default function InventoryAnalysis() {
                                 </td>
                                 <td className="px-6 py-4 text-center">
                                     <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                        parseFloat(p.turnoverRate) > 10 ? 'bg-emerald-100 text-emerald-700' :
-                                        parseFloat(p.turnoverRate) > 5 ? 'bg-blue-100 text-blue-700' :
+                                        p.turnoverRate > 10 ? 'bg-emerald-100 text-emerald-700' :
+                                        p.turnoverRate > 5 ? 'bg-blue-100 text-blue-700' :
                                         'bg-gray-100 text-gray-600'
                                     }`}>
                                         {p.turnoverRate}x

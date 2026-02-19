@@ -191,3 +191,29 @@ export interface CartItem {
   discount_percentage: number;
   unit_price?: number; 
 }
+
+export interface ABCAnalysis {
+  classifiedProducts: {
+    id: string;
+    name: string;
+    code: string;
+    revenue: number;
+    category: 'A' | 'B' | 'C';
+    totalQty: number;
+    wac: number;
+    latestCost: number;
+    totalValue: number;
+    turnoverRate: number;
+  }[];
+}
+
+export interface InventoryValuationItem {
+  id: string;
+  name: string;
+  code: string;
+  totalQty: number;
+  wac: number;
+  latestCost: number;
+  totalValue: number;
+  turnoverRate: number;
+}

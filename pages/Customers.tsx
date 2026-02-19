@@ -167,7 +167,7 @@ export default function Customers() {
 
   const handleDeleteLine = async (line: string) => {
       if (!confirm(`هل أنت متأكد من حذف خط التوزيع "${line}"؟`)) return;
-      const updatedLines = (settings.distributionLines || []).filter(l => l !== line);
+      const updatedLines = (settings.distributionLines || []).filter((l: string) => l !== line);
       const updatedSettings = { ...settings, distributionLines: updatedLines };
       const success = await db.updateSettings(updatedSettings);
       if (success) setSettings(updatedSettings);

@@ -210,7 +210,7 @@ export default function PurchaseOrders() {
             await db.syncFromCloud();
             executeConversion(false); 
         } else {
-            toast.error(res.message === 'CONFLICT_DETECTED' ? "فشل الحفظ بسبب تعارض الرقم التسلسلي، يرجى المحاولة لاحقاً." : res.message);
+            toast.error(res.message === 'CONFLICT_DETECTED' ? "فشل الحفظ بسبب تعارض الرقم التسلسلي، يرجى المحاولة لاحقاً." : (res.message || "حدث خطأ ما"));
         }
     }
     setIsSubmittingConv(false);

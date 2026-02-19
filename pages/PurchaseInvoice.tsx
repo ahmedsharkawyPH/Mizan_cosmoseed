@@ -274,7 +274,7 @@ export default function PurchaseInvoice({ type }: Props) {
         toast.success(id ? "تم تحديث الفاتورة بنجاح" : "تم حفظ الفاتورة بنجاح");
         navigate('/purchases/list');
     } else {
-        toast.error(res.message);
+        toast.error(res.message || "حدث خطأ ما");
     }
   };
 

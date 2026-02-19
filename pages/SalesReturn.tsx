@@ -110,7 +110,7 @@ export default function SalesReturn() {
         setReturnItems([]);
         setCashRefund(0);
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "حدث خطأ ما");
       }
     } catch (err: any) {
       toast.error(err.message || "حدث خطأ غير متوقع");

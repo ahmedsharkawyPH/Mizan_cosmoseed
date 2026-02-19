@@ -4,7 +4,7 @@ import {
   Warehouse, Product, Batch, Representative, Customer, Supplier, 
   Invoice, PurchaseInvoice, PurchaseOrder, CashTransaction, 
   PendingAdjustment, DailyClosing, ProductWithBatches, CartItem, BatchStatus,
-  PaymentStatus, CashTransactionType, PurchaseItem
+  PaymentStatus, CashTransactionType, PurchaseItem, ABCAnalysis, InventoryValuationItem
 } from '../types';
 
 const DB_VERSION = 4.3; 
@@ -265,8 +265,8 @@ class Database {
   getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
   getNextProductCode() { return `P-${Math.floor(1000 + Math.random() * 9000)}`; }
   addExpenseCategory(cat: string) { if (!this.settings.expenseCategories.includes(cat)) { this.settings.expenseCategories.push(cat); this.saveToLocalCache(); } }
-  getABCAnalysis() { return { classifiedProducts: [] }; }
-  getInventoryValuationReport() { return []; }
+  getABCAnalysis(): ABCAnalysis { return { classifiedProducts: [] }; }
+  getInventoryValuationReport(): InventoryValuationItem[] { return []; }
   exportDbData() { return JSON.stringify(this); }
   importDbData(json: string) { try { const d = JSON.parse(json); Object.assign(this, d); this.saveToLocalCache(true); return true; } catch { return false; } }
 }
