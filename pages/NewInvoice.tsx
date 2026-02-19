@@ -48,6 +48,27 @@ export default function NewInvoice() {
 
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
   const [selectedProduct, setSelectedProduct] = useState<string>('');
+
+  const productSearchIndex = useMemo(
+    () => products.map(p => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      barcode: (p as any).barcode || ''
+    })),
+    [products]
+  );
+
+  const customerSearchIndex = useMemo(
+    () => customers.map(c => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      code: (c as any).code || ''
+    })),
+    [customers]
+  );
+
   const [qty, setQty] = useState<number>(1);
   const [bonus, setBonus] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
@@ -219,7 +240,13 @@ export default function NewInvoice() {
       <div className="flex flex-col xl:flex-row gap-6 items-start">
         <div className="flex-1 flex flex-col space-y-6 w-full">
           <div className="bg-white p-6 rounded-3xl shadow-card border border-slate-100">
-             <SearchableSelect ref={customerRef} label={t('inv.customer')} options={customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone }))} value={selectedCustomer} onChange={setSelectedCustomer} />
+             <SearchableSelect 
+               ref={customerRef} 
+               label={t('inv.customer')} 
+               options={customerSearchIndex.map(c => ({ value: c.id, label: c.name, subLabel: c.phone }))} 
+               value={selectedCustomer} 
+               onChange={setSelectedCustomer} 
+             />
           </div>
 
           <div className={`bg-white p-8 rounded-3xl shadow-card border-2 transition-all duration-300 ${editingIndex !== null ? 'border-orange-400 ring-4 ring-orange-50' : 'border-slate-100'}`}>
@@ -238,7 +265,14 @@ export default function NewInvoice() {
             
             <div className="space-y-6">
               <div className="w-full">
-                <SearchableSelect ref={productRef} placeholder="ابحث عن الصنف بالاسم أو الكود..." options={products.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} value={selectedProduct} onChange={setSelectedProduct} disabled={!selectedCustomer} />
+                <SearchableSelect 
+                  ref={productRef} 
+                  placeholder="ابحث عن الصنف بالاسم أو الكود..." 
+                  options={productSearchIndex.map(p => ({ value: p.id, label: p.name, subLabel: p.code }))} 
+                  value={selectedProduct} 
+                  onChange={setSelectedProduct} 
+                  disabled={!selectedCustomer} 
+                />
               </div>
 
               {selectedProduct && (

@@ -36,6 +36,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,6 +46,14 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
   const generatedId = useId();
   const internalId = id || `searchable-${generatedId}`;
   const internalName = name || internalId;
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, SEARCH_CONFIG.DEBOUNCE_TIME || 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
     const savedHistory = localStorage.getItem(`search_hist_${internalId}`);
@@ -57,6 +66,7 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
     },
     setInputValue: (val: string) => {
       setSearchTerm(val);
+      setDebouncedSearchTerm(val);
     }
   }));
 
@@ -69,10 +79,10 @@ const SearchableSelect = forwardRef<SearchableSelectRef, SearchableSelectProps>(
       code: opt.subLabel || ''
     }));
 
-    // تم تغيير هذا السطر لعرض كافة النتائج التي يسمح بها محرك البحث (50 ألف) بدلاً من 100 فقط
-    const results = ArabicSmartSearch.smartSearch(searchableItems, searchTerm);
+    // Use debouncedSearchTerm for actual search to avoid heavy calculations on every keystroke
+    const results = ArabicSmartSearch.smartSearch(searchableItems, debouncedSearchTerm);
     return results; 
-  }, [options, searchTerm, isOpen]);
+  }, [options, debouncedSearchTerm, isOpen]);
 
   const addToHistory = (term: string) => {
     if (!term || term.trim().length < 2) return;
