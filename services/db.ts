@@ -360,18 +360,24 @@ class Database {
   }
 
   // --- Actions ---
-  async createInvoice(customerId: string, items: CartItem[], cashPayment: number, isReturn: boolean, addDisc: number, createdBy?: any, commission: number = 0): Promise<{ success: boolean; id: string; message?: string }> {
+  async createInvoice(customerId: string, items: CartItem[], cashPayment: number, isReturn: boolean, addDisc: number, createdBy?: any, commission: number = 0, cashDiscPercent: number = 0, manualPrevBalance?: number): Promise<{ success: boolean; id: string; message?: string }> {
     const customer = this.customers.find(c => c.id === customerId);
     if (!customer) return { success: false, id: '', message: 'العميل غير موجود' };
     const total_before = items.reduce((s, it) => s + (it.quantity * (it.unit_price || it.batch?.selling_price || it.product.selling_price || 0)), 0);
     const total_disc = items.reduce((s, it) => s + (it.quantity * (it.unit_price || 0) * (it.discount_percentage / 100)), 0);
-    const net = Math.max(0, total_before - total_disc - addDisc);
+    const netAfterAdd = Math.max(0, total_before - total_disc - addDisc);
+    const cashDiscValue = netAfterAdd * (cashDiscPercent / 100);
+    const net = Math.max(0, netAfterAdd - cashDiscValue);
+    
+    const prevBalance = manualPrevBalance !== undefined ? manualPrevBalance : customer.current_balance;
     const invoiceId = Math.random().toString(36).substring(7);
     const invoice: Invoice = {
         id: invoiceId, invoice_number: `INV-${Date.now().toString().slice(-6)}`,
         customer_id: customerId, date: new Date().toISOString(), total_before_discount: total_before,
-        total_discount: total_disc, additional_discount: addDisc, net_total: net,
-        previous_balance: customer.current_balance, final_balance: isReturn ? customer.current_balance - net : customer.current_balance + net,
+        total_discount: total_disc, additional_discount: addDisc, 
+        cash_discount_percent: cashDiscPercent, cash_discount_value: cashDiscValue,
+        net_total: net,
+        previous_balance: prevBalance, final_balance: isReturn ? prevBalance - net : prevBalance + net,
         payment_status: PaymentStatus.UNPAID, items, type: isReturn ? 'RETURN' : 'SALE', created_by: createdBy?.id, created_by_name: createdBy?.name, commission_value: commission,
         created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE'
     };
@@ -385,18 +391,36 @@ class Database {
     await this.saveToLocalStore(); return { success: true, id: invoiceId };
   }
 
-  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPayment: number): Promise<{ success: boolean; id: string; message?: string }> {
+  async updateInvoice(id: string, customerId: string, items: CartItem[], cashPayment: number, cashDiscPercent: number = 0, manualPrevBalance?: number): Promise<{ success: boolean; id: string; message?: string }> {
     const idx = this.invoices.findIndex(inv => inv.id === id);
     if (idx === -1) return { success: false, id: '', message: 'الفاتورة غير موجودة' };
     const oldInv = this.invoices[idx];
     const customer = this.customers.find(c => c.id === customerId);
     if (!customer) return { success: false, id: '', message: 'العميل غير موجود' };
+    
     const total_before = items.reduce((s, it) => s + (it.quantity * (it.unit_price || it.batch?.selling_price || it.product.selling_price || 0)), 0);
     const total_disc = items.reduce((s, it) => s + (it.quantity * (it.unit_price || 0) * (it.discount_percentage / 100)), 0);
-    const net = Math.max(0, total_before - total_disc - (oldInv.additional_discount || 0));
+    const netAfterAdd = Math.max(0, total_before - total_disc - (oldInv.additional_discount || 0));
+    const cashDiscValue = netAfterAdd * (cashDiscPercent / 100);
+    const net = Math.max(0, netAfterAdd - cashDiscValue);
+    
+    const prevBalance = manualPrevBalance !== undefined ? manualPrevBalance : oldInv.previous_balance;
+
     if (oldInv.type === 'SALE') customer.current_balance -= oldInv.net_total; else customer.current_balance += oldInv.net_total;
     if (oldInv.type === 'SALE') customer.current_balance += net; else customer.current_balance -= net;
-    Object.assign(this.invoices[idx], { customer_id: customerId, items, net_total: net, total_before_discount: total_before, total_discount: total_disc, updated_at: new Date().toISOString(), version: oldInv.version + 1 });
+    
+    Object.assign(this.invoices[idx], { 
+      customer_id: customerId, 
+      items, 
+      net_total: net, 
+      total_before_discount: total_before, 
+      total_discount: total_disc,
+      cash_discount_percent: cashDiscPercent,
+      cash_discount_value: cashDiscValue,
+      previous_balance: prevBalance,
+      updated_at: new Date().toISOString(), 
+      version: oldInv.version + 1 
+    });
     
     await this.addToOutbox('invoices', 'update', this.invoices[idx]);
     await this.addToOutbox('customers', 'update', customer);

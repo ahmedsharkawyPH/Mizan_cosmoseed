@@ -32,6 +32,8 @@ export default function NewInvoice() {
   const [cashPayment, setCashPayment] = useState<number>(0);
   const [additionalDiscount, setAdditionalDiscount] = useState<number>(0);
   const [additionalDiscountPercent, setAdditionalDiscountPercent] = useState<number>(0);
+  const [cashDiscountPercent, setCashDiscountPercent] = useState<number>(0);
+  const [previousBalance, setPreviousBalance] = useState<number>(0);
   const [commissionValue, setCommissionValue] = useState<number>(0); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -111,6 +113,8 @@ export default function NewInvoice() {
         setCart(inv.items);
         setIsReturnMode(inv.type === 'RETURN');
         setAdditionalDiscount(inv.additional_discount || 0);
+        setCashDiscountPercent(inv.cash_discount_percent || 0);
+        setPreviousBalance(inv.previous_balance || 0);
         setCommissionValue(inv.commission_value || 0);
         setCashPayment(db.getInvoicePaidAmount(inv.id));
       }
@@ -118,6 +122,15 @@ export default function NewInvoice() {
         setTimeout(() => customerRef.current?.focus(), 100);
     }
   }, [id, location]);
+
+  useEffect(() => {
+    if (selectedCustomer && !id) {
+      const customer = customers.find(c => c.id === selectedCustomer);
+      if (customer) setPreviousBalance(customer.current_balance);
+    } else if (!selectedCustomer) {
+      setPreviousBalance(0);
+    }
+  }, [selectedCustomer, customers, id]);
 
   const totals = useMemo(() => {
     let totalGross = 0;
@@ -131,8 +144,24 @@ export default function NewInvoice() {
     const subtotal = totalGross - totalItemDiscount;
     const discountFromPercent = (subtotal * additionalDiscountPercent / 100);
     const totalAddVal = discountFromPercent + additionalDiscount;
-    return { gross: totalGross, itemDiscount: totalItemDiscount, subtotal, totalAdditionalDiscount: totalAddVal, net: Math.max(0, subtotal - totalAddVal) };
-  }, [cart, additionalDiscount, additionalDiscountPercent]);
+    const netAfterAdditionalDiscount = Math.max(0, subtotal - totalAddVal);
+    
+    const cashDiscountValue = netAfterAdditionalDiscount * (cashDiscountPercent / 100);
+    const netAfterCashDiscount = netAfterAdditionalDiscount - cashDiscountValue;
+    const finalTotal = netAfterCashDiscount + previousBalance;
+
+    return { 
+      gross: totalGross, 
+      itemDiscount: totalItemDiscount, 
+      subtotal, 
+      totalAdditionalDiscount: totalAddVal, 
+      netAfterAdditionalDiscount,
+      cashDiscountValue,
+      netAfterCashDiscount,
+      finalTotal,
+      net: netAfterCashDiscount // Keep 'net' for backward compatibility if used elsewhere
+    };
+  }, [cart, additionalDiscount, additionalDiscountPercent, cashDiscountPercent, previousBalance]);
 
   const lastPurchaseCost = useMemo(() => {
     if (!selectedProduct) return null;
@@ -166,8 +195,8 @@ export default function NewInvoice() {
     const user = authService.getCurrentUser();
     try {
       const result = id 
-        ? await updateInvoice(id, selectedCustomer, cart, cashPayment)
-        : await createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined, commissionValue);
+        ? await updateInvoice(id, selectedCustomer, cart, cashPayment, cashDiscountPercent, previousBalance)
+        : await createInvoice(selectedCustomer, cart, cashPayment, isReturnMode, totals.totalAdditionalDiscount, user ? { id: user.id, name: user.name } : undefined, commissionValue, cashDiscountPercent, previousBalance);
       
       if (!result.success) {
           toast.error(result.message || "حدث خطأ أثناء حفظ الفاتورة");
@@ -362,14 +391,38 @@ export default function NewInvoice() {
                 <div className="flex justify-between text-slate-500 font-bold"><span>الإجمالي</span><span>{currency}{totals.subtotal.toFixed(2)}</span></div>
                 <div className="flex justify-between text-red-500 font-bold"><span>الخصم الإضافي</span><span>-{currency}{totals.totalAdditionalDiscount.toFixed(2)}</span></div>
                 
+                <div className="flex justify-between text-slate-800 font-bold border-t pt-2">
+                    <span>الصافي بعد الخصم</span>
+                    <span>{currency}{totals.netAfterAdditionalDiscount.toLocaleString()}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">الخصم النقدي %</label>
+                        <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-red-600 focus:border-red-400 outline-none" value={cashDiscountPercent || ''} onChange={e => setCashDiscountPercent(Number(e.target.value))} />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">قيمة الخصم</label>
+                        <div className="w-full bg-slate-50 p-2 rounded-xl text-center font-black text-slate-500 border-2 border-transparent">{currency}{totals.cashDiscountValue.toLocaleString()}</div>
+                    </div>
+                </div>
+
+                <div className="pt-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">الحساب السابق</label>
+                    <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-blue-600 focus:border-blue-400 outline-none" value={previousBalance || ''} onChange={e => setPreviousBalance(Number(e.target.value))} />
+                </div>
+
                 {!isReturnMode && (
-                    <div className="flex items-center gap-3 pt-4 border-t border-slate-50">
+                    <div className="flex items-center gap-3 pt-2">
                         <label className="text-xs font-black text-slate-400 uppercase whitespace-nowrap">العمولة:</label>
                         <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-amber-600 focus:border-amber-400 outline-none" value={commissionValue || ''} onChange={e => setCommissionValue(Number(e.target.value))} />
                     </div>
                 )}
 
-                <div className="flex justify-between text-3xl font-black pt-4 border-t-2 border-slate-50"><span className="text-slate-800">الصافي</span><span className="text-blue-600">{currency}{totals.net.toLocaleString()}</span></div>
+                <div className="flex justify-between text-3xl font-black pt-4 border-t-2 border-slate-50">
+                    <span className="text-slate-800 text-xl">إجمالي المطلوب</span>
+                    <span className="text-blue-600">{currency}{totals.finalTotal.toLocaleString()}</span>
+                </div>
                 
                 <div className="pt-6">
                     <label className="block text-xs font-black text-slate-400 uppercase mb-2">المسدد نقداً (كاش)</label>

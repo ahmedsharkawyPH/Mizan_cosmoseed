@@ -97,6 +97,8 @@ export interface Invoice extends BaseEntity {
   total_before_discount: number;
   total_discount: number; 
   additional_discount?: number; 
+  cash_discount_percent?: number;
+  cash_discount_value?: number;
   commission_value?: number;
   net_total: number;
   previous_balance: number;
