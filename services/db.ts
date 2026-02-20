@@ -73,6 +73,9 @@ class Database {
       this.syncToCloud().catch(console.error);
     }
 
+    // Recalculate balances to ensure accuracy
+    this.recalculateAllBalances();
+
     this.isFullyLoaded = true;
   }
 
@@ -680,7 +683,58 @@ class Database {
   async clearAllOrders() { this.purchaseOrders = []; await this.saveToLocalStore(); }
   async resetCashRegister() { this.cashTransactions = []; await this.saveToLocalStore(); }
   async clearWarehouseStock(id: string) { this.batches = this.batches.filter(b => b.warehouse_id !== id); await this.saveToLocalStore(); }
-  async recalculateAllBalances() { console.log("Recalculating..."); }
+  async recalculateAllBalances() { 
+    console.log("Recalculating all balances...");
+    
+    // 1. Recalculate Supplier Balances
+    this.suppliers.forEach(s => {
+      let balance = s.opening_balance || 0;
+      
+      // Add purchases, subtract returns
+      this.purchaseInvoices
+        .filter(p => p.supplier_id === s.id && p.status !== 'CANCELLED' && p.status !== 'DELETED')
+        .forEach(p => {
+          if (p.type === 'RETURN') balance -= p.total_amount;
+          else balance += p.total_amount;
+        });
+        
+      // Subtract payments to supplier
+      this.cashTransactions
+        .filter(t => t.category === 'SUPPLIER_PAYMENT' && t.reference_id === s.id && t.status !== 'CANCELLED' && t.status !== 'DELETED')
+        .forEach(t => {
+          if (t.type === CashTransactionType.EXPENSE) balance -= t.amount;
+          else if (t.type === CashTransactionType.RECEIPT) balance += t.amount; // Refund from supplier
+        });
+        
+      s.current_balance = balance;
+    });
+
+    // 2. Recalculate Customer Balances
+    this.customers.forEach(c => {
+      let balance = c.opening_balance || 0;
+      
+      // Add sales, subtract returns
+      this.invoices
+        .filter(i => i.customer_id === c.id && i.status !== 'CANCELLED' && i.status !== 'DELETED')
+        .forEach(i => {
+          if (i.type === 'RETURN') balance -= i.net_total;
+          else balance += i.net_total;
+        });
+        
+      // Subtract payments from customer
+      this.cashTransactions
+        .filter(t => t.category === 'CUSTOMER_PAYMENT' && t.reference_id === c.id && t.status !== 'CANCELLED' && t.status !== 'DELETED')
+        .forEach(t => {
+          if (t.type === CashTransactionType.RECEIPT) balance -= t.amount;
+          else if (t.type === CashTransactionType.EXPENSE) balance += t.amount; // Refund to customer
+        });
+        
+      c.current_balance = balance;
+    });
+
+    console.log("Recalculation complete.");
+    await this.saveToLocalStore(true);
+  }
   getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
   getNextProductCode() { return `P-${Math.floor(1000 + Math.random() * 9000)}`; }
   async addExpenseCategory(cat: string) { 

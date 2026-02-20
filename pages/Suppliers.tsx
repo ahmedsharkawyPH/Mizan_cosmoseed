@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
+import { useData } from '../context/DataContext';
 import { Supplier } from '../types';
 import { t } from '../utils/t';
 import { Plus, Search, Upload, Truck, X, Printer, Edit, Trash2 } from 'lucide-react';
@@ -18,15 +19,20 @@ interface StatementItem {
 }
 
 export default function Suppliers() {
+  const { suppliers: contextSuppliers, refreshData } = useData();
   const currency = db.getSettings().currency;
   const location = useLocation();
-  const [suppliers, setSuppliers] = useState(db.getSuppliers());
   const [search, setSearch] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
   const [form, setForm] = useState({ code: '', name: '', phone: '', contact_person: '', address: '', opening_balance: 0 });
+
+  // Filtered suppliers based on search
+  const filteredSuppliers = useMemo(() => {
+    return contextSuppliers.filter(s => s.name.toLowerCase().includes(search.toLowerCase()));
+  }, [contextSuppliers, search]);
 
   // Statement State
   const [statementSupplier, setStatementSupplier] = useState<Supplier | null>(null);
@@ -71,7 +77,7 @@ export default function Suppliers() {
       toast.success("تم إضافة المورد بنجاح");
     }
     
-    setSuppliers(db.getSuppliers());
+    refreshData();
     setIsOpen(false);
     setForm({ code: '', name: '', phone: '', contact_person: '', address: '', opening_balance: 0 });
   };
@@ -79,7 +85,7 @@ export default function Suppliers() {
   const handleDelete = async (id: string) => {
     if (window.confirm("هل أنت متأكد من حذف هذا المورد؟ سيتم حذف السجل نهائياً.")) {
       await db.deleteSupplier(id);
-      setSuppliers(db.getSuppliers());
+      refreshData();
       toast.success("تم حذف المورد");
     }
   };
@@ -88,8 +94,10 @@ export default function Suppliers() {
     if(e.target.files[0]) {
       try {
         const data = await readExcelFile<any>(e.target.files[0]);
-        data.forEach(s => db.addSupplier({ ...s, opening_balance: s.opening_balance || 0 }));
-        setSuppliers(db.getSuppliers());
+        for (const s of data) {
+          await db.addSupplier({ ...s, opening_balance: s.opening_balance || 0 });
+        }
+        refreshData();
         toast.success(t('common.success_import'));
       } catch (err) {
         toast.error(t('common.error_excel'));
@@ -259,7 +267,7 @@ export default function Suppliers() {
                 </tr>
             </thead>
             <tbody>
-                {suppliers.filter(s => s.name.toLowerCase().includes(search.toLowerCase())).map(s => (
+                {filteredSuppliers.map(s => (
                 <tr key={s.id} className="border-b hover:bg-gray-50 group">
                     <td className="p-4 font-mono text-gray-500">{s.code}</td>
                     <td className="p-4 font-bold">{s.name}</td>
@@ -294,7 +302,7 @@ export default function Suppliers() {
                     </td>
                 </tr>
                 ))}
-                {suppliers.length === 0 && (
+                {filteredSuppliers.length === 0 && (
                     <tr>
                         <td colSpan={6} className="p-8 text-center text-gray-400">لا يوجد موردين مسجلين</td>
                     </tr>
