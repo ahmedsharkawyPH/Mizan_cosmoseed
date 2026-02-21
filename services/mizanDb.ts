@@ -31,11 +31,11 @@ export class MizanDb extends Dexie {
 
   constructor() {
     super('mizan_db_dexie');
-    this.version(1).stores({
+    this.version(2).stores({
       products: 'id, code, name, status',
       batches: 'id, product_id, warehouse_id, batch_number, batch_status',
-      customers: 'id, code, name, phone, representative_code, status',
-      suppliers: 'id, code, name, phone, status',
+      customers: 'id, code, name, phone, representative_code, status, opening_balance, current_balance',
+      suppliers: 'id, code, name, phone, status, contact_person, address, opening_balance, current_balance',
       invoices: 'id, invoice_number, customer_id, date, payment_status, type',
       purchaseInvoices: 'id, invoice_number, supplier_id, date, type',
       cashTransactions: 'id, date, type, category, reference_id',
