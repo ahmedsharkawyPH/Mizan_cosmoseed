@@ -39,6 +39,8 @@ export default function PurchaseInvoice({ type }: Props) {
   const [cost, setCost] = useState(0);
   const [margin, setMargin] = useState(0); 
   const [sell, setSell] = useState(0);
+  const [sellWholesale, setSellWholesale] = useState(0);
+  const [sellHalfWholesale, setSellHalfWholesale] = useState(0);
 
   // States for Quick Add Product
   const [isAddProdModalOpen, setIsAddProdModalOpen] = useState(false);
@@ -50,6 +52,8 @@ export default function PurchaseInvoice({ type }: Props) {
   const bonusRef = useRef<HTMLInputElement>(null); 
   const marginRef = useRef<HTMLInputElement>(null);
   const sellRef = useRef<HTMLInputElement>(null);
+  const sellWholesaleRef = useRef<HTMLInputElement>(null);
+  const sellHalfWholesaleRef = useRef<HTMLInputElement>(null);
   
   const lastProcessedProdId = useRef<string>('');
 
@@ -142,15 +146,21 @@ export default function PurchaseInvoice({ type }: Props) {
       if (p) {
         let initialCost = p.purchase_price || 0;
         let initialSell = p.selling_price || 0;
+        let initialSellWholesale = (p as any).selling_price_wholesale || 0;
+        let initialSellHalfWholesale = (p as any).selling_price_half_wholesale || 0;
         
         if (p.batches.length > 0) {
           const lastBatch = p.batches[p.batches.length-1];
           initialCost = lastBatch.purchase_price;
           initialSell = lastBatch.selling_price;
+          initialSellWholesale = lastBatch.selling_price_wholesale || 0;
+          initialSellHalfWholesale = lastBatch.selling_price_half_wholesale || 0;
         }
         
         setCost(initialCost);
         setSell(initialSell);
+        setSellWholesale(initialSellWholesale);
+        setSellHalfWholesale(initialSellHalfWholesale);
         if (initialCost > 0) {
             setMargin(parseFloat((((initialSell / initialCost) - 1) * 100).toFixed(1)));
         } else {
@@ -186,6 +196,8 @@ export default function PurchaseInvoice({ type }: Props) {
       bonus_quantity: Number(bonus),
       cost_price: Number(cost),
       selling_price: Number(sell),
+      selling_price_wholesale: Number(sellWholesale),
+      selling_price_half_wholesale: Number(sellHalfWholesale),
       expiry_date: '2099-12-31',
       serial_number: editingIndex !== null ? cart[editingIndex].serial_number : cart.length + 1
     };
@@ -207,6 +219,8 @@ export default function PurchaseInvoice({ type }: Props) {
     setCost(0);
     setMargin(0);
     setSell(0);
+    setSellWholesale(0);
+    setSellHalfWholesale(0);
     lastProcessedProdId.current = ''; 
     
     setTimeout(() => productRef.current?.focus(), 100);
@@ -221,6 +235,8 @@ export default function PurchaseInvoice({ type }: Props) {
       setBonus(item.bonus_quantity || 0);
       setCost(item.cost_price);
       setSell(item.selling_price);
+      setSellWholesale(item.selling_price_wholesale || 0);
+      setSellHalfWholesale(item.selling_price_half_wholesale || 0);
       if (item.cost_price > 0) {
           setMargin(parseFloat((((item.selling_price / item.cost_price) - 1) * 100).toFixed(1)));
       }
@@ -236,6 +252,8 @@ export default function PurchaseInvoice({ type }: Props) {
       setCost(0);
       setMargin(0);
       setSell(0);
+      setSellWholesale(0);
+      setSellHalfWholesale(0);
       lastProcessedProdId.current = '';
   };
 
@@ -432,8 +450,16 @@ export default function PurchaseInvoice({ type }: Props) {
                       <input id="purchase_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border-2 border-indigo-100 p-2.5 rounded-xl font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500 bg-indigo-50/20" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="%" />
                   </div>
                   <div className="md:col-span-2">
-                      <label htmlFor="purchase_sell_price_input" className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">سعر البيع</label>
-                      <input id="purchase_sell_price_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
+                      <label htmlFor="purchase_sell_price_input" className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">بيع قطاعي</label>
+                      <input id="purchase_sell_price_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellWholesaleRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+                  </div>
+                  <div className="md:col-span-2">
+                      <label htmlFor="purchase_sell_wholesale_input" className="text-[10px] font-black text-blue-600 uppercase mb-1 block">بيع جملة</label>
+                      <input id="purchase_sell_wholesale_input" name="selling_price_wholesale" ref={sellWholesaleRef} type="number" className="w-full border-2 border-blue-100 p-2.5 rounded-xl font-black text-blue-700 outline-none focus:border-blue-500 transition-all bg-blue-50/20" value={sellWholesale || ''} onChange={e => setSellWholesale(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellHalfWholesaleRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+                  </div>
+                  <div className="md:col-span-2">
+                      <label htmlFor="purchase_sell_half_wholesale_input" className="text-[10px] font-black text-purple-600 uppercase mb-1 block">بيع نص جملة</label>
+                      <input id="purchase_sell_half_wholesale_input" name="selling_price_half_wholesale" ref={sellHalfWholesaleRef} type="number" className="w-full border-2 border-purple-100 p-2.5 rounded-xl font-black text-purple-700 outline-none focus:border-purple-500 transition-all bg-purple-50/20" value={sellHalfWholesale || ''} onChange={e => setSellHalfWholesale(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
                   </div>
                   <div className="md:col-span-2">
                       <button id="purchase_add_btn" name="add_to_cart" onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>

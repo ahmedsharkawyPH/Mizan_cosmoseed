@@ -48,6 +48,9 @@ export interface Batch extends BaseEntity {
   quantity: number;
   expiry_date: string; 
   batch_status: BatchStatus; // Renamed to avoid confusion with entity status
+  selling_price_wholesale?: number;
+  selling_price_half_wholesale?: number;
+  purchase_invoice_id?: string;
 }
 
 export interface Representative extends BaseEntity {
@@ -131,6 +134,8 @@ export interface PurchaseItem {
   bonus_quantity: number; 
   cost_price: number;
   selling_price: number;
+  selling_price_wholesale?: number;
+  selling_price_half_wholesale?: number;
   expiry_date: string;
   _cached_at?: string;
 }

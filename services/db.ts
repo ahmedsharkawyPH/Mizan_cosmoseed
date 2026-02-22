@@ -584,6 +584,39 @@ class Database {
           const total = items.reduce((s, it) => s + (it.quantity * it.cost_price), 0);
           const invId = Math.random().toString(36).substring(7);
           const inv: PurchaseInvoice = { id: invId, invoice_number: `PUR-${Date.now().toString().slice(-6)}`, document_number: docNo, supplier_id: supplierId, date: date || new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+          
+          // Create Batches for each item
+          for (const item of items) {
+              const batch: Batch = {
+                  id: Math.random().toString(36).substring(7),
+                  product_id: item.product_id,
+                  warehouse_id: item.warehouse_id,
+                  batch_number: item.batch_number,
+                  quantity: isReturn ? -(item.quantity + (item.bonus_quantity || 0)) : (item.quantity + (item.bonus_quantity || 0)),
+                  purchase_price: item.cost_price,
+                  selling_price: item.selling_price,
+                  selling_price_wholesale: item.selling_price_wholesale,
+                  selling_price_half_wholesale: item.selling_price_half_wholesale,
+                  purchase_invoice_id: invId,
+                  expiry_date: item.expiry_date,
+                  batch_status: BatchStatus.ACTIVE,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  version: 1,
+                  status: 'ACTIVE'
+              };
+              this.batches.push(batch);
+              await this.addToOutbox('batches', 'insert', batch);
+
+              // Update main product prices
+              const pIdx = this.products.findIndex(p => p.id === item.product_id);
+              if (pIdx !== -1) {
+                  this.products[pIdx].purchase_price = item.cost_price;
+                  this.products[pIdx].selling_price = item.selling_price;
+                  await this.addToOutbox('products', 'update', this.products[pIdx]);
+              }
+          }
+
           this.purchaseInvoices.push(inv);
           if (supplier) { 
             if (isReturn) supplier.current_balance -= total; else supplier.current_balance += total; 
@@ -601,6 +634,14 @@ class Database {
   async deletePurchaseInvoice(id: string, updateInventory: boolean = true, updateBalance: boolean = true): Promise<{ success: boolean; message?: string }> { 
       const inv = this.purchaseInvoices.find(i => i.id === id);
       if (!inv) return { success: false, message: 'الفاتورة غير موجودة' };
+      
+      // Delete associated batches
+      const batchesToDelete = this.batches.filter(b => b.purchase_invoice_id === id);
+      for (const b of batchesToDelete) {
+          await this.addToOutbox('batches', 'delete', { id: b.id });
+      }
+      this.batches = this.batches.filter(b => b.purchase_invoice_id !== id);
+
       if (updateBalance) { 
         const supplier = this.suppliers.find(s => s.id === inv.supplier_id); 
         if (supplier) { 
