@@ -613,6 +613,7 @@ class Database {
               if (pIdx !== -1) {
                   this.products[pIdx].purchase_price = item.cost_price;
                   this.products[pIdx].selling_price = item.selling_price;
+                  this.products[pIdx].updated_at = new Date().toISOString();
                   await this.addToOutbox('products', 'update', this.products[pIdx]);
               }
           }
