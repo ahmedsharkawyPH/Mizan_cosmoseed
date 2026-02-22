@@ -37,6 +37,8 @@ export interface Product extends BaseEntity {
   items_per_package?: number;
   selling_price?: number; 
   purchase_price?: number; 
+  selling_price_wholesale?: number;
+  selling_price_half_wholesale?: number;
 }
 
 export interface Batch extends BaseEntity {

@@ -478,7 +478,7 @@ class Database {
   async updateProduct(id: string, data: any) {
       const idx = this.products.findIndex(x => x.id === id); 
       if (idx !== -1) { 
-        Object.assign(this.products[idx], data); 
+        Object.assign(this.products[idx], { ...data, updated_at: new Date().toISOString() }); 
         await this.addToOutbox('products', 'update', this.products[idx]);
         await this.saveToLocalStore(); return { success: true }; 
       } 
@@ -613,6 +613,8 @@ class Database {
               if (pIdx !== -1) {
                   this.products[pIdx].purchase_price = item.cost_price;
                   this.products[pIdx].selling_price = item.selling_price;
+                  this.products[pIdx].selling_price_wholesale = item.selling_price_wholesale;
+                  this.products[pIdx].selling_price_half_wholesale = item.selling_price_half_wholesale;
                   this.products[pIdx].updated_at = new Date().toISOString();
                   await this.addToOutbox('products', 'update', this.products[pIdx]);
               }
