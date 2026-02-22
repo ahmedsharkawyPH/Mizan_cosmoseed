@@ -628,7 +628,11 @@ class Database {
           }
           await this.addToOutbox('purchaseInvoices', 'insert', inv);
           await this.saveToLocalStore(); return { success: true, id: invId };
-      } catch (err: any) { return { success: false, id: '', message: err.message }; }
+      } catch (err: any) {
+          console.error("Error creating purchase invoice:", err);
+          const errorMessage = err.message || 'An unknown error occurred.';
+          return { success: false, id: '', message: `فشل الحفظ: ${errorMessage}` };
+      }
   }
 
   async deletePurchaseInvoice(id: string, updateInventory: boolean = true, updateBalance: boolean = true): Promise<{ success: boolean; message?: string }> { 

@@ -31,6 +31,7 @@ export default function PurchaseInvoice({ type }: Props) {
   const [cashPaid, setCashPaid] = useState<number>(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null); 
   const [isLoadingInvoice, setIsLoadingInvoice] = useState(true); // افتراضياً جاري التحميل حتى تجهز القاعدة
+  const [isSaving, setIsSaving] = useState(false);
   
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
@@ -283,16 +284,21 @@ export default function PurchaseInvoice({ type }: Props) {
         return;
     }
     
-    if (id) {
-        await db.deletePurchaseInvoice(id);
-    }
-    
-    const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn, documentNo, manualDate);
-    if (res.success) {
-        toast.success(id ? "تم تحديث الفاتورة بنجاح" : "تم حفظ الفاتورة بنجاح");
-        navigate('/purchases/list');
-    } else {
-        toast.error(res.message || "حدث خطأ ما");
+    setIsSaving(true);
+    try {
+        if (id) {
+            await db.deletePurchaseInvoice(id);
+        }
+        
+        const res = await db.createPurchaseInvoice(selectedSupplier, cart, cashPaid, isReturn, documentNo, manualDate);
+        if (res.success) {
+            toast.success(id ? "تم تحديث الفاتورة بنجاح" : "تم حفظ الفاتورة بنجاح");
+            navigate('/purchases/list');
+        } else {
+            toast.error(res.message || "حدث خطأ ما");
+        }
+    } finally {
+        setIsSaving(false);
     }
   };
 
@@ -550,8 +556,8 @@ export default function PurchaseInvoice({ type }: Props) {
                 </div>
 
                 <div className="pt-4">
-                    <button id="purchase_finalize_btn" name="finalize_invoice" onClick={save} disabled={cart.length === 0 || !selectedSupplier} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3">
-                        <Save className="w-6 h-6" />
+                    <button id="purchase_finalize_btn" name="finalize_invoice" onClick={save} disabled={cart.length === 0 || !selectedSupplier || isSaving} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
+                        {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
                         {id ? 'حفظ التعديلات' : 'حفظ الفاتورة'}
                     </button>
                 </div>
