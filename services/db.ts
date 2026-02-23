@@ -582,13 +582,35 @@ class Database {
           const supplier = this.suppliers.find(s => s.id === supplierId);
           if (!supplier && supplierId) return { success: false, id: '', message: 'المورد غير موجود' };
           const total = items.reduce((s, it) => s + (it.quantity * it.cost_price), 0);
-          const invId = Math.random().toString(36).substring(7);
-          const inv: PurchaseInvoice = { id: invId, invoice_number: `PUR-${Date.now().toString().slice(-6)}`, document_number: docNo, supplier_id: supplierId, date: date || new Date().toISOString(), total_amount: total, paid_amount: cashPaid, type: isReturn ? 'RETURN' : 'PURCHASE', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
           
-          // Create Batches for each item
+          // استخدام مُعرفات قياسية وآمنة لتجنب تعارض المفاتيح الأساسية (Primary Keys Collision)
+          const invId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+          
+          const inv: PurchaseInvoice = { 
+              id: invId, 
+              invoice_number: `PUR-${Date.now().toString().slice(-6)}`, 
+              document_number: docNo, 
+              supplier_id: supplierId, 
+              date: date || new Date().toISOString(), 
+              total_amount: total, 
+              paid_amount: cashPaid, 
+              type: isReturn ? 'RETURN' : 'PURCHASE', 
+              items, // هذا الحقل يجب أن يكون نوعه JSONB في Supabase
+              created_at: new Date().toISOString(), 
+              updated_at: new Date().toISOString(), 
+              version: 1, 
+              status: 'ACTIVE' 
+          };
+          
+          // ⚠️ الحل الأساسي: تسجيل الفاتورة في Outbox *أولاً* حتى لا ترفض قاعدة البيانات التشغيلات المرتبطة بها
+          this.purchaseInvoices.push(inv);
+          await this.addToOutbox('purchaseInvoices', 'insert', inv);
+
+          // إنشاء التشغيلات (Batches) لكل عنصر
           for (const item of items) {
+              const batchId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
               const batch: Batch = {
-                  id: Math.random().toString(36).substring(7),
+                  id: batchId,
                   product_id: item.product_id,
                   warehouse_id: item.warehouse_id,
                   batch_number: item.batch_number,
@@ -597,7 +619,7 @@ class Database {
                   selling_price: item.selling_price,
                   selling_price_wholesale: item.selling_price_wholesale,
                   selling_price_half_wholesale: item.selling_price_half_wholesale,
-                  purchase_invoice_id: invId,
+                  purchase_invoice_id: invId, // الآن سيرتبط بالفاتورة التي تم تسجيلها مسبقاً بنجاح
                   expiry_date: item.expiry_date,
                   batch_status: BatchStatus.ACTIVE,
                   created_at: new Date().toISOString(),
@@ -608,7 +630,7 @@ class Database {
               this.batches.push(batch);
               await this.addToOutbox('batches', 'insert', batch);
 
-              // Update main product prices
+              // تحديث أسعار المنتج الرئيسي
               const pIdx = this.products.findIndex(p => p.id === item.product_id);
               if (pIdx !== -1) {
                   this.products[pIdx].purchase_price = item.cost_price;
@@ -620,17 +642,26 @@ class Database {
               }
           }
 
-          this.purchaseInvoices.push(inv);
+          // تحديث رصيد المورد والمعاملات النقدية
           if (supplier) { 
             if (isReturn) supplier.current_balance -= total; else supplier.current_balance += total; 
             if (cashPaid > 0) { 
-              await this.addCashTransaction({ type: isReturn ? 'RECEIPT' : 'EXPENSE', category: 'SUPPLIER_PAYMENT', reference_id: supplier.id, related_name: supplier.name, amount: cashPaid, notes: `سداد فاتورة مشتريات #${inv.invoice_number}`, date: inv.date }); 
+              await this.addCashTransaction({ 
+                  type: isReturn ? 'RECEIPT' : 'EXPENSE', 
+                  category: 'SUPPLIER_PAYMENT', 
+                  reference_id: supplier.id, 
+                  related_name: supplier.name, 
+                  amount: cashPaid, 
+                  notes: `سداد فاتورة مشتريات #${inv.invoice_number}`, 
+                  date: inv.date 
+              }); 
               supplier.current_balance -= cashPaid; 
             } 
             await this.addToOutbox('suppliers', 'update', supplier);
           }
-          await this.addToOutbox('purchaseInvoices', 'insert', inv);
-          await this.saveToLocalStore(); return { success: true, id: invId };
+
+          await this.saveToLocalStore(); 
+          return { success: true, id: invId };
       } catch (err: any) {
           console.error("Error creating purchase invoice:", err);
           const errorMessage = err.message || 'An unknown error occurred.';

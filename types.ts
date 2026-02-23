@@ -14,7 +14,7 @@ export interface BaseEntity {
   created_at: string;
   updated_at: string;
   version: number; 
-  status: 'ACTIVE' | 'INACTIVE' | 'CANCELLED' | 'DELETED'; // Unified Status
+  status: string; // Unified Status (Generic string to support various entity types)
 }
 
 export interface User extends BaseEntity {
@@ -49,7 +49,7 @@ export interface Batch extends BaseEntity {
   purchase_price: number;
   quantity: number;
   expiry_date: string; 
-  batch_status: BatchStatus; // Renamed to avoid confusion with entity status
+  batch_status: BatchStatus; 
   selling_price_wholesale?: number;
   selling_price_half_wholesale?: number;
   purchase_invoice_id?: string;
