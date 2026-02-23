@@ -321,9 +321,23 @@ export default function NewInvoice() {
                           <span className="text-[9px] font-black text-emerald-400 uppercase tracking-tighter">الرصيد المتاح</span>
                           <span className="text-sm font-black text-emerald-700">{availableBatch?.quantity || 0} قطعة</span>
                       </div>
-                      <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex flex-col items-center">
-                          <span className="text-[9px] font-black text-blue-400 uppercase tracking-tighter">سعر البيع المسجل</span>
-                          <span className="text-sm font-black text-blue-700">{currency}{currentProduct?.selling_price?.toLocaleString()}</span>
+                      {/* التعديل الجديد: عرض الأسعار الثلاثة للصنف */}
+                      <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex flex-col items-center w-full">
+                          <span className="text-[9px] font-black text-blue-400 uppercase tracking-tighter mb-1.5">سعر البيع المسجل</span>
+                          <div className="w-full flex flex-col gap-1 text-xs px-1">
+                              <div className="flex justify-between items-center">
+                                  <span className="text-[10px] text-slate-500 font-bold">ج (جملة)</span>
+                                  <span className="font-black text-blue-700">{currency}{(availableBatch?.selling_price_wholesale || (currentProduct as any)?.selling_price_wholesale || 0).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between items-center border-t border-blue-100 pt-1">
+                                  <span className="text-[10px] text-slate-500 font-bold">نص (نصف جملة)</span>
+                                  <span className="font-black text-blue-700">{currency}{(availableBatch?.selling_price_half_wholesale || (currentProduct as any)?.selling_price_half_wholesale || 0).toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between items-center border-t border-blue-100 pt-1">
+                                  <span className="text-[10px] text-slate-500 font-bold">قط (قطاعي)</span>
+                                  <span className="font-black text-blue-700">{currency}{(availableBatch?.selling_price || currentProduct?.selling_price || 0).toLocaleString()}</span>
+                              </div>
+                          </div>
                       </div>
                   </div>
               )}
