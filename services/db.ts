@@ -11,6 +11,14 @@ import {
 
 const DB_VERSION = 4.3; 
 
+// دالة مساعدة لتوليد مُعرّف فريد آمن لتجنب تعارض المفاتيح الأساسية (Primary Keys Collision)
+const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+};
+
 class Database {
   products: Product[] = [];
   batches: Batch[] = [];
@@ -31,10 +39,7 @@ class Database {
   private syncListeners: ((isBusy: boolean) => void)[] = [];
   private saveTimeout: any = null;
 
-  constructor() {
-    // We don't call loadFromLocalCache here anymore because it's async
-    // It will be called in init()
-  }
+  constructor() {}
 
   onSyncStateChange(callback: (isBusy: boolean) => void) {
     this.syncListeners.push(callback);
@@ -47,9 +52,8 @@ class Database {
 
   async init(onProgress?: (msg: string) => void) {
     if (onProgress) onProgress("جاري تهيئة قاعدة البيانات...");
-    await localStore.init(); // DEXIE MIGRATION: Ensure Dexie is ready
+    await localStore.init(); 
 
-    // DEXIE MIGRATION: Check if we need to migrate from old idb
     await this.migrateFromOldIdb(onProgress);
 
     if (onProgress) onProgress("جاري تحميل البيانات المحلية...");
@@ -61,7 +65,6 @@ class Database {
       return;
     }
 
-    // Check if we have data
     const hasData = this.products.length > 0 || this.invoices.length > 0;
     
     if (!hasData) {
@@ -69,17 +72,13 @@ class Database {
       await this.syncFromCloud(onProgress);
     } else {
       console.log("Local data found. Ready.");
-      // Background sync outbox
       this.syncToCloud().catch(console.error);
     }
 
-    // Recalculate balances to ensure accuracy
     this.recalculateAllBalances();
-
     this.isFullyLoaded = true;
   }
 
-  // DEXIE MIGRATION: One-time migration from old idb database
   private async migrateFromOldIdb(onProgress?: (msg: string) => void) {
     const OLD_DB_NAME = 'mizan_db_v4';
     const MIGRATION_KEY = 'mizan_dexie_migrated';
@@ -87,16 +86,9 @@ class Database {
     if (localStorage.getItem(MIGRATION_KEY)) return;
 
     try {
-      // Check if old DB exists by trying to open it without upgrade
-      // Note: openDB doesn't have an easy "exists" check, so we just try to see if it has stores
       const oldDb = await openDB(OLD_DB_NAME, 1).catch(() => null);
-      if (!oldDb) {
-        localStorage.setItem(MIGRATION_KEY, 'true');
-        return;
-      }
-
-      if (oldDb.objectStoreNames.length === 0) {
-        oldDb.close();
+      if (!oldDb || oldDb.objectStoreNames.length === 0) {
+        if(oldDb) oldDb.close();
         localStorage.setItem(MIGRATION_KEY, 'true');
         return;
       }
@@ -127,12 +119,8 @@ class Database {
 
       oldDb.close();
       localStorage.setItem(MIGRATION_KEY, 'true');
-      
-      // Optionally delete old DB
-      // await deleteDB(OLD_DB_NAME); 
     } catch (err) {
       console.error("Migration to Dexie failed:", err);
-      // We don't set the migration key so we can try again
     }
   }
 
@@ -146,6 +134,7 @@ class Database {
     this.notifySyncState();
 
     try {
+      // تنفيذ الـ Outbox بالترتيب المحفوظ
       for (const item of outbox) {
         const { entityType, operation, payload, id } = item;
         let success = false;
@@ -154,9 +143,11 @@ class Database {
           if (operation === 'insert' || operation === 'update') {
             const { error } = await supabase.from(this.mapEntityTypeToTable(entityType)).upsert(payload);
             if (!error) success = true;
+            else console.error(`Sync error on ${entityType}:`, error);
           } else if (operation === 'delete') {
             const { error } = await supabase.from(this.mapEntityTypeToTable(entityType)).delete().eq('id', payload.id);
             if (!error) success = true;
+            else console.error(`Sync error on ${entityType} deletion:`, error);
           }
 
           if (success && id !== undefined) {
@@ -198,7 +189,6 @@ class Database {
       payload,
       createdAt: new Date().toISOString()
     });
-    // Trigger background sync
     this.syncToCloud().catch(console.error);
   }
 
@@ -226,13 +216,10 @@ class Database {
 
       for (const table of tables) {
         if (onProgress) onProgress(`جاري جلب ${table.label}...`);
-        console.log(`Syncing table: ${table.name}`);
         const data = await this.fetchAllFromTable(table.name);
         (this as any)[table.prop] = data;
-        console.log(`Loaded ${data.length} items from ${table.name}`);
       }
 
-      // Special case for settings
       if (onProgress) onProgress("جاري جلب الإعدادات...");
       const { data: settingsData, error: settingsError } = await supabase.from('settings').select('*').single();
       if (!settingsError && settingsData) {
@@ -250,7 +237,6 @@ class Database {
     }
   }
 
-  // --- دوال الجلب الضخمة ---
   async fetchAllFromTable(table: string) {
     if (!isSupabaseConfigured) return [];
     try {
@@ -264,10 +250,8 @@ class Database {
             const { data, error } = await supabase.from(table).select('*').range(from, from + 999);
             
             if (error) {
-                console.error(`Error fetching ${table} at range ${from}-${from+999}:`, error);
                 if (retryCount < maxRetries) {
                     retryCount++;
-                    console.log(`Retrying ${table} (${retryCount}/${maxRetries})...`);
                     await new Promise(r => setTimeout(r, 1000 * retryCount));
                     continue;
                 }
@@ -278,14 +262,13 @@ class Database {
                 allData = [...allData, ...data];
                 from += data.length;
                 if (data.length < 1000) hasMore = false;
-                retryCount = 0; // Reset retry on success
+                retryCount = 0;
             } else {
                 hasMore = false;
             }
         }
         return allData;
     } catch (err) { 
-        console.error(`Failed to fetch all from ${table}:`, err);
         return []; 
     }
   }
@@ -301,7 +284,6 @@ class Database {
     } catch (err) { return new Map(); }
   }
 
-  // --- إدارة الكاش المحلي ---
   async loadFromLocalStore() {
     const data = await localStore.loadAll();
     if (data) {
@@ -332,11 +314,9 @@ class Database {
     if (force) await perform(); else this.saveTimeout = setTimeout(perform, 300);
   }
 
-  // Deprecated localStorage methods for compatibility
   loadFromLocalCache() { this.loadFromLocalStore(); }
   saveToLocalCache(force: boolean = false) { this.saveToLocalStore(force); }
 
-  // --- Getters ---
   getSettings() { return this.settings; }
   getInvoices() { return this.invoices.filter(i => i.status !== 'DELETED'); }
   getCustomers() { return this.customers.filter(c => c.status !== 'INACTIVE'); }
@@ -366,6 +346,7 @@ class Database {
   async createInvoice(customerId: string, items: CartItem[], cashPayment: number, isReturn: boolean, addDisc: number, createdBy?: any, commission: number = 0, cashDiscPercent: number = 0, manualPrevBalance?: number): Promise<{ success: boolean; id: string; message?: string }> {
     const customer = this.customers.find(c => c.id === customerId);
     if (!customer) return { success: false, id: '', message: 'العميل غير موجود' };
+    
     const total_before = items.reduce((s, it) => s + (it.quantity * (it.unit_price || it.batch?.selling_price || it.product.selling_price || 0)), 0);
     const total_disc = items.reduce((s, it) => s + (it.quantity * (it.unit_price || 0) * (it.discount_percentage / 100)), 0);
     const netAfterAdd = Math.max(0, total_before - total_disc - addDisc);
@@ -373,25 +354,56 @@ class Database {
     const net = Math.max(0, netAfterAdd - cashDiscValue);
     
     const prevBalance = manualPrevBalance !== undefined ? manualPrevBalance : customer.current_balance;
-    const invoiceId = Math.random().toString(36).substring(7);
-    const invoice: Invoice = {
-        id: invoiceId, invoice_number: `INV-${Date.now().toString().slice(-6)}`,
-        customer_id: customerId, date: new Date().toISOString(), total_before_discount: total_before,
-        total_discount: total_disc, additional_discount: addDisc, 
-        cash_discount_percent: cashDiscPercent, cash_discount_value: cashDiscValue,
-        net_total: net,
-        previous_balance: prevBalance, final_balance: isReturn ? prevBalance - net : prevBalance + net,
-        payment_status: PaymentStatus.UNPAID, items, type: isReturn ? 'RETURN' : 'SALE', created_by: createdBy?.id, created_by_name: createdBy?.name, commission_value: commission,
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE'
-    };
-    this.invoices.push(invoice);
-    customer.current_balance = invoice.final_balance;
-    if (cashPayment > 0) await this.addCashTransaction({ type: isReturn ? 'EXPENSE' : 'RECEIPT', category: 'CUSTOMER_PAYMENT', reference_id: invoice.id, related_name: customer.name, amount: cashPayment, notes: `سداد فاتورة #${invoice.invoice_number}`, date: invoice.date });
+    const invoiceId = generateId(); // استخدام المعرف الآمن
     
+    const invoice: Invoice = {
+        id: invoiceId, 
+        invoice_number: `INV-${Date.now().toString().slice(-6)}`,
+        customer_id: customerId, 
+        date: new Date().toISOString(), 
+        total_before_discount: total_before,
+        total_discount: total_disc, 
+        additional_discount: addDisc, 
+        cash_discount_percent: cashDiscPercent, 
+        cash_discount_value: cashDiscValue,
+        net_total: net,
+        previous_balance: prevBalance, 
+        final_balance: isReturn ? prevBalance - net : prevBalance + net,
+        payment_status: PaymentStatus.UNPAID, 
+        items, 
+        type: isReturn ? 'RETURN' : 'SALE', 
+        created_by: createdBy?.id, 
+        created_by_name: createdBy?.name, 
+        commission_value: commission,
+        created_at: new Date().toISOString(), 
+        updated_at: new Date().toISOString(), 
+        version: 1, 
+        status: 'ACTIVE'
+    };
+
+    // 1. تسجيل الفاتورة في Outbox أولاً
+    this.invoices.push(invoice);
     await this.addToOutbox('invoices', 'insert', invoice);
+
+    // 2. تحديث العميل
+    customer.current_balance = invoice.final_balance;
     await this.addToOutbox('customers', 'update', customer);
     
-    await this.saveToLocalStore(); return { success: true, id: invoiceId };
+    // 3. إضافة معاملة مالية إن وجدت
+    if (cashPayment > 0) {
+        await this.addCashTransaction({ 
+            type: isReturn ? 'EXPENSE' : 'RECEIPT', 
+            category: 'CUSTOMER_PAYMENT', 
+            reference_id: invoice.id, 
+            related_name: customer.name, 
+            amount: cashPayment, 
+            notes: `سداد فاتورة #${invoice.invoice_number}`, 
+            date: invoice.date 
+        });
+    }
+    
+    await this.saveToLocalStore(); 
+    return { success: true, id: invoiceId };
   }
 
   async updateInvoice(id: string, customerId: string, items: CartItem[], cashPayment: number, cashDiscPercent: number = 0, manualPrevBalance?: number): Promise<{ success: boolean; id: string; message?: string }> {
@@ -445,7 +457,7 @@ class Database {
   }
 
   async addCashTransaction(data: any) {
-      const tx: CashTransaction = { id: Math.random().toString(36).substring(7), ref_number: `TX-${Date.now().toString().slice(-6)}`, ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+      const tx: CashTransaction = { id: generateId(), ref_number: `TX-${Date.now().toString().slice(-6)}`, ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
       this.cashTransactions.push(tx); 
       await this.addToOutbox('cashTransactions', 'insert', tx);
       await this.saveToLocalStore(); return { success: true };
@@ -464,11 +476,11 @@ class Database {
   }
 
   async addProduct(pData: any, bData: any) {
-      const p: Product = { id: Math.random().toString(36).substring(7), ...pData, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+      const p: Product = { id: generateId(), ...pData, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
       this.products.push(p); 
       await this.addToOutbox('products', 'insert', p);
       if (bData.quantity > 0) {
-        const b: Batch = { id: Math.random().toString(36).substring(7), product_id: p.id, ...bData, batch_status: BatchStatus.ACTIVE, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+        const b: Batch = { id: generateId(), product_id: p.id, ...bData, batch_status: BatchStatus.ACTIVE, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
         this.batches.push(b);
         await this.addToOutbox('batches', 'insert', b);
       }
@@ -491,7 +503,7 @@ class Database {
     await this.saveToLocalStore(); return { success: true }; 
   }
   async addCustomer(data: any) { 
-    const c: Customer = { id: Math.random().toString(36).substring(7), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+    const c: Customer = { id: generateId(), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.customers.push(c); 
     await this.addToOutbox('customers', 'insert', c);
     await this.saveToLocalStore(); return { success: true }; 
@@ -511,7 +523,7 @@ class Database {
     await this.saveToLocalStore(); return { success: true }; 
   }
   async addSupplier(data: any) { 
-    const s: Supplier = { id: Math.random().toString(36).substring(7), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+    const s: Supplier = { id: generateId(), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.suppliers.push(s); 
     await this.addToOutbox('suppliers', 'insert', s);
     await this.saveToLocalStore(); return { success: true }; 
@@ -531,7 +543,7 @@ class Database {
     await this.saveToLocalStore(); return { success: true }; 
   }
   async addWarehouse(name: string) { 
-    const w: Warehouse = { id: Math.random().toString(36).substring(7), name, is_default: this.warehouses.length === 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+    const w: Warehouse = { id: generateId(), name, is_default: this.warehouses.length === 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.warehouses.push(w); 
     await this.addToOutbox('warehouses', 'insert', w);
     await this.saveToLocalStore(); return { success: true }; 
@@ -557,7 +569,7 @@ class Database {
   }
 
   async addRepresentative(data: any) { 
-    const r: Representative = { id: Math.random().toString(36).substring(7), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+    const r: Representative = { id: generateId(), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.representatives.push(r); 
     await this.addToOutbox('representatives', 'insert', r);
     await this.saveToLocalStore(); return { success: true }; 
@@ -583,8 +595,7 @@ class Database {
           if (!supplier && supplierId) return { success: false, id: '', message: 'المورد غير موجود' };
           const total = items.reduce((s, it) => s + (it.quantity * it.cost_price), 0);
           
-          // استخدام مُعرفات قياسية وآمنة لتجنب تعارض المفاتيح الأساسية (Primary Keys Collision)
-          const invId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+          const invId = generateId(); // معرف آمن
           
           const inv: PurchaseInvoice = { 
               id: invId, 
@@ -595,20 +606,19 @@ class Database {
               total_amount: total, 
               paid_amount: cashPaid, 
               type: isReturn ? 'RETURN' : 'PURCHASE', 
-              items, // هذا الحقل يجب أن يكون نوعه JSONB في Supabase
+              items, 
               created_at: new Date().toISOString(), 
               updated_at: new Date().toISOString(), 
               version: 1, 
               status: 'ACTIVE' 
           };
           
-          // ⚠️ الحل الأساسي: تسجيل الفاتورة في Outbox *أولاً* حتى لا ترفض قاعدة البيانات التشغيلات المرتبطة بها
+          // ⚠️ الخطوة الأهم: إضافة الفاتورة أولاً إلى قاعدة البيانات المحلية وإلى الـ Outbox
           this.purchaseInvoices.push(inv);
           await this.addToOutbox('purchaseInvoices', 'insert', inv);
 
-          // إنشاء التشغيلات (Batches) لكل عنصر
           for (const item of items) {
-              const batchId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+              const batchId = generateId();
               const batch: Batch = {
                   id: batchId,
                   product_id: item.product_id,
@@ -619,7 +629,7 @@ class Database {
                   selling_price: item.selling_price,
                   selling_price_wholesale: item.selling_price_wholesale,
                   selling_price_half_wholesale: item.selling_price_half_wholesale,
-                  purchase_invoice_id: invId, // الآن سيرتبط بالفاتورة التي تم تسجيلها مسبقاً بنجاح
+                  purchase_invoice_id: invId, // الارتباط بالفاتورة المنشأة للتو
                   expiry_date: item.expiry_date,
                   batch_status: BatchStatus.ACTIVE,
                   created_at: new Date().toISOString(),
@@ -627,10 +637,11 @@ class Database {
                   version: 1,
                   status: 'ACTIVE'
               };
+              
+              // ⚠️ إضافة التشغيلة إلى الـ Outbox *بعد* الفاتورة
               this.batches.push(batch);
               await this.addToOutbox('batches', 'insert', batch);
 
-              // تحديث أسعار المنتج الرئيسي
               const pIdx = this.products.findIndex(p => p.id === item.product_id);
               if (pIdx !== -1) {
                   this.products[pIdx].purchase_price = item.cost_price;
@@ -642,7 +653,6 @@ class Database {
               }
           }
 
-          // تحديث رصيد المورد والمعاملات النقدية
           if (supplier) { 
             if (isReturn) supplier.current_balance -= total; else supplier.current_balance += total; 
             if (cashPaid > 0) { 
@@ -664,8 +674,7 @@ class Database {
           return { success: true, id: invId };
       } catch (err: any) {
           console.error("Error creating purchase invoice:", err);
-          const errorMessage = err.message || 'An unknown error occurred.';
-          return { success: false, id: '', message: `فشل الحفظ: ${errorMessage}` };
+          return { success: false, id: '', message: `فشل الحفظ: ${err.message}` };
       }
   }
 
@@ -673,7 +682,6 @@ class Database {
       const inv = this.purchaseInvoices.find(i => i.id === id);
       if (!inv) return { success: false, message: 'الفاتورة غير موجودة' };
       
-      // Delete associated batches
       const batchesToDelete = this.batches.filter(b => b.purchase_invoice_id === id);
       for (const b of batchesToDelete) {
           await this.addToOutbox('batches', 'delete', { id: b.id });
@@ -693,7 +701,7 @@ class Database {
   }
 
   async createPurchaseOrder(supplierId: string, items: any[]) { 
-    const po: PurchaseOrder = { id: Math.random().toString(36).substring(7), order_number: `ORD-${Date.now().toString().slice(-6)}`, supplier_id: supplierId, date: new Date().toISOString(), order_status: 'PENDING', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }; 
+    const po: PurchaseOrder = { id: generateId(), order_number: `ORD-${Date.now().toString().slice(-6)}`, supplier_id: supplierId, date: new Date().toISOString(), order_status: 'PENDING', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }; 
     this.purchaseOrders.push(po); 
     await this.addToOutbox('purchaseOrders', 'insert', po);
     await this.saveToLocalStore(); return { success: true }; 
@@ -708,7 +716,7 @@ class Database {
   }
   async submitStockTake(adjs: any[]) { 
     for (const a of adjs) {
-      const adj: PendingAdjustment = { id: Math.random().toString(36).substring(7), ...a, date: new Date().toISOString(), adj_status: 'PENDING', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+      const adj: PendingAdjustment = { id: generateId(), ...a, date: new Date().toISOString(), adj_status: 'PENDING', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
       this.pendingAdjustments.push(adj); 
       await this.addToOutbox('pendingAdjustments', 'insert', adj);
     }
@@ -733,7 +741,7 @@ class Database {
     return false; 
   }
   async saveDailyClosing(data: any) { 
-    const dc: DailyClosing = { id: Math.random().toString(36).substring(7), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+    const dc: DailyClosing = { id: generateId(), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.dailyClosings.push(dc); 
     await this.addToOutbox('dailyClosings', 'insert', dc);
     await this.saveToLocalStore(); return true; 
@@ -765,11 +773,8 @@ class Database {
   async recalculateAllBalances() { 
     console.log("Recalculating all balances...");
     
-    // 1. Recalculate Supplier Balances
     this.suppliers.forEach(s => {
       let balance = s.opening_balance || 0;
-      
-      // Add purchases, subtract returns
       this.purchaseInvoices
         .filter(p => p.supplier_id === s.id && p.status !== 'CANCELLED' && p.status !== 'DELETED')
         .forEach(p => {
@@ -777,22 +782,18 @@ class Database {
           else balance += p.total_amount;
         });
         
-      // Subtract payments to supplier
       this.cashTransactions
         .filter(t => t.category === 'SUPPLIER_PAYMENT' && t.reference_id === s.id && t.status !== 'CANCELLED' && t.status !== 'DELETED')
         .forEach(t => {
           if (t.type === CashTransactionType.EXPENSE) balance -= t.amount;
-          else if (t.type === CashTransactionType.RECEIPT) balance += t.amount; // Refund from supplier
+          else if (t.type === CashTransactionType.RECEIPT) balance += t.amount; 
         });
         
       s.current_balance = balance;
     });
 
-    // 2. Recalculate Customer Balances
     this.customers.forEach(c => {
       let balance = c.opening_balance || 0;
-      
-      // Add sales, subtract returns
       this.invoices
         .filter(i => i.customer_id === c.id && i.status !== 'CANCELLED' && i.status !== 'DELETED')
         .forEach(i => {
@@ -800,12 +801,11 @@ class Database {
           else balance += i.net_total;
         });
         
-      // Subtract payments from customer
       this.cashTransactions
         .filter(t => t.category === 'CUSTOMER_PAYMENT' && t.reference_id === c.id && t.status !== 'CANCELLED' && t.status !== 'DELETED')
         .forEach(t => {
           if (t.type === CashTransactionType.RECEIPT) balance -= t.amount;
-          else if (t.type === CashTransactionType.EXPENSE) balance += t.amount; // Refund to customer
+          else if (t.type === CashTransactionType.EXPENSE) balance += t.amount; 
         });
         
       c.current_balance = balance;
