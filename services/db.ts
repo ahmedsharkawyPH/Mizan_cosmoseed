@@ -146,6 +146,10 @@ class Database {
             let options: any = {};
             
             if (entityType === 'products') {
+              // لتجنب خطأ 23503 عند تعارض الكود، نقوم باستثناء الـ ID من التحديث
+              // بحيث يتم تحديث بيانات المنتج المرتبط بالكود دون محاولة تغيير معرفه الفريد
+              const { id, ...rest } = payload;
+              syncPayload = rest;
               options = { onConflict: 'code', ignoreDuplicates: false };
             }
             
@@ -154,9 +158,10 @@ class Database {
             if (!error) success = true;
             else {
               console.error(`Sync error on ${entityType}:`, error);
-              // إذا ظهر خطأ علاقات (23503)، فهذا يعني أننا نحاول تغيير ID لمنتج له حركات مخزنية
               if (error.code === '23503') {
-                 console.error("خطأ: لا يمكن تحديث المنتج لأن الكود مرتبط بـ ID مختلف له حركات مخزنية.");
+                 console.error("خطأ علاقات (23503): لا يمكن تحديث المنتج لأن الكود مرتبط بـ ID مختلف له حركات مخزنية.");
+              } else if (error.code === '23505') {
+                 console.error("خطأ تكرار (23505): الكود مستخدم بالفعل.");
               }
             }
           } else if (operation === 'delete') {
