@@ -260,6 +260,12 @@ export default function PurchaseInvoice({ type }: Props) {
 
   const handleQuickAddProduct = async () => {
       if (!newProdForm.name) return toast.error("اسم الصنف مطلوب");
+      
+      // التحقق من عدم تكرار الكود محلياً قبل الإضافة
+      if (newProdForm.code && products.some(p => p.code === newProdForm.code)) {
+          return toast.error("كود الصنف موجود مسبقاً، يرجى استخدام كود آخر");
+      }
+
       const pData = { name: newProdForm.name, code: newProdForm.code };
       const bData = { 
           quantity: 0, 

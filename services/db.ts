@@ -141,7 +141,9 @@ class Database {
 
         try {
           if (operation === 'insert' || operation === 'update') {
-            const { error } = await supabase.from(this.mapEntityTypeToTable(entityType)).upsert(payload);
+            const table = this.mapEntityTypeToTable(entityType);
+            const options = entityType === 'products' ? { onConflict: 'code' } : {};
+            const { error } = await supabase.from(table).upsert(payload, options);
             if (!error) success = true;
             else console.error(`Sync error on ${entityType}:`, error);
           } else if (operation === 'delete') {
@@ -815,7 +817,9 @@ class Database {
     await this.saveToLocalStore(true);
   }
   getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
-  getNextProductCode() { return `P-${Math.floor(1000 + Math.random() * 9000)}`; }
+  getNextProductCode() { 
+    return `P-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 899)}`; 
+  }
   async addExpenseCategory(cat: string) { 
     if (!this.settings.expenseCategories.includes(cat)) { 
       this.settings.expenseCategories.push(cat); 
