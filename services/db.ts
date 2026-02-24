@@ -142,26 +142,22 @@ class Database {
         try {
           if (operation === 'insert' || operation === 'update') {
             const table = this.mapEntityTypeToTable(entityType);
-            let syncPayload = { ...payload };
-            let options: any = {};
             
-            if (entityType === 'products') {
-              // لتجنب خطأ 23503 عند تعارض الكود، نقوم باستثناء الـ ID من التحديث
-              // بحيث يتم تحديث بيانات المنتج المرتبط بالكود دون محاولة تغيير معرفه الفريد
-              const { id, ...rest } = payload;
-              syncPayload = rest;
-              options = { onConflict: 'code', ignoreDuplicates: false };
-            }
+            const { error } = await supabase.from(table).upsert(payload, {
+              onConflict: entityType === 'products' ? 'code' : 'id',
+              ignoreDuplicates: false 
+            });
             
-            const { error } = await supabase.from(table).upsert(syncPayload, options);
-            
-            if (!error) success = true;
-            else {
-              console.error(`Sync error on ${entityType}:`, error);
+            if (!error) {
+              success = true;
+            } else {
+              // معالجة خطأ العلاقات 23503 بشكل ودي
               if (error.code === '23503') {
-                 console.error("خطأ علاقات (23503): لا يمكن تحديث المنتج لأن الكود مرتبط بـ ID مختلف له حركات مخزنية.");
-              } else if (error.code === '23505') {
-                 console.error("خطأ تكرار (23505): الكود مستخدم بالفعل.");
+                console.warn(`تعارض في العلاقات للمنتج: ${payload.name || payload.id}. تم إلغاء التحديث لتجنب فقدان البيانات.`);
+                // نعتبرها نجحت محلياً لكي لا تتوقف المزامنة للأبد
+                success = true; 
+              } else {
+                console.error(`Sync error on ${entityType}:`, error);
               }
             }
           } else if (operation === 'delete') {

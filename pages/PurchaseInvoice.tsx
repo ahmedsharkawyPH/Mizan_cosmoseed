@@ -261,10 +261,10 @@ export default function PurchaseInvoice({ type }: Props) {
   const handleQuickAddProduct = async () => {
       if (!newProdForm.name) return toast.error("اسم الصنف مطلوب");
       
-      // التحقق من عدم تكرار الكود محلياً قبل الإضافة
-      const existingProduct = products.find(p => p.code === newProdForm.code);
-      if (newProdForm.code && existingProduct) {
-          return toast.error("هذا الكود مسجل مسبقاً لمنتج آخر. قم باختيار المنتج من القائمة بدلاً من إضافته كجديد.");
+      // التحقق من وجود الكود محلياً قبل الإرسال للسحاب
+      const isDuplicate = products.some(p => p.code === newProdForm.code && p.code !== '');
+      if (isDuplicate) {
+          return toast.error("هذا الكود (الباركود) مسجل مسبقاً لمنتج آخر. يرجى استخدامه مباشرة أو تغيير الكود.");
       }
 
       const pData = { name: newProdForm.name, code: newProdForm.code };
