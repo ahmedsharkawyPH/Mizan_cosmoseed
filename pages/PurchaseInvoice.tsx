@@ -6,6 +6,7 @@ import { PurchaseItem, PurchaseInvoice as IPurchaseInvoice } from '../types';
 import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock, History, Truck, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
+import { purchaseInvoiceSchema, productSchema } from '../utils/validation';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -259,8 +260,18 @@ export default function PurchaseInvoice({ type }: Props) {
   };
 
   const handleQuickAddProduct = async () => {
-      if (!newProdForm.name) return toast.error("اسم الصنف مطلوب");
+      // التحقق من صحة البيانات باستخدام Zod
+      const validation = productSchema.safeParse({ 
+        name: newProdForm.name, 
+        code: newProdForm.code,
+        selling_price: newProdForm.selling_price,
+        purchase_price: newProdForm.purchase_price
+      });
       
+      if (!validation.success) {
+        return toast.error(validation.error.issues[0].message);
+      }
+
       // التحقق من وجود الكود محلياً قبل الإرسال للسحاب
       const isDuplicate = products.some(p => p.code === newProdForm.code && p.code !== '');
       if (isDuplicate) {
@@ -282,13 +293,15 @@ export default function PurchaseInvoice({ type }: Props) {
   };
 
   const save = async () => {
-    if (!selectedSupplier) {
-        toast.error("يرجى اختيار المورد أولاً");
-        return;
-    }
-    if (cart.length === 0) {
-        toast.error("الفاتورة فارغة");
-        return;
+    // التحقق من صحة البيانات باستخدام Zod
+    const validation = purchaseInvoiceSchema.safeParse({ 
+      supplierId: selectedSupplier, 
+      items: cart, 
+      cashPaid 
+    });
+    
+    if (!validation.success) {
+      return toast.error(validation.error.issues[0].message);
     }
     
     setIsSaving(true);

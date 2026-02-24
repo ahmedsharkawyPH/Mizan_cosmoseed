@@ -8,6 +8,7 @@ import { Plus, Trash2, Edit2, Save, Search, AlertCircle, Calculator, Package, Us
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
+import { saleInvoiceSchema } from '../utils/validation';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -189,7 +190,16 @@ export default function NewInvoice() {
   }, [selectedProduct, products, editingIndex]);
 
   const handleCheckout = async (print: boolean = false) => {
-    if (!selectedCustomer || cart.length === 0) return toast.error(t('inv.select_customer'));
+    // التحقق من صحة البيانات باستخدام Zod
+    const validation = saleInvoiceSchema.safeParse({ 
+      customerId: selectedCustomer, 
+      items: cart, 
+      cashPayment 
+    });
+    
+    if (!validation.success) {
+      return toast.error(validation.error.issues[0].message);
+    }
     
     setIsSubmitting(true);
     const user = authService.getCurrentUser();

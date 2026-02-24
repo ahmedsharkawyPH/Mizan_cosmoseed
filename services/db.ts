@@ -8,6 +8,13 @@ import {
   PendingAdjustment, DailyClosing, ProductWithBatches, CartItem, BatchStatus,
   PaymentStatus, CashTransactionType, PurchaseItem, ABCAnalysis, InventoryValuationItem
 } from '../types';
+import { 
+  saleInvoiceSchema, 
+  purchaseInvoiceSchema, 
+  productSchema, 
+  customerSchema, 
+  supplierSchema 
+} from '../utils/validation';
 
 const DB_VERSION = 4.3; 
 
@@ -360,6 +367,12 @@ class Database {
 
   // --- Actions ---
   async createInvoice(customerId: string, items: CartItem[], cashPayment: number, isReturn: boolean, addDisc: number, createdBy?: any, commission: number = 0, cashDiscPercent: number = 0, manualPrevBalance?: number): Promise<{ success: boolean; id: string; message?: string }> {
+    // التحقق من صحة البيانات
+    const validation = saleInvoiceSchema.safeParse({ customerId, items, cashPayment });
+    if (!validation.success) {
+      return { success: false, id: '', message: validation.error.issues[0].message };
+    }
+
     const customer = this.customers.find(c => c.id === customerId);
     if (!customer) return { success: false, id: '', message: 'العميل غير موجود' };
     
@@ -492,6 +505,10 @@ class Database {
   }
 
   async addProduct(pData: any, bData: any) {
+      const validation = productSchema.safeParse(pData);
+      if (!validation.success) {
+        return { success: false, message: validation.error.issues[0].message };
+      }
       const p: Product = { id: generateId(), ...pData, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
       this.products.push(p); 
       await this.addToOutbox('products', 'insert', p);
@@ -519,6 +536,10 @@ class Database {
     await this.saveToLocalStore(); return { success: true }; 
   }
   async addCustomer(data: any) { 
+    const validation = customerSchema.safeParse(data);
+    if (!validation.success) {
+      return { success: false, message: validation.error.issues[0].message };
+    }
     const c: Customer = { id: generateId(), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.customers.push(c); 
     await this.addToOutbox('customers', 'insert', c);
@@ -539,6 +560,10 @@ class Database {
     await this.saveToLocalStore(); return { success: true }; 
   }
   async addSupplier(data: any) { 
+    const validation = supplierSchema.safeParse(data);
+    if (!validation.success) {
+      return { success: false, message: validation.error.issues[0].message };
+    }
     const s: Supplier = { id: generateId(), ...data, current_balance: data.opening_balance || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.suppliers.push(s); 
     await this.addToOutbox('suppliers', 'insert', s);
@@ -607,6 +632,12 @@ class Database {
 
   async createPurchaseInvoice(supplierId: string, items: PurchaseItem[], cashPaid: number, isReturn: boolean, docNo?: string, date?: string): Promise<{ success: boolean; id: string; message?: string }> {
       try {
+          // التحقق من صحة البيانات
+          const validation = purchaseInvoiceSchema.safeParse({ supplierId, items, cashPaid });
+          if (!validation.success) {
+            return { success: false, id: '', message: validation.error.issues[0].message };
+          }
+
           const supplier = this.suppliers.find(s => s.id === supplierId);
           if (!supplier && supplierId) return { success: false, id: '', message: 'المورد غير موجود' };
           const total = items.reduce((s, it) => s + (it.quantity * it.cost_price), 0);

@@ -6,6 +6,7 @@ import { Supplier } from '../types';
 import { t } from '../utils/t';
 import { Plus, Search, Upload, Truck, X, Printer, Edit, Trash2 } from 'lucide-react';
 import { readExcelFile } from '../utils/excel';
+import { supplierSchema } from '../utils/validation';
 import { useLocation } from 'react-router-dom';
 // @ts-ignore
 import toast from 'react-hot-toast';
@@ -67,7 +68,11 @@ export default function Suppliers() {
   };
 
   const handleSave = async () => {
-    if (!form.name) return toast.error("اسم المورد مطلوب");
+    // التحقق من صحة البيانات باستخدام Zod
+    const validation = supplierSchema.safeParse(form);
+    if (!validation.success) {
+      return toast.error(validation.error.issues[0].message);
+    }
 
     if (isEditMode && editingId) {
       await db.updateSupplier(editingId, form);

@@ -4,6 +4,7 @@ import { Customer } from '../types';
 import { t } from '../utils/t';
 import { Plus, Search, Upload, FileText, X, Printer, User, ShieldAlert, BarChart3, Users, ArrowUpDown, FileDown, Download, Percent, Edit, Trash2, MapPin, Truck, Map, MessageCircle, Loader2 } from 'lucide-react';
 import { readExcelFile } from '../utils/excel';
+import { customerSchema } from '../utils/validation';
 import { useLocation } from 'react-router-dom';
 // @ts-ignore
 import html2canvas from 'html2canvas';
@@ -70,6 +71,13 @@ export default function Customers() {
 
   const handleSave = () => {
     const customerData = { name: form.name, phone: form.phone, area: form.area, address: form.address, distribution_line: form.distribution_line, opening_balance: form.opening_balance, credit_limit: form.credit_limit, representative_code: form.representative_code, default_discount_percent: form.default_discount_percent };
+    
+    // التحقق من صحة البيانات باستخدام Zod
+    const validation = customerSchema.safeParse(customerData);
+    if (!validation.success) {
+      return toast.error(validation.error.issues[0].message);
+    }
+
     if (isEditMode && currentCustomerId) db.updateCustomer(currentCustomerId, customerData);
     else db.addCustomer({ ...customerData, code: form.code });
     setCustomers(db.getCustomers());
