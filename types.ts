@@ -15,6 +15,8 @@ export interface BaseEntity {
   updated_at: string;
   version: number; 
   status: string; // Unified Status (Generic string to support various entity types)
+  sync_status?: 'Pending' | 'Synced' | 'Error';
+  sync_error?: string;
 }
 
 export interface User extends BaseEntity {

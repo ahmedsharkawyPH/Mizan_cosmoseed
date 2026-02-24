@@ -5,6 +5,7 @@ import { t } from '../utils/t';
 import { Plus, Search, Upload, FileText, X, Printer, User, ShieldAlert, BarChart3, Users, ArrowUpDown, FileDown, Download, Percent, Edit, Trash2, MapPin, Truck, Map, MessageCircle, Loader2 } from 'lucide-react';
 import { readExcelFile } from '../utils/excel';
 import { customerSchema } from '../utils/validation';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { useLocation } from 'react-router-dom';
 // @ts-ignore
 import html2canvas from 'html2canvas';
@@ -295,7 +296,7 @@ export default function Customers() {
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left rtl:text-right min-w-[900px]">
                 <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
-                    <tr><th className="p-4">{t('cust.code')}</th><th className="p-4">{t('cust.name')}</th><th className="p-4">{t('cust.address')}</th><th className="p-4">{t('cust.dist_line')}</th><th className="p-4">{t('cust.rep')}</th><th className="p-4">{t('cust.phone')}</th><th className="p-4 text-center">{t('cust.default_discount')}</th><th className="p-4 text-right rtl:text-left cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('actualBalance')}>{t('cust.balance')} <ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="p-4 text-center">{t('common.action')}</th></tr>
+                    <tr><th className="p-4">{t('cust.code')}</th><th className="p-4">{t('cust.name')}</th><th className="p-4">{t('cust.address')}</th><th className="p-4">{t('cust.dist_line')}</th><th className="p-4">{t('cust.rep')}</th><th className="p-4">{t('cust.phone')}</th><th className="p-4 text-center">{t('cust.default_discount')}</th><th className="p-4 text-center" title="حالة المزامنة">سحابة</th><th className="p-4 text-right rtl:text-left cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('actualBalance')}>{t('cust.balance')} <ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="p-4 text-center">{t('common.action')}</th></tr>
                 </thead>
                 <tbody>
                     {sortedAndFiltered.map(c => {
@@ -310,6 +311,9 @@ export default function Customers() {
                             <td className="p-4">{repName ? <span className="flex items-center gap-1 text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-700 w-fit"><User className="w-3 h-3" /> {repName}</span> : <span className="text-gray-400">-</span>}</td>
                             <td className="p-4">{c.phone}</td>
                             <td className="p-4 text-center font-bold text-blue-600">{c.default_discount_percent ? `${c.default_discount_percent}%` : '-'}</td>
+                            <td className="p-4 text-center">
+                                <SyncStatusIndicator status={c.sync_status} error={c.sync_error} />
+                            </td>
                             <td className={`p-4 text-right rtl:text-left font-bold ${c.actualBalance > 0 ? 'text-red-500' : 'text-green-500'}`}>{currency}{c.actualBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{c.credit_limit && c.credit_limit > 0 && ( <div className="text-[10px] text-gray-400 font-normal">Limit: {c.credit_limit}</div> )}</td>
                             <td className="p-4 text-center">
                                 <div className="flex justify-center gap-2">

@@ -7,6 +7,7 @@ import { t } from '../utils/t';
 import { Plus, Search, Upload, Truck, X, Printer, Edit, Trash2 } from 'lucide-react';
 import { readExcelFile } from '../utils/excel';
 import { supplierSchema } from '../utils/validation';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 import { useLocation } from 'react-router-dom';
 // @ts-ignore
 import toast from 'react-hot-toast';
@@ -268,6 +269,7 @@ export default function Suppliers() {
                 <th className="p-4">{t('supp.contact')}</th>
                 <th className="p-4">{t('cust.phone')}</th>
                 <th className="p-4 text-right rtl:text-left">{t('cust.balance')}</th>
+                <th className="p-4 text-center" title="حالة المزامنة">سحابة</th>
                 <th className="p-4 text-center">{t('common.action')}</th>
                 </tr>
             </thead>
@@ -280,6 +282,9 @@ export default function Suppliers() {
                     <td className="p-4">{s.phone}</td>
                     <td className={`p-4 text-right rtl:text-left font-bold ${s.current_balance > 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {currency}{s.current_balance.toLocaleString()}
+                    </td>
+                    <td className="p-4 text-center">
+                        <SyncStatusIndicator status={s.sync_status} error={s.sync_error} />
                     </td>
                     <td className="p-4 text-center">
                         <div className="flex justify-center gap-2">

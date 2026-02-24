@@ -157,24 +157,48 @@ class Database {
             
             if (!error) {
               success = true;
+              this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
             } else {
               // معالجة خطأ العلاقات 23503 بشكل ودي
               if (error.code === '23503') {
                 console.warn(`تعارض في العلاقات للمنتج: ${payload.name || payload.id}. تم إلغاء التحديث لتجنب فقدان البيانات.`);
                 // نعتبرها نجحت محلياً لكي لا تتوقف المزامنة للأبد
                 success = true; 
+                this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
               } else {
                 console.error(`Sync error on ${entityType}:`, error);
+                this.updateLocalSyncStatus(entityType, payload.id, 'Error', error.message);
+                await localStore.logError({
+                  entityType,
+                  operation,
+                  payloadId: payload.id,
+                  error: error.message,
+                  timestamp: new Date().toISOString()
+                });
               }
             }
           } else if (operation === 'delete') {
             const { error } = await supabase.from(this.mapEntityTypeToTable(entityType)).delete().eq('id', payload.id);
             if (!error) success = true;
-            else console.error(`Sync error on ${entityType} deletion:`, error);
+            else {
+              console.error(`Sync error on ${entityType} deletion:`, error);
+              await localStore.logError({
+                entityType,
+                operation,
+                payloadId: payload.id,
+                error: error.message,
+                timestamp: new Date().toISOString()
+              });
+            }
           }
 
           if (success && id !== undefined) {
             await localStore.removeFromOutbox(id);
+          }
+          
+          // Save the updated sync status to local store
+          if (operation === 'insert' || operation === 'update') {
+            await this.saveToLocalStore();
           }
         } catch (err) {
           console.error(`Failed to sync outbox item ${id}:`, err);
@@ -205,11 +229,29 @@ class Database {
     return map[type] || type;
   }
 
+  private updateLocalSyncStatus(entityType: string, id: string, status: 'Pending' | 'Synced' | 'Error', errorMsg?: string) {
+    const arr = (this as any)[entityType];
+    if (arr && Array.isArray(arr)) {
+      const item = arr.find((x: any) => x.id === id);
+      if (item) {
+        item.sync_status = status;
+        item.sync_error = errorMsg;
+      }
+    }
+  }
+
   async addToOutbox(entityType: string, operation: 'insert' | 'update' | 'delete', payload: any) {
+    if (operation === 'insert' || operation === 'update') {
+      this.updateLocalSyncStatus(entityType, payload.id, 'Pending');
+    }
+    
+    // Strip sync_status and sync_error before saving to outbox to avoid sending them to Supabase
+    const { sync_status, sync_error, ...cleanPayload } = payload;
+    
     await localStore.addToOutbox({
       entityType,
       operation,
-      payload,
+      payload: cleanPayload,
       createdAt: new Date().toISOString()
     });
     this.syncToCloud().catch(console.error);
@@ -239,8 +281,32 @@ class Database {
 
       for (const table of tables) {
         if (onProgress) onProgress(`جاري جلب ${table.label}...`);
-        const data = await this.fetchAllFromTable(table.name);
-        (this as any)[table.prop] = data;
+        const cloudData = await this.fetchAllFromTable(table.name);
+        
+        // Merge logic: Last Write Wins
+        const localData = (this as any)[table.prop] || [];
+        const mergedData = [...localData];
+        
+        for (const cloudItem of cloudData) {
+          const localIndex = mergedData.findIndex((item: any) => item.id === cloudItem.id);
+          if (localIndex === -1) {
+            // Item doesn't exist locally, add it
+            mergedData.push({ ...cloudItem, sync_status: 'Synced' });
+          } else {
+            // Item exists, compare updated_at
+            const localItem = mergedData[localIndex];
+            const localUpdated = new Date(localItem.updated_at || 0).getTime();
+            const cloudUpdated = new Date(cloudItem.updated_at || 0).getTime();
+            
+            if (cloudUpdated > localUpdated) {
+              // Cloud is newer, overwrite local
+              mergedData[localIndex] = { ...cloudItem, sync_status: 'Synced' };
+            }
+            // If local is newer, keep local (it will be synced to cloud later)
+          }
+        }
+        
+        (this as any)[table.prop] = mergedData;
       }
 
       if (onProgress) onProgress("جاري جلب الإعدادات...");
@@ -517,7 +583,7 @@ class Database {
         this.batches.push(b);
         await this.addToOutbox('batches', 'insert', b);
       }
-      await this.saveToLocalStore(); return { success: true };
+      await this.saveToLocalStore(); return { success: true, id: p.id };
   }
 
   async updateProduct(id: string, data: any) {

@@ -285,11 +285,16 @@ export default function PurchaseInvoice({ type }: Props) {
           selling_price: newProdForm.selling_price,
           warehouse_id: selectedWarehouse || warehouses[0]?.id
       };
-      await db.addProduct(pData, bData);
-      toast.success("تم إضافة الصنف بنجاح");
-      setProducts(db.getProductsWithBatches()); 
-      setIsAddProdModalOpen(false);
-      setNewProdForm({ name: '', code: '', purchase_price: 0, selling_price: 0 });
+      const result = await db.addProduct(pData, bData);
+      if (result.success && result.id) {
+        toast.success("تم إضافة الصنف بنجاح");
+        setProducts(db.getProductsWithBatches()); 
+        setSelProd(result.id);
+        setIsAddProdModalOpen(false);
+        setNewProdForm({ name: '', code: '', purchase_price: 0, selling_price: 0 });
+      } else {
+        toast.error(result.message || "حدث خطأ أثناء إضافة الصنف");
+      }
   };
 
   const save = async () => {

@@ -5,6 +5,7 @@ import { Invoice, PaymentStatus } from '../types';
 import { FileText, Search, Eye, Edit, X, Printer, FileDown, PlusCircle, MessageCircle, Loader2, Trash2, Download, Filter } from 'lucide-react';
 import { t } from '../utils/t';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 // @ts-ignore
 import html2canvas from 'html2canvas';
 // @ts-ignore
@@ -275,6 +276,7 @@ const Invoices: React.FC = () => {
                         <th className="px-6 py-4 text-center">التاريخ</th>
                         <th className="px-6 py-4">العميل</th>
                         <th className="px-6 py-4 text-center">النوع</th>
+                        <th className="px-6 py-4 text-center" title="حالة المزامنة">سحابة</th>
                         <th className="px-6 py-4 text-left">صافي الفاتورة</th>
                         <th className="px-6 py-4 text-left">المسدد</th>
                         <th className="px-6 py-4 text-center">الإجراء</th>
@@ -294,6 +296,9 @@ const Invoices: React.FC = () => {
                                     ) : (
                                         <span className="px-3 py-1 rounded-full text-[10px] font-black bg-red-50 text-red-700 border border-red-100">مرتجع مبيعات</span>
                                     )}
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                    <SyncStatusIndicator status={inv.sync_status} error={inv.sync_error} />
                                 </td>
                                 <td className="px-6 py-4 text-left font-black text-slate-900">{currency}{inv.net_total.toFixed(2)}</td>
                                 <td className="px-6 py-4 text-left font-black text-emerald-600">{currency}{paid.toFixed(2)}</td>

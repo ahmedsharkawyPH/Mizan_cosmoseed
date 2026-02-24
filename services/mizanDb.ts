@@ -13,6 +13,15 @@ export interface OutboxItem {
   createdAt: string;
 }
 
+export interface SyncError {
+  id?: number;
+  entityType: string;
+  operation: string;
+  payloadId: string;
+  error: string;
+  timestamp: string;
+}
+
 export class MizanDb extends Dexie {
   products!: Table<Product, string>;
   batches!: Table<Batch, string>;
@@ -28,10 +37,11 @@ export class MizanDb extends Dexie {
   purchaseOrders!: Table<PurchaseOrder, string>;
   settings!: Table<{ id: string; value: any }, string>;
   outbox!: Table<OutboxItem, number>;
+  syncErrors!: Table<SyncError, number>;
 
   constructor() {
     super('mizan_db_dexie');
-    this.version(3).stores({
+    this.version(4).stores({
       products: 'id, code, name, status',
       batches: 'id, product_id, warehouse_id, batch_number, batch_status, status, purchase_invoice_id',
       customers: 'id, code, name, phone, representative_code, status, opening_balance, current_balance',
@@ -45,7 +55,8 @@ export class MizanDb extends Dexie {
       pendingAdjustments: 'id, product_id, warehouse_id, adj_status, date',
       purchaseOrders: 'id, supplier_id, date, order_status',
       settings: 'id',
-      outbox: '++id, createdAt, entityType'
+      outbox: '++id, createdAt, entityType',
+      syncErrors: '++id, timestamp, entityType'
     });
   }
 }

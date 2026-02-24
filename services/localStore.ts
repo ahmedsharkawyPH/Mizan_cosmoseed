@@ -88,6 +88,16 @@ export class LocalStore {
     await mizanDb.outbox.delete(id);
   }
 
+  async logError(errorData: any) {
+    await this.init();
+    return await mizanDb.syncErrors.add(errorData);
+  }
+
+  async getSyncErrors() {
+    await this.init();
+    return await mizanDb.syncErrors.orderBy('timestamp').reverse().toArray();
+  }
+
   async clearTable(table: string) {
     await this.init();
     if (table === 'settings') {

@@ -5,6 +5,7 @@ import { PurchaseInvoice } from '../types';
 import { t } from '../utils/t';
 import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2, RefreshCcw, ShoppingCart, RotateCcw, AlertCircle, ArrowRightLeft, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -160,6 +161,7 @@ export default function PurchaseList() {
                         <th className="px-6 py-4 text-center">التاريخ</th>
                         <th className="px-6 py-4">المورد</th>
                         <th className="px-6 py-4 text-center">النوع</th>
+                        <th className="px-6 py-4 text-center" title="حالة المزامنة">سحابة</th>
                         <th className="px-6 py-4 text-left">قيمة الفاتورة</th>
                         <th className="px-6 py-4 text-center">الإجراء</th>
                     </tr>
@@ -175,6 +177,9 @@ export default function PurchaseList() {
                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${inv.type === 'PURCHASE' ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
                                     {inv.type === 'PURCHASE' ? 'شراء' : 'مرتجع'}
                                 </span>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                                <SyncStatusIndicator status={inv.sync_status} error={inv.sync_error} />
                             </td>
                             <td className="px-6 py-4 text-left font-black text-slate-900">{currency}{inv.total_amount.toLocaleString()}</td>
                             <td className="px-6 py-4 text-center">
