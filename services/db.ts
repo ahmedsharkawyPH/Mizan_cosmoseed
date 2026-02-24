@@ -142,10 +142,23 @@ class Database {
         try {
           if (operation === 'insert' || operation === 'update') {
             const table = this.mapEntityTypeToTable(entityType);
-            const options = entityType === 'products' ? { onConflict: 'code' } : {};
-            const { error } = await supabase.from(table).upsert(payload, options);
+            let syncPayload = { ...payload };
+            let options: any = {};
+            
+            if (entityType === 'products') {
+              options = { onConflict: 'code', ignoreDuplicates: false };
+            }
+            
+            const { error } = await supabase.from(table).upsert(syncPayload, options);
+            
             if (!error) success = true;
-            else console.error(`Sync error on ${entityType}:`, error);
+            else {
+              console.error(`Sync error on ${entityType}:`, error);
+              // إذا ظهر خطأ علاقات (23503)، فهذا يعني أننا نحاول تغيير ID لمنتج له حركات مخزنية
+              if (error.code === '23503') {
+                 console.error("خطأ: لا يمكن تحديث المنتج لأن الكود مرتبط بـ ID مختلف له حركات مخزنية.");
+              }
+            }
           } else if (operation === 'delete') {
             const { error } = await supabase.from(this.mapEntityTypeToTable(entityType)).delete().eq('id', payload.id);
             if (!error) success = true;

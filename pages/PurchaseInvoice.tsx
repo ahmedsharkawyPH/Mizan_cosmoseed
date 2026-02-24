@@ -262,8 +262,9 @@ export default function PurchaseInvoice({ type }: Props) {
       if (!newProdForm.name) return toast.error("اسم الصنف مطلوب");
       
       // التحقق من عدم تكرار الكود محلياً قبل الإضافة
-      if (newProdForm.code && products.some(p => p.code === newProdForm.code)) {
-          return toast.error("كود الصنف موجود مسبقاً، يرجى استخدام كود آخر");
+      const existingProduct = products.find(p => p.code === newProdForm.code);
+      if (newProdForm.code && existingProduct) {
+          return toast.error("هذا الكود مسجل مسبقاً لمنتج آخر. قم باختيار المنتج من القائمة بدلاً من إضافته كجديد.");
       }
 
       const pData = { name: newProdForm.name, code: newProdForm.code };
