@@ -57,6 +57,17 @@ class Database {
     this.syncListeners.forEach(l => l(this.activeOperations > 0));
   }
 
+  generateDocNumber(prefix: string, collection?: any[]): string {
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    const docNumber = `${prefix}-${timestamp}-${random}`;
+    
+    if (collection && collection.some((item: any) => item.invoice_number === docNumber || item.ref_number === docNumber || item.order_number === docNumber || item.code === docNumber)) {
+        return this.generateDocNumber(prefix, collection);
+    }
+    return docNumber;
+  }
+
   async init(onProgress?: (msg: string) => void) {
     if (onProgress) onProgress("جاري تهيئة قاعدة البيانات...");
     await localStore.init(); 
@@ -150,8 +161,13 @@ class Database {
           if (operation === 'insert' || operation === 'update') {
             const table = this.mapEntityTypeToTable(entityType);
             
+            let onConflict = 'id';
+            if (entityType === 'products') onConflict = 'code';
+            else if (entityType === 'purchaseInvoices') onConflict = 'id, invoice_number';
+            else if (entityType === 'invoices') onConflict = 'id, invoice_number';
+
             const { error } = await supabase.from(table).upsert(payload, {
-              onConflict: entityType === 'products' ? 'code' : 'id',
+              onConflict,
               ignoreDuplicates: false 
             });
             
@@ -159,8 +175,37 @@ class Database {
               success = true;
               this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
             } else {
-              // معالجة خطأ العلاقات 23503 بشكل ودي
-              if (error.code === '23503') {
+              if (error.code === '23505') {
+                console.warn(`تعارض في المفتاح الفريد لـ ${entityType}، يتم التحديث بدلاً من الإضافة...`);
+                
+                let uniqueKey = 'id';
+                let uniqueValue = payload.id;
+                
+                if (payload.invoice_number) { uniqueKey = 'invoice_number'; uniqueValue = payload.invoice_number; }
+                else if (payload.ref_number) { uniqueKey = 'ref_number'; uniqueValue = payload.ref_number; }
+                else if (payload.order_number) { uniqueKey = 'order_number'; uniqueValue = payload.order_number; }
+                else if (payload.code) { uniqueKey = 'code'; uniqueValue = payload.code; }
+
+                const { error: updateError } = await supabase
+                  .from(table)
+                  .update(payload)
+                  .eq(uniqueKey, uniqueValue);
+                  
+                if (!updateError) {
+                  success = true;
+                  this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
+                } else {
+                  console.error(`Sync error on ${entityType} update:`, updateError);
+                  this.updateLocalSyncStatus(entityType, payload.id, 'Error', updateError.message);
+                  await localStore.logError({
+                    entityType,
+                    operation,
+                    payloadId: payload.id,
+                    error: updateError.message,
+                    timestamp: new Date().toISOString()
+                  });
+                }
+              } else if (error.code === '23503') {
                 console.warn(`تعارض في العلاقات للمنتج: ${payload.name || payload.id}. تم إلغاء التحديث لتجنب فقدان البيانات.`);
                 // نعتبرها نجحت محلياً لكي لا تتوقف المزامنة للأبد
                 success = true; 
@@ -453,7 +498,7 @@ class Database {
     
     const invoice: Invoice = {
         id: invoiceId, 
-        invoice_number: `INV-${Date.now().toString().slice(-6)}`,
+        invoice_number: this.generateDocNumber('INV', this.invoices),
         customer_id: customerId, 
         date: new Date().toISOString(), 
         total_before_discount: total_before,
@@ -552,7 +597,7 @@ class Database {
   }
 
   async addCashTransaction(data: any) {
-      const tx: CashTransaction = { id: generateId(), ref_number: `TX-${Date.now().toString().slice(-6)}`, ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
+      const tx: CashTransaction = { id: generateId(), ref_number: this.generateDocNumber('TX', this.cashTransactions), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
       this.cashTransactions.push(tx); 
       await this.addToOutbox('cashTransactions', 'insert', tx);
       await this.saveToLocalStore(); return { success: true };
@@ -712,7 +757,7 @@ class Database {
           
           const inv: PurchaseInvoice = { 
               id: invId, 
-              invoice_number: `PUR-${Date.now().toString().slice(-6)}`, 
+              invoice_number: this.generateDocNumber('PUR', this.purchaseInvoices), 
               document_number: docNo, 
               supplier_id: supplierId, 
               date: date || new Date().toISOString(), 
@@ -814,7 +859,7 @@ class Database {
   }
 
   async createPurchaseOrder(supplierId: string, items: any[]) { 
-    const po: PurchaseOrder = { id: generateId(), order_number: `ORD-${Date.now().toString().slice(-6)}`, supplier_id: supplierId, date: new Date().toISOString(), order_status: 'PENDING', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }; 
+    const po: PurchaseOrder = { id: generateId(), order_number: this.generateDocNumber('ORD', this.purchaseOrders), supplier_id: supplierId, date: new Date().toISOString(), order_status: 'PENDING', items, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' }; 
     this.purchaseOrders.push(po); 
     await this.addToOutbox('purchaseOrders', 'insert', po);
     await this.saveToLocalStore(); return { success: true }; 
@@ -927,9 +972,9 @@ class Database {
     console.log("Recalculation complete.");
     await this.saveToLocalStore(true);
   }
-  getNextTransactionRef(type: any) { return `TX-${type.charAt(0)}-${Date.now().toString().slice(-6)}`; }
+  getNextTransactionRef(type: any) { return this.generateDocNumber(`TX-${type.charAt(0)}`, this.cashTransactions); }
   getNextProductCode() { 
-    return `P-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 899)}`; 
+    return this.generateDocNumber('P', this.products); 
   }
   async addExpenseCategory(cat: string) { 
     if (!this.settings.expenseCategories.includes(cat)) { 
