@@ -9,7 +9,7 @@ import {
   Printer, Upload, Image as ImageIcon, Database, Download, 
   AlertTriangle, FileMinus, UserMinus, PackageMinus, Loader2, 
   Monitor, Layout, FileType, CheckCircle2, XCircle, PackageCheck, Globe, Wifi, WifiOff, RefreshCcw,
-  BadgeInfo, Store, Coins, LayoutDashboard, Eraser, ShoppingBag, ShoppingCart, RotateCcw, Wallet
+  BadgeInfo, Store, Coins, LayoutDashboard, Eraser, ShoppingBag, ShoppingCart, RotateCcw, Wallet, CloudOff
 } from 'lucide-react';
 import { localStore } from '../services/localStore';
 import { t } from '../utils/t';
@@ -31,9 +31,10 @@ const AdminStatCard = ({ title, value, icon: Icon, color }: any) => (
 
 export default function Settings() {
   const [settings, setSettings] = useState(db.getSettings());
-  const [activeTab, setActiveTab] = useState<'general' | 'approvals' | 'invoice' | 'users' | 'printer' | 'backup' | 'data'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'approvals' | 'invoice' | 'users' | 'printer' | 'backup' | 'data' | 'sync_errors'>('general');
   const [isSaving, setIsSaving] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<PendingAdjustment[]>([]);
+  const [syncErrors, setSyncErrors] = useState<any[]>([]);
   const user = authService.getCurrentUser();
   
   const [users, setUsers] = useState<any[]>([]);
@@ -281,7 +282,7 @@ export default function Settings() {
              <Database className="w-4 h-4" /> {t('set.backup_mgmt')}
           </button>
           <button onClick={() => setActiveTab('sync_errors')} className={`px-6 py-4 text-sm font-black border-b-4 transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'sync_errors' ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-             <CloudAlert className="w-4 h-4" /> أخطاء المزامنة
+             <CloudOff className="w-4 h-4" /> أخطاء المزامنة
           </button>
           <button onClick={() => setActiveTab('data')} className={`px-6 py-4 text-sm font-black border-b-4 transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'data' ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
              <AlertTriangle className="w-4 h-4" /> {t('set.danger_zone')}

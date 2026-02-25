@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cloud, CloudOff, CloudAlert, Loader2 } from 'lucide-react';
+import { Cloud, CloudOff, Loader2 } from 'lucide-react';
 
 interface SyncStatusIndicatorProps {
   status?: 'Pending' | 'Synced' | 'Error';
@@ -26,10 +26,11 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({ status
   if (status === 'Error') {
     return (
       <div className="flex items-center text-red-500" title={`خطأ في المزامنة: ${error || 'غير معروف'}`}>
-        <CloudAlert className="w-4 h-4" />
+        <CloudOff className="w-4 h-4" />
       </div>
     );
   }
 
   return null;
 };
+
