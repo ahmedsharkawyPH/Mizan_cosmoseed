@@ -161,13 +161,8 @@ class Database {
           if (operation === 'insert' || operation === 'update') {
             const table = this.mapEntityTypeToTable(entityType);
             
-            let onConflict = 'id';
-            if (entityType === 'products') onConflict = 'code';
-            else if (entityType === 'purchaseInvoices') onConflict = 'id, invoice_number';
-            else if (entityType === 'invoices') onConflict = 'id, invoice_number';
-
             const { error } = await supabase.from(table).upsert(payload, {
-              onConflict,
+              onConflict: 'id',
               ignoreDuplicates: false 
             });
             
@@ -178,18 +173,26 @@ class Database {
               if (error.code === '23505') {
                 console.warn(`تعارض في المفتاح الفريد لـ ${entityType}، يتم التحديث بدلاً من الإضافة...`);
                 
-                let uniqueKey = 'id';
-                let uniqueValue = payload.id;
+                let updateQuery = supabase.from(table).update(payload);
                 
-                if (payload.invoice_number) { uniqueKey = 'invoice_number'; uniqueValue = payload.invoice_number; }
-                else if (payload.ref_number) { uniqueKey = 'ref_number'; uniqueValue = payload.ref_number; }
-                else if (payload.order_number) { uniqueKey = 'order_number'; uniqueValue = payload.order_number; }
-                else if (payload.code) { uniqueKey = 'code'; uniqueValue = payload.code; }
+                if (entityType === 'batches') {
+                  updateQuery = updateQuery
+                    .eq('product_id', payload.product_id)
+                    .eq('warehouse_id', payload.warehouse_id)
+                    .eq('batch_number', payload.batch_number);
+                } else {
+                  let uniqueKey = 'id';
+                  let uniqueValue = payload.id;
+                  
+                  if (payload.invoice_number) { uniqueKey = 'invoice_number'; uniqueValue = payload.invoice_number; }
+                  else if (payload.ref_number) { uniqueKey = 'ref_number'; uniqueValue = payload.ref_number; }
+                  else if (payload.order_number) { uniqueKey = 'order_number'; uniqueValue = payload.order_number; }
+                  else if (payload.code) { uniqueKey = 'code'; uniqueValue = payload.code; }
 
-                const { error: updateError } = await supabase
-                  .from(table)
-                  .update(payload)
-                  .eq(uniqueKey, uniqueValue);
+                  updateQuery = updateQuery.eq(uniqueKey, uniqueValue);
+                }
+
+                const { error: updateError } = await updateQuery;
                   
                 if (!updateError) {
                   success = true;
