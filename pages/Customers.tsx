@@ -41,7 +41,7 @@ export default function Customers() {
   const [newLineName, setNewLineName] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
-  const [form, setForm] = useState({ code: '', name: '', phone: '', area: '', address: '', distribution_line: '', opening_balance: 0, credit_limit: 0, representative_code: '', default_discount_percent: 0 });
+  const [form, setForm] = useState({ code: '', name: '', phone: '', area: '', address: '', distribution_line: '', opening_balance: 0, credit_limit: 0, representative_code: '', default_discount_percent: 0, price_segment: 'retail' as 'retail' | 'wholesale' | 'half_wholesale' });
   const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'actualBalance', direction: 'desc' });
 
@@ -59,19 +59,19 @@ export default function Customers() {
       const numericCodes = allCustomers.map(c => parseInt(c.code)).filter(c => !isNaN(c));
       const maxCode = numericCodes.length > 0 ? Math.max(...numericCodes) : 1000;
       const nextCode = (maxCode + 1).toString();
-      setForm({ code: nextCode, name: '', phone: '', area: '', address: '', distribution_line: '', opening_balance: 0, credit_limit: 0, representative_code: '', default_discount_percent: 0 });
+      setForm({ code: nextCode, name: '', phone: '', area: '', address: '', distribution_line: '', opening_balance: 0, credit_limit: 0, representative_code: '', default_discount_percent: 0, price_segment: 'retail' });
       setIsOpen(true);
   };
 
   const openEditModal = (customer: Customer) => {
       setIsEditMode(true);
       setCurrentCustomerId(customer.id);
-      setForm({ code: customer.code, name: customer.name, phone: customer.phone, area: customer.area, address: customer.address || '', distribution_line: customer.distribution_line || '', opening_balance: customer.opening_balance, credit_limit: customer.credit_limit || 0, representative_code: customer.representative_code || '', default_discount_percent: customer.default_discount_percent || 0 });
+      setForm({ code: customer.code, name: customer.name, phone: customer.phone, area: customer.area, address: customer.address || '', distribution_line: customer.distribution_line || '', opening_balance: customer.opening_balance, credit_limit: customer.credit_limit || 0, representative_code: customer.representative_code || '', default_discount_percent: customer.default_discount_percent || 0, price_segment: customer.price_segment || 'retail' });
       setIsOpen(true);
   };
 
   const handleSave = () => {
-    const customerData = { name: form.name, phone: form.phone, area: form.area, address: form.address, distribution_line: form.distribution_line, opening_balance: form.opening_balance, credit_limit: form.credit_limit, representative_code: form.representative_code, default_discount_percent: form.default_discount_percent };
+    const customerData = { name: form.name, phone: form.phone, area: form.area, address: form.address, distribution_line: form.distribution_line, opening_balance: form.opening_balance, credit_limit: form.credit_limit, representative_code: form.representative_code, default_discount_percent: form.default_discount_percent, price_segment: form.price_segment };
     
     // التحقق من صحة البيانات باستخدام Zod
     const validation = customerSchema.safeParse(customerData);
@@ -296,7 +296,7 @@ export default function Customers() {
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left rtl:text-right min-w-[900px]">
                 <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
-                    <tr><th className="p-4">{t('cust.code')}</th><th className="p-4">{t('cust.name')}</th><th className="p-4">{t('cust.address')}</th><th className="p-4">{t('cust.dist_line')}</th><th className="p-4">{t('cust.rep')}</th><th className="p-4">{t('cust.phone')}</th><th className="p-4 text-center">{t('cust.default_discount')}</th><th className="p-4 text-center" title="حالة المزامنة">سحابة</th><th className="p-4 text-right rtl:text-left cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('actualBalance')}>{t('cust.balance')} <ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="p-4 text-center">{t('common.action')}</th></tr>
+                    <tr><th className="p-4">{t('cust.code')}</th><th className="p-4">{t('cust.name')}</th><th className="p-4">{t('cust.address')}</th><th className="p-4">{t('cust.dist_line')}</th><th className="p-4">{t('cust.rep')}</th><th className="p-4">{t('cust.phone')}</th><th className="p-4 text-center">شريحة الخصم</th><th className="p-4 text-center">{t('cust.default_discount')}</th><th className="p-4 text-center" title="حالة المزامنة">سحابة</th><th className="p-4 text-right rtl:text-left cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handleSort('actualBalance')}>{t('cust.balance')} <ArrowUpDown className="w-3 h-3 inline ml-1" /></th><th className="p-4 text-center">{t('common.action')}</th></tr>
                 </thead>
                 <tbody>
                     {sortedAndFiltered.map(c => {
@@ -310,6 +310,9 @@ export default function Customers() {
                             <td className="p-4 text-gray-500 text-xs max-w-[120px] truncate">{c.distribution_line || '-'}</td>
                             <td className="p-4">{repName ? <span className="flex items-center gap-1 text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-700 w-fit"><User className="w-3 h-3" /> {repName}</span> : <span className="text-gray-400">-</span>}</td>
                             <td className="p-4">{c.phone}</td>
+                            <td className="p-4 text-center font-bold text-slate-600 text-xs">
+                                {c.price_segment === 'wholesale' ? 'جملة' : c.price_segment === 'half_wholesale' ? 'نص جملة' : 'قطاعي'}
+                            </td>
                             <td className="p-4 text-center font-bold text-blue-600">{c.default_discount_percent ? `${c.default_discount_percent}%` : '-'}</td>
                             <td className="p-4 text-center">
                                 <SyncStatusIndicator status={c.sync_status} error={c.sync_error} />
@@ -432,6 +435,14 @@ export default function Customers() {
             <div><label htmlFor="cust_opening" className="block text-xs font-bold text-gray-400 mb-1">الرصيد الافتتاحي</label><input id="cust_opening" name="cust_opening" type="number" className="w-full border p-2 rounded" value={form.opening_balance} onChange={e => setForm({...form, opening_balance: +e.target.value})} disabled={isEditMode} /></div>
             <div><label htmlFor="cust_limit" className="block text-xs font-bold text-gray-400 mb-1">الحد الائتماني</label><input id="cust_limit" name="cust_limit" type="number" className="w-full border p-2 rounded" value={form.credit_limit} onChange={e => setForm({...form, credit_limit: +e.target.value})} /></div>
             <div><label htmlFor="cust_disc" className="block text-xs font-bold text-gray-400 mb-1">نسبة خصم ثابتة %</label><input id="cust_disc" name="cust_disc" type="number" className="w-full border p-2 rounded font-bold text-blue-600" value={form.default_discount_percent} onChange={e => setForm({...form, default_discount_percent: +e.target.value})} /></div>
+            <div>
+              <label htmlFor="cust_price_segment" className="block text-xs font-bold text-gray-400 mb-1">شريحة الخصم</label>
+              <select id="cust_price_segment" name="cust_price_segment" className="w-full border p-2 rounded font-bold" value={form.price_segment} onChange={e => setForm({...form, price_segment: e.target.value as any})}>
+                <option value="retail">قطاعي</option>
+                <option value="half_wholesale">نص جملة</option>
+                <option value="wholesale">جملة</option>
+              </select>
+            </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => setIsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">{t('common.cancel')}</button>

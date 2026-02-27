@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS customers (
     opening_balance NUMERIC DEFAULT 0,
     current_balance NUMERIC DEFAULT 0,
     credit_limit NUMERIC DEFAULT 0,
-    default_discount_percent NUMERIC DEFAULT 0
+    default_discount_percent NUMERIC DEFAULT 0,
+    price_segment TEXT DEFAULT 'retail'
 );
 
 CREATE TABLE IF NOT EXISTS suppliers (

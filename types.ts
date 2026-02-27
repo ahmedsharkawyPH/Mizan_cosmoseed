@@ -77,6 +77,7 @@ export interface Customer extends BaseEntity {
   representative_code?: string; 
   default_discount_percent?: number; 
   distribution_line?: string;
+  price_segment?: 'retail' | 'wholesale' | 'half_wholesale';
 }
 
 export interface Supplier extends BaseEntity {
