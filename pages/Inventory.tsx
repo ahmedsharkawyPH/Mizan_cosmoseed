@@ -15,6 +15,7 @@ import InventoryControls from './Inventory/InventoryControls';
 import InventoryTable from './Inventory/InventoryTable';
 import AddProductModal from './Inventory/AddProductModal';
 import ItemCardModal from './Inventory/ItemCardModal';
+import ExportPdfModal from './Inventory/ExportPdfModal';
 
 export default function Inventory() {
   const { products, settings, warehouses, addProduct, updateProduct, deleteProduct } = useData();
@@ -29,6 +30,7 @@ export default function Inventory() {
   } = useInventoryFilter(products, settings, bestSuppliersMap, latestPricesMap);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isExportPdfModalOpen, setIsExportPdfModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [viewingProduct, setViewingProduct] = useState<any>(null);
 
@@ -80,6 +82,26 @@ export default function Inventory() {
   const adjustedPaginated = useMemo(() => applyPricing(paginatedProducts), [paginatedProducts, applyPricing]);
   const adjustedFiltered = useMemo(() => applyPricing(allFiltered), [allFiltered, applyPricing]);
 
+  const handleExportPdf = (selectedPriceType: 'retail' | 'wholesale' | 'half_wholesale') => {
+    // Apply the selected price type specifically for the PDF export
+    const pdfData = allFiltered.map(p => {
+      let selectedPrice = p.selling_price || 0; 
+      
+      if (selectedPriceType === 'wholesale') {
+        selectedPrice = p.selling_price_wholesale || p.selling_price || 0;
+      } else if (selectedPriceType === 'half_wholesale') {
+        selectedPrice = p.selling_price_half_wholesale || p.selling_price || 0;
+      }
+
+      return {
+        ...p,
+        display_selling_price: selectedPrice
+      };
+    });
+
+    generatePriceListPdf(pdfData, settings, selectedPriceType);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50/50 p-4 md:p-6 pb-20">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -112,7 +134,7 @@ export default function Inventory() {
             </div>
         </div>
 
-        <InventoryHeader onAddNew={handleOpenAdd} onExportPdf={() => generatePriceListPdf(adjustedFiltered, settings)} onExportExcel={() => exportInventoryToExcel(adjustedFiltered)} />
+        <InventoryHeader onAddNew={handleOpenAdd} onExportPdf={() => setIsExportPdfModalOpen(true)} onExportExcel={() => exportInventoryToExcel(adjustedFiltered)} />
         <InventoryControls searchQuery={searchQuery} setSearchQuery={setSearchQuery} warehouseFilter={warehouseFilter} setWarehouseFilter={setWarehouseFilter} hideZero={hideZero} setHideZero={setHideZero} showLow={showLow} setShowLow={setShowLow} warehouses={warehouses} totalCount={totalCount} />
         <InventoryTable products={adjustedPaginated} currency={settings.currency} onViewCard={setViewingProduct} onEdit={handleEdit} onDelete={handleDelete} />
         {totalPages > 1 && (
@@ -125,6 +147,7 @@ export default function Inventory() {
       </div>
       <AddProductModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} product={editingProduct} onSave={handleSave} warehouses={warehouses} />
       <ItemCardModal isOpen={!!viewingProduct} onClose={() => setViewingProduct(null)} product={viewingProduct} currency={settings.currency} />
+      <ExportPdfModal isOpen={isExportPdfModalOpen} onClose={() => setIsExportPdfModalOpen(false)} onExport={handleExportPdf} />
     </div>
   );
 }

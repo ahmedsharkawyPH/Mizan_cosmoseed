@@ -5,7 +5,7 @@ import { jsPDF } from 'jspdf';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
-export async function generatePriceListPdf(products: any[], settings: any) {
+export async function generatePriceListPdf(products: any[], settings: any, priceType: 'retail' | 'wholesale' | 'half_wholesale' = 'retail') {
     const toastId = toast.loading("جاري تحضير تقرير PDF...");
     
     products.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
@@ -14,6 +14,8 @@ export async function generatePriceListPdf(products: any[], settings: any) {
     for (let i = 0; i < products.length; i += itemsPerPage) {
         chunks.push(products.slice(i, i + itemsPerPage));
     }
+
+    const priceTypeLabel = priceType === 'wholesale' ? 'جملة' : priceType === 'half_wholesale' ? 'نص جملة' : 'قطاعي';
 
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -34,7 +36,7 @@ export async function generatePriceListPdf(products: any[], settings: any) {
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 15px;">
                     <div>
                         <h1 style="margin: 0; font-size: 18px; font-weight: 900;">${settings.companyName}</h1>
-                        <p style="margin: 2px 0 0 0; font-size: 11px; color: #666;">تقرير الأسعار (نظام العمودين)</p>
+                        <p style="margin: 2px 0 0 0; font-size: 11px; color: #666;">تقرير الأسعار (${priceTypeLabel})</p>
                     </div>
                     <div style="text-align: left;">
                         <p style="margin: 0; font-size: 9px;">تاريخ: ${new Date().toLocaleDateString('ar-EG')}</p>
@@ -54,7 +56,7 @@ export async function generatePriceListPdf(products: any[], settings: any) {
                             ${chunk.map(p => `
                                 <tr style="border-bottom: 1px solid #eee; break-inside: avoid;">
                                     <td style="padding: 4px; font-size: 9px; font-weight: bold; border: 1px solid #f9f9f9;">${p.name}</td>
-                                    <td style="padding: 4px; text-align: center; font-size: 9px; font-weight: 900; color: #2563eb; border: 1px solid #f9f9f9;">${p.selling_price?.toLocaleString()}</td>
+                                    <td style="padding: 4px; text-align: center; font-size: 9px; font-weight: 900; color: #2563eb; border: 1px solid #f9f9f9;">${(p.display_selling_price || p.selling_price || 0).toLocaleString()}</td>
                                     <td style="padding: 4px; text-align: center; font-size: 7px; color: #aaa; font-family: monospace; border: 1px solid #f9f9f9;">${p.code || '-'}</td>
                                 </tr>
                             `).join('')}
