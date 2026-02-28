@@ -161,7 +161,27 @@ class Database {
           if (operation === 'insert' || operation === 'update') {
             const table = this.mapEntityTypeToTable(entityType);
             
-            const { error } = await supabase.from(table).upsert(payload, {
+            let finalPayload = payload;
+            if (entityType === 'customers') {
+              finalPayload = {
+                id: payload.id,
+                code: payload.code,
+                name: payload.name,
+                phone: payload.phone ?? null,
+                area: payload.area ?? null,
+                address: payload.address ?? null,
+                distribution_line: payload.distribution_line ?? null,
+                opening_balance: payload.opening_balance ?? 0,
+                current_balance: payload.current_balance ?? 0,
+                credit_limit: payload.credit_limit ?? 0,
+                representative_code: payload.representative_code ?? null,
+                default_discount_percent: payload.default_discount_percent ?? 0,
+                price_segment: payload.price_segment ?? 'retail',
+                created_at: payload.created_at,
+              };
+            }
+            
+            const { error } = await supabase.from(table).upsert(finalPayload, {
               onConflict: 'id',
               ignoreDuplicates: false 
             });
@@ -173,7 +193,7 @@ class Database {
               if (error.code === '23505') {
                 console.warn(`تعارض في المفتاح الفريد لـ ${entityType}، يتم التحديث بدلاً من الإضافة...`);
                 
-                let updateQuery = supabase.from(table).update(payload);
+                let updateQuery = supabase.from(table).update(finalPayload);
                 
                 if (entityType === 'batches') {
                   updateQuery = updateQuery
