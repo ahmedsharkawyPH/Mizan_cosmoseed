@@ -182,12 +182,24 @@ export default function NewInvoice() {
     if (selectedProduct && editingIndex === null) {
         const p = products.find(prod => prod.id === selectedProduct);
         if (p) {
-            setManualPrice(p.selling_price || 0);
+            const customer = customers.find(c => c.id === selectedCustomer);
+            const priceSegment = customer?.price_segment || 'retail';
+            
+            const availableBatch = selectedWarehouse ? p.batches.find(b => b.warehouse_id === selectedWarehouse) : null;
+            
+            let price = availableBatch?.selling_price || p.selling_price || 0;
+            if (priceSegment === 'wholesale') {
+                price = availableBatch?.selling_price_wholesale || p.selling_price_wholesale || price;
+            } else if (priceSegment === 'half_wholesale') {
+                price = availableBatch?.selling_price_half_wholesale || p.selling_price_half_wholesale || price;
+            }
+            
+            setManualPrice(price);
             setQty(1);
             setTimeout(() => qtyRef.current?.focus(), 100);
         }
     }
-  }, [selectedProduct, products, editingIndex]);
+  }, [selectedProduct, products, editingIndex, selectedCustomer, customers, selectedWarehouse]);
 
   const handleCheckout = async (print: boolean = false) => {
     // التحقق من صحة البيانات باستخدام Zod
@@ -232,7 +244,19 @@ export default function NewInvoice() {
 
   const addItemToCart = () => {
     if (!currentProduct) return;
-    const finalPrice = invoiceConfig.enableManualPrice ? Number(manualPrice) : (availableBatch?.selling_price || currentProduct.selling_price || 0);
+    
+    const customer = customers.find(c => c.id === selectedCustomer);
+    const priceSegment = customer?.price_segment || 'retail';
+    
+    let defaultPrice = availableBatch?.selling_price || currentProduct.selling_price || 0;
+    if (priceSegment === 'wholesale') {
+        defaultPrice = availableBatch?.selling_price_wholesale || currentProduct.selling_price_wholesale || defaultPrice;
+    } else if (priceSegment === 'half_wholesale') {
+        defaultPrice = availableBatch?.selling_price_half_wholesale || currentProduct.selling_price_half_wholesale || defaultPrice;
+    }
+    
+    const finalPrice = invoiceConfig.enableManualPrice ? Number(manualPrice) : defaultPrice;
+    
     const newItem: CartItem = {
       product: currentProduct,
       batch: availableBatch || undefined,
