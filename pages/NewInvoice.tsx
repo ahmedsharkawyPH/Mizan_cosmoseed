@@ -182,24 +182,38 @@ export default function NewInvoice() {
 
   useEffect(() => {
     if (selectedProduct && editingIndex === null) {
-        const p = products.find(prod => prod.id === selectedProduct);
-        if (p) {
-            const customer = customers.find(c => c.id === selectedCustomer);
-            const priceSegment = customer?.price_segment || 'retail';
-            
-            const availableBatch = selectedWarehouse ? p.batches.find(b => b.warehouse_id === selectedWarehouse) : null;
-            
-            let price = availableBatch?.selling_price || p.selling_price || 0;
-            if (priceSegment === 'wholesale') {
-                price = availableBatch?.selling_price_wholesale || p.selling_price_wholesale || price;
-            } else if (priceSegment === 'half_wholesale') {
-                price = availableBatch?.selling_price_half_wholesale || p.selling_price_half_wholesale || price;
-            }
-            
-            setManualPrice(price);
-            setQty(1);
-            setTimeout(() => qtyRef.current?.focus(), 100);
+      const p = products.find(prod => prod.id === selectedProduct);
+      if (p) {
+        const customer = customers.find(c => c.id === selectedCustomer);
+        const priceSegment = customer?.price_segment || 'retail';
+
+        // ✅ إصلاح ALL + شريحة العميل
+        const availableBatch = selectedWarehouse === 'ALL'
+          ? p.batches[0] || null
+          : p.batches.find(b => b.warehouse_id === selectedWarehouse) || null;
+
+        let price: number;
+        if (priceSegment === 'wholesale') {
+          price = availableBatch?.selling_price_wholesale
+            || p.selling_price_wholesale
+            || availableBatch?.selling_price
+            || p.selling_price
+            || 0;
+        } else if (priceSegment === 'half_wholesale') {
+          price = availableBatch?.selling_price_half_wholesale
+            || p.selling_price_half_wholesale
+            || availableBatch?.selling_price
+            || p.selling_price
+            || 0;
+        } else {
+          // retail (قطاعي)
+          price = availableBatch?.selling_price || p.selling_price || 0;
         }
+
+        setManualPrice(price);
+        setQty(1);
+        setTimeout(() => qtyRef.current?.focus(), 100);
+      }
     }
   }, [selectedProduct, products, editingIndex, selectedCustomer, customers, selectedWarehouse]);
 
