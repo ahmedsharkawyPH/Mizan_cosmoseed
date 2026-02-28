@@ -144,7 +144,7 @@ class Database {
 
   async syncToCloud() {
     if (!isSupabaseConfigured) return;
-    
+
     const outbox = await localStore.getOutbox();
     if (outbox.length === 0) return;
 
@@ -152,8 +152,7 @@ class Database {
     this.notifySyncState();
 
     try {
-      // تنفيذ الـ Outbox بالترتيب المحفوظ
-      for (const item of outbox) {
+      const processItem = async (item: any) => {
         const { entityType, operation, payload, id } = item;
         let success = false;
 
@@ -265,15 +264,50 @@ class Database {
           if (success && id !== undefined) {
             await localStore.removeFromOutbox(id);
           }
-          
-          // Save the updated sync status to local store
-          if (operation === 'insert' || operation === 'update') {
-            await this.saveToLocalStore();
-          }
         } catch (err) {
           console.error(`Failed to sync outbox item ${id}:`, err);
         }
+      };
+
+      // تجميع العمليات حسب الجدول (entityType)
+      const groups = outbox.reduce((acc, item) => {
+        if (!acc[item.entityType]) acc[item.entityType] = [];
+        acc[item.entityType].push(item);
+        return acc;
+      }, {} as Record<string, any[]>);
+
+      // معالجة عناصر نفس الجدول بالتسلسل للحفاظ على ترتيب العمليات (مثل إضافة ثم تعديل نفس السجل)
+      const processGroupSequentially = async (entityType: string) => {
+        const items = groups[entityType];
+        if (!items) return;
+        for (const item of items) {
+          await processItem(item);
+        }
+      };
+
+      const independentTables = Object.keys(groups).filter(
+        t => !['invoices', 'customers', 'products', 'batches', 'cashTransactions'].includes(t)
+      );
+
+      // إرسال الجداول المستقلة بالتزامن مع الحفاظ على الترتيب الإجباري
+      await Promise.all([
+        (async () => {
+          await processGroupSequentially('invoices');
+          await processGroupSequentially('customers');
+          await processGroupSequentially('cashTransactions');
+        })(),
+        (async () => {
+          await processGroupSequentially('products');
+          await processGroupSequentially('batches');
+        })(),
+        ...independentTables.map(t => processGroupSequentially(t))
+      ]);
+
+      // حفظ التغييرات محلياً مرة واحدة في النهاية
+      if (outbox.some(i => i.operation === 'insert' || i.operation === 'update')) {
+        await this.saveToLocalStore();
       }
+
     } finally {
       this.activeOperations--;
       this.notifySyncState();
