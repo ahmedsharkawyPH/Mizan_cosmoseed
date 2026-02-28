@@ -399,14 +399,11 @@ class Database {
   async fetchAllFromTable(table: string) {
     if (!isSupabaseConfigured) return [];
     try {
-        let allData: any[] = [];
-        let from = 0;
-        let hasMore = true;
         let retryCount = 0;
         const maxRetries = 3;
 
-        while (hasMore) {
-            const { data, error } = await supabase.from(table).select('*').range(from, from + 999);
+        while (retryCount <= maxRetries) {
+            const { data, error } = await supabase.from(table).select('*').limit(100000);
             
             if (error) {
                 if (retryCount < maxRetries) {
@@ -417,16 +414,9 @@ class Database {
                 throw error;
             }
 
-            if (data && data.length > 0) {
-                allData = [...allData, ...data];
-                from += data.length;
-                if (data.length < 1000) hasMore = false;
-                retryCount = 0;
-            } else {
-                hasMore = false;
-            }
+            return data || [];
         }
-        return allData;
+        return [];
     } catch (err) { 
         return []; 
     }
