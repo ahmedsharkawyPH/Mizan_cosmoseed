@@ -49,18 +49,22 @@ export default function NewInvoice() {
       localStorage.setItem('invoice_settings', JSON.stringify(invoiceConfig));
   }, [invoiceConfig]);
 
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('ALL');
   const [selectedProduct, setSelectedProduct] = useState<string>('');
 
-  const productSearchIndex = useMemo(
-    () => products.map(p => ({
+  const productSearchIndex = useMemo(() => {
+    const filtered = selectedWarehouse === 'ALL'
+      ? products
+      : products.filter(p =>
+          p.batches.some(b => b.warehouse_id === selectedWarehouse)
+        );
+    return filtered.map(p => ({
       id: p.id,
       name: p.name,
       code: p.code,
       barcode: (p as any).barcode || ''
-    })),
-    [products]
-  );
+    }));
+  }, [products, selectedWarehouse]);
 
   const customerSearchIndex = useMemo(
     () => customers.map(c => ({
@@ -104,8 +108,6 @@ export default function NewInvoice() {
     }) as ProductWithBatches);
 
     setProducts(completeProductsList);
-    const def = db.getWarehouses().find(w => w.is_default);
-    if(def) setSelectedWarehouse(def.id);
     if (location.state && (location.state as any).prefillItems) setCart((location.state as any).prefillItems);
     if (id) {
       const inv = db.getInvoices().find(i => i.id === id);
@@ -238,7 +240,10 @@ export default function NewInvoice() {
 
   const currentProduct = useMemo(() => products.find(p => p.id === selectedProduct), [selectedProduct, products]);
   const availableBatch = useMemo(() => {
-    if (!currentProduct || !selectedWarehouse) return null;
+    if (!currentProduct) return null;
+    if (selectedWarehouse === 'ALL') {
+      return currentProduct.batches[0] || null; // أول دُفعة متاحة
+    }
     return currentProduct.batches.find(b => b.warehouse_id === selectedWarehouse) || null;
   }, [currentProduct, selectedWarehouse]);
 
@@ -327,7 +332,8 @@ export default function NewInvoice() {
                  </h3>
                  <div className="flex items-center gap-2">
                     <label className="text-[10px] font-black text-slate-400">المخزن:</label>
-                    <select disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-xl p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                    <select className="bg-slate-50 border border-slate-200 text-sm rounded-xl p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                        <option value="ALL">الكل</option>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                  </div>
