@@ -178,6 +178,8 @@ class Database {
                 default_discount_percent: payload.default_discount_percent ?? 0,
                 price_segment: payload.price_segment ?? 'retail',
                 created_at: payload.created_at,
+                updated_at: payload.updated_at ?? new Date().toISOString(),
+                version: payload.version ?? 1,
               };
             }
             
