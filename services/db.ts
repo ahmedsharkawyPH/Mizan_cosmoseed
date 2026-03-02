@@ -236,12 +236,18 @@ class Database {
                 this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
               } else {
                 console.error(`Sync error on ${entityType}:`, error);
-                this.updateLocalSyncStatus(entityType, payload.id, 'Error', error.message);
+                
+                let userFriendlyError = error.message;
+                if (error.code === 'PGRST204') {
+                  userFriendlyError = `خطأ في هيكل قاعدة البيانات: العمود '${error.message.match(/'([^']+)'/)?.[1] || ''}' مفقود. يرجى تحديث قاعدة البيانات من الإعدادات.`;
+                }
+
+                this.updateLocalSyncStatus(entityType, payload.id, 'Error', userFriendlyError);
                 await localStore.logError({
                   entityType,
                   operation,
                   payloadId: payload.id,
-                  error: error.message,
+                  error: userFriendlyError,
                   timestamp: new Date().toISOString()
                 });
               }

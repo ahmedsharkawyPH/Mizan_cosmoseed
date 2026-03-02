@@ -277,3 +277,34 @@ CREATE TRIGGER update_purchase_orders_version BEFORE UPDATE ON purchase_orders F
 CREATE TRIGGER update_pending_adjustments_version BEFORE UPDATE ON pending_adjustments FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
 CREATE TRIGGER update_daily_closings_version BEFORE UPDATE ON daily_closings FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
 CREATE TRIGGER update_settings_version BEFORE UPDATE ON settings FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+
+-- ==========================================
+-- 6. التحديثات الإضافية (Migrations)
+-- قم بتشغيل هذه الأوامر إذا كانت الجداول موجودة مسبقاً
+-- ==========================================
+
+-- تحديث جدول المنتجات
+ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+
+-- تحديث جدول التشغيلات
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS purchase_invoice_id TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS expiry_date TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS batch_status TEXT DEFAULT 'ACTIVE';
+
+-- تحديث جدول الفواتير
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_percent NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_value NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS commission_value NUMERIC DEFAULT 0;
+
+-- تحديث جدول فواتير الشراء
+ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+
+-- تحديث جدول الإعدادات
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS printer_paper_size TEXT DEFAULT 'A4';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS invoice_template TEXT DEFAULT '1';
+
+-- تنبيه Supabase لتحديث ذاكرة التخزين المؤقت للمخطط
+NOTIFY pgrst, 'reload schema';

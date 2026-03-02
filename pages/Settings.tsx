@@ -41,6 +41,7 @@ export default function Settings() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [selectedWarehouseReset, setSelectedWarehouseReset] = useState('');
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
   const [userForm, setUserForm] = useState({ 
       id: '', name: '', username: '', password: '', role: 'USER',
       permissions: [] as string[]
@@ -684,6 +685,18 @@ export default function Settings() {
                         </button>
                     </div>
 
+                    {/* NEW: إصلاح الهيكل */}
+                    <div className="p-6 rounded-3xl border-2 border-indigo-50 bg-indigo-50/30 group flex flex-col justify-between shadow-sm">
+                        <div className="mb-6">
+                            <div className="w-12 h-12 bg-indigo-600 text-white rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Database className="w-6 h-6" /></div>
+                            <h4 className="font-black text-slate-800 text-base mb-2">إصلاح هيكل البيانات</h4>
+                            <p className="text-[10px] text-slate-400 font-bold leading-relaxed">في حال ظهور أخطاء "Column not found"، استخدم هذا الخيار لتحديث جداول Supabase.</p>
+                        </div>
+                        <button onClick={() => setIsSchemaModalOpen(true)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black text-xs hover:bg-indigo-700 transition-all">
+                            عرض أوامر الإصلاح
+                        </button>
+                    </div>
+
                     {/* ضبط المصنع الشامل */}
                     <div className="p-6 rounded-3xl border-4 border-red-100 bg-red-50 group flex flex-col justify-between shadow-md">
                         <div className="mb-6">
@@ -764,6 +777,88 @@ export default function Settings() {
                 <div className="pt-10 mt-6 border-t border-slate-50 flex flex-col md:flex-row gap-4">
                     <button onClick={() => setIsUserModalOpen(false)} className="flex-1 py-4 text-slate-400 hover:text-slate-600 font-black uppercase tracking-widest hover:bg-slate-50 rounded-2xl transition-all">{t('common.cancel')}</button>
                     <button onClick={handleSaveUser} className="flex-[2] bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl shadow-slate-200 hover:bg-purple-600 transition-all active:scale-95">{t('user.save')}</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Schema Migration Modal */}
+      {isSchemaModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-300">
+            <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-2xl p-10 relative flex flex-col max-h-[90vh] border border-slate-100">
+                <button onClick={() => setIsSchemaModalOpen(false)} className="absolute top-8 right-8 text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-full transition-all"><X className="w-6 h-6" /></button>
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-3 bg-indigo-100 rounded-2xl text-indigo-600"><Database className="w-6 h-6" /></div>
+                    <h3 className="text-2xl font-black text-slate-800">إصلاح وتحديث هيكل البيانات</h3>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto space-y-6 pr-2 scrollbar-hide">
+                    <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex gap-4 items-start">
+                        <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-1" />
+                        <div>
+                            <p className="text-sm font-black text-amber-900 mb-1">تعليمات هامة:</p>
+                            <p className="text-xs text-amber-700 font-bold leading-relaxed">
+                                يرجى نسخ الكود أدناه ولصقه في **SQL Editor** الخاص بـ Supabase ثم الضغط على **Run**. 
+                                هذا سيقوم بإضافة الأعمدة المفقودة وتحديث ذاكرة التخزين المؤقت.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="relative group">
+                        <pre className="bg-slate-900 text-blue-300 p-6 rounded-2xl font-mono text-[10px] overflow-x-auto leading-relaxed border border-slate-800">
+{`-- تحديث جدول المنتجات
+ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+
+-- تحديث جدول التشغيلات
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS purchase_invoice_id TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS expiry_date TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS batch_status TEXT DEFAULT 'ACTIVE';
+
+-- تحديث جدول الفواتير
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_percent NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_value NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS commission_value NUMERIC DEFAULT 0;
+
+-- تحديث جدول فواتير الشراء
+ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+
+-- تحديث جدول الإعدادات
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS printer_paper_size TEXT DEFAULT 'A4';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS invoice_template TEXT DEFAULT '1';
+
+-- تنبيه Supabase لتحديث ذاكرة التخزين المؤقت للمخطط
+NOTIFY pgrst, 'reload schema';`}
+                        </pre>
+                        <button 
+                            onClick={() => {
+                                navigator.clipboard.writeText(`ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS purchase_invoice_id TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS expiry_date TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS batch_status TEXT DEFAULT 'ACTIVE';
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_percent NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_value NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS commission_value NUMERIC DEFAULT 0;
+ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS printer_paper_size TEXT DEFAULT 'A4';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS invoice_template TEXT DEFAULT '1';
+NOTIFY pgrst, 'reload schema';`);
+                                toast.success("تم نسخ الكود إلى الحافظة");
+                            }}
+                            className="absolute top-4 right-4 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-[10px] font-black backdrop-blur-md transition-all border border-white/10"
+                        >
+                            نسخ الكود
+                        </button>
+                    </div>
+                </div>
+                
+                <div className="pt-8 mt-6 border-t border-slate-50">
+                    <button onClick={() => setIsSchemaModalOpen(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black shadow-xl hover:bg-indigo-600 transition-all">إغلاق</button>
                 </div>
             </div>
         </div>
