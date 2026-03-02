@@ -144,7 +144,7 @@ class Database {
 
   async syncToCloud() {
     if (!isSupabaseConfigured) return;
-
+    
     const outbox = await localStore.getOutbox();
     if (outbox.length === 0) return;
 
@@ -152,7 +152,8 @@ class Database {
     this.notifySyncState();
 
     try {
-      const processItem = async (item: any) => {
+      // تنفيذ الـ Outbox بالترتيب المحفوظ
+      for (const item of outbox) {
         const { entityType, operation, payload, id } = item;
         let success = false;
 
@@ -236,18 +237,12 @@ class Database {
                 this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
               } else {
                 console.error(`Sync error on ${entityType}:`, error);
-                
-                let userFriendlyError = error.message;
-                if (error.code === 'PGRST204') {
-                  userFriendlyError = `خطأ في هيكل قاعدة البيانات: العمود '${error.message.match(/'([^']+)'/)?.[1] || ''}' مفقود. يرجى تحديث قاعدة البيانات من الإعدادات.`;
-                }
-
-                this.updateLocalSyncStatus(entityType, payload.id, 'Error', userFriendlyError);
+                this.updateLocalSyncStatus(entityType, payload.id, 'Error', error.message);
                 await localStore.logError({
                   entityType,
                   operation,
                   payloadId: payload.id,
-                  error: userFriendlyError,
+                  error: error.message,
                   timestamp: new Date().toISOString()
                 });
               }
@@ -270,50 +265,15 @@ class Database {
           if (success && id !== undefined) {
             await localStore.removeFromOutbox(id);
           }
+          
+          // Save the updated sync status to local store
+          if (operation === 'insert' || operation === 'update') {
+            await this.saveToLocalStore();
+          }
         } catch (err) {
           console.error(`Failed to sync outbox item ${id}:`, err);
         }
-      };
-
-      // تجميع العمليات حسب الجدول (entityType)
-      const groups = outbox.reduce((acc, item) => {
-        if (!acc[item.entityType]) acc[item.entityType] = [];
-        acc[item.entityType].push(item);
-        return acc;
-      }, {} as Record<string, any[]>);
-
-      // معالجة عناصر نفس الجدول بالتسلسل للحفاظ على ترتيب العمليات (مثل إضافة ثم تعديل نفس السجل)
-      const processGroupSequentially = async (entityType: string) => {
-        const items = groups[entityType];
-        if (!items) return;
-        for (const item of items) {
-          await processItem(item);
-        }
-      };
-
-      const independentTables = Object.keys(groups).filter(
-        t => !['invoices', 'customers', 'products', 'batches', 'cashTransactions'].includes(t)
-      );
-
-      // إرسال الجداول المستقلة بالتزامن مع الحفاظ على الترتيب الإجباري
-      await Promise.all([
-        (async () => {
-          await processGroupSequentially('invoices');
-          await processGroupSequentially('customers');
-          await processGroupSequentially('cashTransactions');
-        })(),
-        (async () => {
-          await processGroupSequentially('products');
-          await processGroupSequentially('batches');
-        })(),
-        ...independentTables.map(t => processGroupSequentially(t))
-      ]);
-
-      // حفظ التغييرات محلياً مرة واحدة في النهاية
-      if (outbox.some(i => i.operation === 'insert' || i.operation === 'update')) {
-        await this.saveToLocalStore();
       }
-
     } finally {
       this.activeOperations--;
       this.notifySyncState();
@@ -439,11 +399,14 @@ class Database {
   async fetchAllFromTable(table: string) {
     if (!isSupabaseConfigured) return [];
     try {
+        let allData: any[] = [];
+        let from = 0;
+        let hasMore = true;
         let retryCount = 0;
         const maxRetries = 3;
 
-        while (retryCount <= maxRetries) {
-            const { data, error } = await supabase.from(table).select('*').limit(100000);
+        while (hasMore) {
+            const { data, error } = await supabase.from(table).select('*').range(from, from + 999);
             
             if (error) {
                 if (retryCount < maxRetries) {
@@ -454,9 +417,16 @@ class Database {
                 throw error;
             }
 
-            return data || [];
+            if (data && data.length > 0) {
+                allData = [...allData, ...data];
+                from += data.length;
+                if (data.length < 1000) hasMore = false;
+                retryCount = 0;
+            } else {
+                hasMore = false;
+            }
         }
-        return [];
+        return allData;
     } catch (err) { 
         return []; 
     }
