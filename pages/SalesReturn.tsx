@@ -1,21 +1,27 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
+import { useNavigationWarning } from '../hooks/useNavigationWarning';
+import ConfirmModal from '../components/ConfirmModal';
 import { authService } from '../services/auth';
 import { Customer, Invoice, CartItem } from '../types';
 import { Search, RotateCcw, User, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle, Filter } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
+import { useNavigate } from 'react-router-dom';
 import { t } from '../utils/t';
 // @ts-ignore
 import toast from 'react-hot-toast';
 
 export default function SalesReturn() {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [customerInvoices, setCustomerInvoices] = useState<Invoice[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [returnItems, setReturnItems] = useState<CartItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [showConfirmBack, setShowConfirmBack] = useState(false);
   const [cashRefund, setCashRefund] = useState(0);
   const [invoiceSearch, setInvoiceSearch] = useState(''); // حالة البحث الجديد
 
@@ -34,6 +40,20 @@ export default function SalesReturn() {
       setInvoiceSearch(''); // تصفية البحث عند تغيير العميل
     }
   }, [selectedCustomer]);
+
+  useEffect(() => {
+    setHasChanges(returnItems.some(i => i.quantity > 0));
+  }, [returnItems]);
+
+  useNavigationWarning(hasChanges, isSubmitting);
+
+  const handleBack = () => {
+    if (hasChanges) {
+      setShowConfirmBack(true);
+    } else {
+      navigate('/invoices');
+    }
+  };
 
   const customerOptions = useMemo(() => 
     customers.map(c => ({ value: c.id, label: c.name, subLabel: c.phone })), 
@@ -76,19 +96,29 @@ export default function SalesReturn() {
 
   const returnTotal = useMemo(() => {
     return returnItems.reduce((sum, item) => {
-      const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
-      return sum + (item.quantity * price * (1 - (item.discount_percentage / 100)));
+      const price = item.unit_price !== undefined ? item.unit_price : (item.batch?.selling_price || item.product.selling_price || 0);
+      const discount = item.discount_percentage || 0;
+      return sum + (item.quantity * price * (1 - (discount / 100)));
     }, 0);
   }, [returnItems]);
 
   const handleSubmitReturn = async () => {
-    const itemsToReturn = returnItems.filter(item => item.quantity > 0);
+    const itemsToReturn = returnItems
+      .filter(item => item.quantity > 0)
+      .map(item => ({
+        ...item,
+        // Ensure product object has required fields for validation
+        product: {
+          ...item.product,
+          name: item.product.name || db.getAllProducts().find(p => p.id === item.product.id)?.name || 'صنف غير معروف'
+        },
+        unit_price: item.unit_price !== undefined ? item.unit_price : (item.batch?.selling_price || item.product.selling_price || 0)
+      }));
+
     if (itemsToReturn.length === 0) {
       toast.error("يرجى تحديد كميات للإرجاع أولاً");
       return;
     }
-
-    if (!confirm("هل أنت متأكد من تسجيل هذا المرتجع؟ سيتم تحديث المخزون وحساب العميل.")) return;
 
     setIsSubmitting(true);
     const user = authService.getCurrentUser();
@@ -129,10 +159,15 @@ export default function SalesReturn() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-          <RotateCcw className="w-8 h-8 text-orange-600" />
-          مرتجع مبيعات
-        </h1>
+        <div className="flex items-center gap-3">
+          <button onClick={handleBack} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200">
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </button>
+          <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+            <RotateCcw className="w-8 h-8 text-orange-600" />
+            مرتجع مبيعات
+          </h1>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -240,8 +275,9 @@ export default function SalesReturn() {
                   <tbody className="divide-y divide-slate-50">
                     {selectedInvoice.items.map((item, idx) => {
                       const returnItem = returnItems[idx];
-                      const price = item.unit_price || item.batch?.selling_price || item.product.selling_price || 0;
-                      const lineTotal = (returnItem?.quantity || 0) * price * (1 - (item.discount_percentage / 100));
+                      const price = item.unit_price !== undefined ? item.unit_price : (item.batch?.selling_price || item.product.selling_price || 0);
+                      const discount = item.discount_percentage || 0;
+                      const lineTotal = (returnItem?.quantity || 0) * price * (1 - (discount / 100));
                       
                       return (
                         <tr key={idx} className={`transition-colors ${returnItem?.quantity > 0 ? 'bg-orange-50/30' : 'hover:bg-slate-50/50'}`}>
@@ -299,7 +335,7 @@ export default function SalesReturn() {
                     </div>
                     <button 
                       onClick={handleSubmitReturn}
-                      disabled={isSubmitting || returnTotal <= 0}
+                      disabled={isSubmitting || returnItems.every(i => i.quantity === 0)}
                       className="bg-orange-500 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-lg hover:bg-orange-600 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {isSubmitting ? <span className="loader"></span> : <Save className="w-6 h-6" />}
@@ -316,6 +352,15 @@ export default function SalesReturn() {
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmModal 
+        isOpen={showConfirmBack}
+        onClose={() => setShowConfirmBack(false)}
+        onConfirm={() => navigate('/invoices')}
+        title="تنبيه: بيانات غير محفوظة"
+        message="لديك أصناف في المرتجع لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
+      />
     </div>
   );
 }

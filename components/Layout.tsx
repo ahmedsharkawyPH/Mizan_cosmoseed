@@ -25,6 +25,7 @@ export default function Layout() {
   const [commandSearch, setCommandSearch] = useState('');
   const [dbFullLoaded, setDbFullLoaded] = useState(db.isFullyLoaded);
   const [isSaving, setIsSaving] = useState(db.activeOperations > 0);
+  const [syncError, setSyncError] = useState<string | null>(db.lastSyncError);
   const [closingsVersion, setClosingsVersion] = useState(0); 
   
   const user = authService.getCurrentUser();
@@ -32,8 +33,9 @@ export default function Layout() {
 
   // تتبع حالة المزامنة اللحظية
   useEffect(() => {
-    const unsub = db.onSyncStateChange((isBusy) => {
+    const unsub = db.onSyncStateChange((isBusy, error) => {
         setIsSaving(isBusy);
+        setSyncError(error);
     });
     return unsub;
   }, []);
@@ -194,8 +196,26 @@ export default function Layout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* شريط حالة الخطأ في المزامنة */}
+        {syncError && (
+          <div className="bg-red-600 text-white py-2 px-6 flex items-center justify-between gap-3 z-[60] shadow-lg animate-in slide-in-from-top duration-300">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-xs font-black uppercase tracking-widest">
+                {syncError}
+              </span>
+            </div>
+            <button 
+              onClick={() => db.syncToCloud()} 
+              className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-[10px] font-black uppercase transition-colors flex items-center gap-2"
+            >
+              <RefreshCw className="w-3 h-3" /> إعادة المحاولة
+            </button>
+          </div>
+        )}
+
         {/* شريط حالة الحفظ السحابي (التحذير) */}
-        {isSaving && (
+        {isSaving && !syncError && (
           <div className="bg-orange-600 text-white py-2 px-6 flex items-center justify-center gap-3 animate-pulse z-[60] shadow-lg">
             <RefreshCw className="w-4 h-4 animate-spin" />
             <span className="text-xs font-black uppercase tracking-widest">

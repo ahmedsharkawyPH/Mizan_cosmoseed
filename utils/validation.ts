@@ -6,7 +6,7 @@ export const cartItemSchema = z.object({
     name: z.string().min(1, "اسم المنتج مطلوب"),
   }),
   quantity: z.number().positive("الكمية يجب أن تكون أكبر من صفر"),
-  unit_price: z.number().nonnegative("السعر لا يمكن أن يكون سالباً"),
+  unit_price: z.number().nonnegative("السعر لا يمكن أن يكون سالباً").optional(),
   discount_percentage: z.number().min(0).max(100).default(0),
 });
 
@@ -35,6 +35,8 @@ export const productSchema = z.object({
   code: z.string().optional(),
   selling_price: z.number().nonnegative("سعر البيع لا يمكن أن يكون سالباً").optional(),
   purchase_price: z.number().nonnegative("سعر الشراء لا يمكن أن يكون سالباً").optional(),
+  selling_price_wholesale: z.number().nonnegative("سعر الجملة لا يمكن أن يكون سالباً").optional(),
+  selling_price_half_wholesale: z.number().nonnegative("سعر نص الجملة لا يمكن أن يكون سالباً").optional(),
 });
 
 export const customerSchema = z.object({

@@ -11,6 +11,10 @@ export interface OutboxItem {
   operation: 'insert' | 'update' | 'delete';
   payload: any;
   createdAt: string;
+  attempts?: number;
+  lastError?: string | null;
+  status?: 'pending' | 'failed' | 'permanent_failed' | 'sent';
+  idempotencyKey?: string;
 }
 
 export interface SyncError {
@@ -41,7 +45,7 @@ export class MizanDb extends Dexie {
 
   constructor() {
     super('mizan_db_dexie');
-    this.version(4).stores({
+    this.version(5).stores({
       products: 'id, code, name, status',
       batches: 'id, product_id, warehouse_id, batch_number, batch_status, status, purchase_invoice_id',
       customers: 'id, code, name, phone, representative_code, status, opening_balance, current_balance',
@@ -55,7 +59,7 @@ export class MizanDb extends Dexie {
       pendingAdjustments: 'id, product_id, warehouse_id, adj_status, date',
       purchaseOrders: 'id, supplier_id, date, order_status',
       settings: 'id',
-      outbox: '++id, createdAt, entityType',
+      outbox: '++id, createdAt, entityType, status, attempts',
       syncErrors: '++id, timestamp, entityType'
     });
   }

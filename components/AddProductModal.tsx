@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { db } from '../../services/db'; // مضاف لاستدعاء دالة توليد الكود
+import { db } from '../services/db'; // مضاف لاستدعاء دالة توليد الكود
 // @ts-ignore
 import toast from 'react-hot-toast';
 
@@ -14,7 +14,16 @@ interface Props {
 }
 
 const AddProductModal: React.FC<Props> = ({ isOpen, onClose, product, onSave, warehouses }) => {
-    const [form, setForm] = useState({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: '' });
+    const [form, setForm] = useState({ 
+        name: '', 
+        code: '', 
+        purchase_price: 0, 
+        selling_price: 0, 
+        selling_price_wholesale: 0,
+        selling_price_half_wholesale: 0,
+        initial_qty: 0, 
+        warehouse_id: '' 
+    });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
@@ -24,11 +33,22 @@ const AddProductModal: React.FC<Props> = ({ isOpen, onClose, product, onSave, wa
                 code: product.code || '', 
                 purchase_price: product.purchase_price || 0, 
                 selling_price: product.selling_price || 0, 
+                selling_price_wholesale: product.selling_price_wholesale || 0,
+                selling_price_half_wholesale: product.selling_price_half_wholesale || 0,
                 initial_qty: 0, 
                 warehouse_id: warehouses[0]?.id || '' 
             });
         } else {
-            setForm({ name: '', code: '', purchase_price: 0, selling_price: 0, initial_qty: 0, warehouse_id: warehouses[0]?.id || '' });
+            setForm({ 
+                name: '', 
+                code: '', 
+                purchase_price: 0, 
+                selling_price: 0, 
+                selling_price_wholesale: 0,
+                selling_price_half_wholesale: 0,
+                initial_qty: 0, 
+                warehouse_id: warehouses[0]?.id || '' 
+            });
         }
     }, [product, warehouses]);
 
@@ -47,11 +67,19 @@ const AddProductModal: React.FC<Props> = ({ isOpen, onClose, product, onSave, wa
         }
 
         const res = await onSave(
-            { name: form.name, code: finalCode }, 
+            { 
+                name: form.name, 
+                code: finalCode,
+                selling_price: form.selling_price,
+                selling_price_wholesale: form.selling_price_wholesale,
+                selling_price_half_wholesale: form.selling_price_half_wholesale
+            }, 
             { 
                 quantity: form.initial_qty, 
                 purchase_price: form.purchase_price, 
                 selling_price: form.selling_price, 
+                selling_price_wholesale: form.selling_price_wholesale,
+                selling_price_half_wholesale: form.selling_price_half_wholesale,
                 warehouse_id: form.warehouse_id || warehouses[0]?.id 
             }
         );
@@ -69,7 +97,7 @@ const AddProductModal: React.FC<Props> = ({ isOpen, onClose, product, onSave, wa
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100">
                 <div className="bg-slate-900 p-6 flex justify-between items-center text-white">
                     <h3 className="text-xl font-black">{product ? "تعديل بيانات الصنف" : "إضافة صنف جديد للمخزن"}</h3>
@@ -95,8 +123,16 @@ const AddProductModal: React.FC<Props> = ({ isOpen, onClose, product, onSave, wa
                         <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-red-600 focus:border-red-500 outline-none transition-all" value={form.purchase_price} onChange={e => setForm({...form, purchase_price: parseFloat(e.target.value)||0})} />
                     </div>
                     <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">سعر البيع</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">سعر البيع (قطاعي)</label>
                         <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-emerald-600 focus:border-emerald-500 outline-none transition-all" value={form.selling_price} onChange={e => setForm({...form, selling_price: parseFloat(e.target.value)||0})} />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">سعر نص جملة</label>
+                        <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-purple-600 focus:border-purple-500 outline-none transition-all" value={form.selling_price_half_wholesale} onChange={e => setForm({...form, selling_price_half_wholesale: parseFloat(e.target.value)||0})} />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">سعر جملة</label>
+                        <input type="number" className="w-full border-2 p-3 rounded-xl font-black text-blue-600 focus:border-blue-500 outline-none transition-all" value={form.selling_price_wholesale} onChange={e => setForm({...form, selling_price_wholesale: parseFloat(e.target.value)||0})} />
                     </div>
                     <button onClick={handleSave} disabled={isSubmitting} className="col-span-2 bg-slate-900 text-white py-4 rounded-2xl font-black shadow-xl hover:bg-blue-600 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:bg-slate-400">
                         {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "حفظ بيانات الصنف"}

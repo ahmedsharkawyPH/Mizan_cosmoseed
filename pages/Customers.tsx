@@ -41,6 +41,7 @@ export default function Customers() {
   const [newLineName, setNewLineName] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [form, setForm] = useState({ code: '', name: '', phone: '', area: '', address: '', distribution_line: '', opening_balance: 0, credit_limit: 0, representative_code: '', default_discount_percent: 0, price_segment: 'retail' as 'retail' | 'wholesale' | 'half_wholesale' });
   const [statementCustomer, setStatementCustomer] = useState<Customer | null>(null);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'actualBalance', direction: 'desc' });
@@ -86,10 +87,9 @@ export default function Customers() {
   };
 
   const handleDelete = (id: string) => {
-      if (window.confirm("Are you sure you want to delete this customer?")) {
-          db.deleteCustomer(id);
-          setCustomers(db.getCustomers());
-      }
+      db.deleteCustomer(id);
+      setCustomers(db.getCustomers());
+      setCustomerToDelete(null);
   };
 
   const handleImport = async (e: any) => {
@@ -258,6 +258,36 @@ export default function Customers() {
 
   return (
     <div className="space-y-6">
+      {customerToDelete && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden border-2 border-red-100 animate-in zoom-in duration-200">
+                  <div className="p-8 bg-red-50 text-red-700 flex flex-col items-center text-center">
+                      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                          <Trash2 className="w-10 h-10 text-red-600" />
+                      </div>
+                      <h3 className="text-2xl font-black mb-2">تأكيد حذف العميل</h3>
+                      <p className="text-sm font-bold text-red-600/70">هل أنت متأكد من حذف العميل {customerToDelete.name}؟</p>
+                      <p className="text-[10px] mt-2 text-red-500 font-black uppercase tracking-widest">سيتم حذف كافة بيانات العميل وحركاته المالية وفواتيره المرتبطة</p>
+                  </div>
+
+                  <div className="p-8 space-y-4">
+                      <button 
+                          onClick={() => handleDelete(customerToDelete.id)}
+                          className="w-full py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-95"
+                      >
+                          تأكيد الحذف النهائي
+                      </button>
+                      <button 
+                          onClick={() => setCustomerToDelete(null)}
+                          className="w-full py-4 text-slate-400 font-black hover:text-slate-600 hover:bg-slate-50 rounded-2xl transition-all"
+                      >
+                          إلغاء
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">{t('cust.title')}</h1>
         <div className="flex gap-2">
@@ -322,7 +352,7 @@ export default function Customers() {
                                 <div className="flex justify-center gap-2">
                                     <button onClick={() => setStatementCustomer(c)} className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded text-xs font-medium border border-blue-200"><FileText className="w-4 h-4" /></button>
                                     <button onClick={() => openEditModal(c)} className="text-gray-500 hover:text-blue-600 hover:bg-gray-100 p-1.5 rounded transition-colors"><Edit className="w-4 h-4" /></button>
-                                    <button onClick={() => handleDelete(c.id)} className="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                    <button onClick={() => setCustomerToDelete(c)} className="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded transition-colors"><Trash2 className="w-4 h-4" /></button>
                                 </div>
                             </td>
                         </tr>

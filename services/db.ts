@@ -43,18 +43,20 @@ class Database {
 
   isFullyLoaded: boolean = false;
   public activeOperations: number = 0;
-  private syncListeners: ((isBusy: boolean) => void)[] = [];
+  public lastSyncError: string | null = null;
+  private syncListeners: ((isBusy: boolean, error: string | null) => void)[] = [];
   private saveTimeout: any = null;
+  private isSyncingToCloud = false;
 
   constructor() {}
 
-  onSyncStateChange(callback: (isBusy: boolean) => void) {
+  onSyncStateChange(callback: (isBusy: boolean, error: string | null) => void) {
     this.syncListeners.push(callback);
     return () => { this.syncListeners = this.syncListeners.filter(l => l !== callback); };
   }
 
   private notifySyncState() {
-    this.syncListeners.forEach(l => l(this.activeOperations > 0));
+    this.syncListeners.forEach(l => l(this.activeOperations > 0, this.lastSyncError));
   }
 
   generateDocNumber(prefix: string, collection?: any[]): string {
@@ -144,17 +146,29 @@ class Database {
 
   async syncToCloud() {
     if (!isSupabaseConfigured) return;
-    
-    const outbox = await localStore.getOutbox();
-    if (outbox.length === 0) return;
+    if (this.isSyncingToCloud) return;
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        console.warn("Offline: Sync postponed.");
+        return;
+    }
+
+    const outbox = await localStore.getOutbox();
+    // فلترة العناصر التي لم تُرسل بعد أو التي فشلت محاولات إرسالها
+    const pendingItems = outbox.filter(item => !item.status || item.status === 'pending');
+    if (pendingItems.length === 0) return;
+
+    this.isSyncingToCloud = true;
     this.activeOperations++;
+    this.lastSyncError = null;
     this.notifySyncState();
 
+    const MAX_ATTEMPTS = 5;
+
     try {
-      // تنفيذ الـ Outbox بالترتيب المحفوظ
-      for (const item of outbox) {
+      const processItem = async (item: OutboxItem) => {
         const { entityType, operation, payload, id } = item;
+        if (id === undefined) return;
         let success = false;
 
         try {
@@ -178,6 +192,8 @@ class Database {
                 default_discount_percent: payload.default_discount_percent ?? 0,
                 price_segment: payload.price_segment ?? 'retail',
                 created_at: payload.created_at,
+                updated_at: payload.updated_at ?? new Date().toISOString(),
+                version: payload.version ?? 1,
               };
             }
             
@@ -218,61 +234,100 @@ class Database {
                   success = true;
                   this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
                 } else {
-                  console.error(`Sync error on ${entityType} update:`, updateError);
-                  this.updateLocalSyncStatus(entityType, payload.id, 'Error', updateError.message);
-                  await localStore.logError({
-                    entityType,
-                    operation,
-                    payloadId: payload.id,
-                    error: updateError.message,
-                    timestamp: new Date().toISOString()
-                  });
+                  throw updateError;
                 }
               } else if (error.code === '23503') {
                 console.warn(`تعارض في العلاقات للمنتج: ${payload.name || payload.id}. تم إلغاء التحديث لتجنب فقدان البيانات.`);
-                // نعتبرها نجحت محلياً لكي لا تتوقف المزامنة للأبد
                 success = true; 
                 this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
               } else {
-                console.error(`Sync error on ${entityType}:`, error);
-                this.updateLocalSyncStatus(entityType, payload.id, 'Error', error.message);
-                await localStore.logError({
-                  entityType,
-                  operation,
-                  payloadId: payload.id,
-                  error: error.message,
-                  timestamp: new Date().toISOString()
-                });
+                throw error;
               }
             }
           } else if (operation === 'delete') {
             const { error } = await supabase.from(this.mapEntityTypeToTable(entityType)).delete().eq('id', payload.id);
             if (!error) success = true;
-            else {
-              console.error(`Sync error on ${entityType} deletion:`, error);
-              await localStore.logError({
-                entityType,
-                operation,
-                payloadId: payload.id,
-                error: error.message,
-                timestamp: new Date().toISOString()
-              });
-            }
+            else throw error;
           }
 
-          if (success && id !== undefined) {
-            await localStore.removeFromOutbox(id);
+          if (success) {
+            await localStore.markOutboxAsSent(id);
           }
-          
-          // Save the updated sync status to local store
-          if (operation === 'insert' || operation === 'update') {
-            await this.saveToLocalStore();
-          }
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Failed to sync outbox item ${id}:`, err);
+          const attempts = (item.attempts || 0) + 1;
+          const errorMsg = err.message || String(err);
+          
+          if (attempts >= MAX_ATTEMPTS) {
+            await localStore.updateOutboxItem(id, {
+              attempts,
+              lastError: errorMsg,
+              status: 'permanent_failed'
+            });
+            await localStore.logError({
+              entityType,
+              operation,
+              payloadId: payload.id || 'N/A',
+              error: errorMsg,
+              timestamp: new Date().toISOString()
+            });
+          } else {
+            await localStore.updateOutboxItem(id, {
+              attempts,
+              lastError: errorMsg,
+              status: 'pending'
+            });
+          }
+          // نلقي الخطأ مجدداً لإيقاف المعالجة المتسلسلة للمجموعة الحالية
+          throw err;
         }
+      };
+
+      // تجميع العمليات حسب الجدول (entityType)
+      const groups = pendingItems.reduce((acc, item) => {
+        if (!acc[item.entityType]) acc[item.entityType] = [];
+        acc[item.entityType].push(item);
+        return acc;
+      }, {} as Record<string, any[]>);
+
+      // معالجة عناصر نفس الجدول بالتسلسل للحفاظ على ترتيب العمليات
+      const processGroupSequentially = async (entityType: string) => {
+        const items = groups[entityType];
+        if (!items) return;
+        for (const item of items) {
+          try {
+            await processItem(item);
+          } catch (e) {
+            // نتوقف عن معالجة هذه المجموعة في حال فشل عنصر واحد (لأن العمليات التالية قد تعتمد عليه)
+            break;
+          }
+        }
+      };
+
+      const independentTables = Object.keys(groups).filter(
+        t => !['invoices', 'customers', 'products', 'batches', 'cashTransactions'].includes(t)
+      );
+
+      // إرسال الجداول المستقلة بالتزامن مع الحفاظ على الترتيب الإجباري
+      await Promise.all([
+        (async () => {
+          await processGroupSequentially('invoices');
+          await processGroupSequentially('customers');
+          await processGroupSequentially('cashTransactions');
+        })(),
+        (async () => {
+          await processGroupSequentially('products');
+          await processGroupSequentially('batches');
+        })(),
+        ...independentTables.map(t => processGroupSequentially(t))
+      ]);
+
+      if (pendingItems.some(i => i.operation === 'insert' || i.operation === 'update')) {
+        await this.saveToLocalStore();
       }
+
     } finally {
+      this.isSyncingToCloud = false;
       this.activeOperations--;
       this.notifySyncState();
     }
@@ -329,6 +384,7 @@ class Database {
     if (!isSupabaseConfigured) return;
     
     this.activeOperations++;
+    this.lastSyncError = null;
     this.notifySyncState();
     
     try {
@@ -347,10 +403,14 @@ class Database {
         { name: 'pending_adjustments', prop: 'pendingAdjustments', label: 'التسويات' }
       ];
 
-      for (const table of tables) {
+      // Parallel fetch for better performance
+      const results = await Promise.all(tables.map(async (table) => {
         if (onProgress) onProgress(`جاري جلب ${table.label}...`);
         const cloudData = await this.fetchAllFromTable(table.name);
-        
+        return { table, cloudData };
+      }));
+
+      for (const { table, cloudData } of results) {
         // Merge logic: Last Write Wins
         const localData = (this as any)[table.prop] || [];
         const mergedData = [...localData];
@@ -358,22 +418,17 @@ class Database {
         for (const cloudItem of cloudData) {
           const localIndex = mergedData.findIndex((item: any) => item.id === cloudItem.id);
           if (localIndex === -1) {
-            // Item doesn't exist locally, add it
             mergedData.push({ ...cloudItem, sync_status: 'Synced' });
           } else {
-            // Item exists, compare updated_at
             const localItem = mergedData[localIndex];
             const localUpdated = new Date(localItem.updated_at || 0).getTime();
             const cloudUpdated = new Date(cloudItem.updated_at || 0).getTime();
             
             if (cloudUpdated > localUpdated) {
-              // Cloud is newer, overwrite local
               mergedData[localIndex] = { ...cloudItem, sync_status: 'Synced' };
             }
-            // If local is newer, keep local (it will be synced to cloud later)
           }
         }
-        
         (this as any)[table.prop] = mergedData;
       }
 
@@ -385,8 +440,9 @@ class Database {
 
       await this.saveToLocalStore(true);
       if (onProgress) onProgress("تمت المزامنة بنجاح");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Cloud sync failed:", err);
+      this.lastSyncError = `فشل جلب البيانات من السحابة: ${err.message}`;
       if (onProgress) onProgress("فشلت المزامنة، جاري العمل بالوضع المحلي");
     } finally {
       this.activeOperations--;
@@ -397,14 +453,11 @@ class Database {
   async fetchAllFromTable(table: string) {
     if (!isSupabaseConfigured) return [];
     try {
-        let allData: any[] = [];
-        let from = 0;
-        let hasMore = true;
         let retryCount = 0;
         const maxRetries = 3;
 
-        while (hasMore) {
-            const { data, error } = await supabase.from(table).select('*').range(from, from + 999);
+        while (retryCount <= maxRetries) {
+            const { data, error } = await supabase.from(table).select('*').limit(100000);
             
             if (error) {
                 if (retryCount < maxRetries) {
@@ -415,16 +468,9 @@ class Database {
                 throw error;
             }
 
-            if (data && data.length > 0) {
-                allData = [...allData, ...data];
-                from += data.length;
-                if (data.length < 1000) hasMore = false;
-                retryCount = 0;
-            } else {
-                hasMore = false;
-            }
+            return data || [];
         }
-        return allData;
+        return [];
     } catch (err) { 
         return []; 
     }
@@ -519,6 +565,10 @@ class Database {
     const prevBalance = manualPrevBalance !== undefined ? manualPrevBalance : customer.current_balance;
     const invoiceId = generateId(); // استخدام المعرف الآمن
     
+    // حساب الرصيد النهائي بعد الفاتورة والتحصيل
+    const finalBalanceAfterInvoice = isReturn ? prevBalance - net : prevBalance + net;
+    const finalBalanceAfterPayment = finalBalanceAfterInvoice - (isReturn ? -cashPayment : cashPayment);
+
     const invoice: Invoice = {
         id: invoiceId, 
         invoice_number: this.generateDocNumber('INV', this.invoices),
@@ -531,8 +581,8 @@ class Database {
         cash_discount_value: cashDiscValue,
         net_total: net,
         previous_balance: prevBalance, 
-        final_balance: isReturn ? prevBalance - net : prevBalance + net,
-        payment_status: PaymentStatus.UNPAID, 
+        final_balance: finalBalanceAfterPayment,
+        payment_status: cashPayment >= net ? PaymentStatus.PAID : (cashPayment > 0 ? PaymentStatus.PARTIAL : PaymentStatus.UNPAID), 
         items, 
         type: isReturn ? 'RETURN' : 'SALE', 
         created_by: createdBy?.id, 
@@ -549,7 +599,7 @@ class Database {
     await this.addToOutbox('invoices', 'insert', invoice);
 
     // 2. تحديث العميل
-    customer.current_balance = invoice.final_balance;
+    customer.current_balance = finalBalanceAfterPayment;
     await this.addToOutbox('customers', 'update', customer);
     
     // 3. إضافة معاملة مالية إن وجدت
@@ -563,6 +613,24 @@ class Database {
             notes: `سداد فاتورة #${invoice.invoice_number}`, 
             date: invoice.date 
         });
+    }
+
+    // 4. تحديث المخزون (التشغيلات)
+    for (const item of items) {
+        if (item.batch) {
+            const batchIdx = this.batches.findIndex(b => b.id === item.batch?.id);
+            if (batchIdx !== -1) {
+                const change = item.quantity + (item.bonus_quantity || 0);
+                // في البيع نطرح، في المرتجع نضيف
+                if (isReturn) {
+                    this.batches[batchIdx].quantity += change;
+                } else {
+                    this.batches[batchIdx].quantity -= change;
+                }
+                this.batches[batchIdx].updated_at = new Date().toISOString();
+                await this.addToOutbox('batches', 'update', this.batches[batchIdx]);
+            }
+        }
     }
     
     await this.saveToLocalStore(); 
@@ -583,10 +651,67 @@ class Database {
     const net = Math.max(0, netAfterAdd - cashDiscValue);
     
     const prevBalance = manualPrevBalance !== undefined ? manualPrevBalance : oldInv.previous_balance;
+    const isReturn = oldInv.type === 'RETURN';
 
-    if (oldInv.type === 'SALE') customer.current_balance -= oldInv.net_total; else customer.current_balance += oldInv.net_total;
-    if (oldInv.type === 'SALE') customer.current_balance += net; else customer.current_balance -= net;
+    // عكس تأثير الفاتورة والتحصيل القديم
+    const oldCashTxs = this.cashTransactions.filter(t => t.reference_id === id);
+    const oldCashPaid = oldCashTxs.reduce((s, t) => s + t.amount, 0);
     
+    if (oldInv.type === 'SALE') {
+        customer.current_balance -= (oldInv.net_total - oldCashPaid);
+    } else {
+        customer.current_balance += (oldInv.net_total - oldCashPaid);
+    }
+
+    // حذف المعاملات المالية القديمة
+    for (const tx of oldCashTxs) {
+        this.cashTransactions = this.cashTransactions.filter(t => t.id !== tx.id);
+        await this.addToOutbox('cashTransactions', 'delete', { id: tx.id });
+    }
+    
+    // تطبيق التأثير الجديد
+    const newNetBalance = isReturn ? -net : net;
+    customer.current_balance += (newNetBalance - (isReturn ? -cashPayment : cashPayment));
+
+    // إضافة المعاملة المالية الجديدة إذا وجدت
+    if (cashPayment > 0) {
+        await this.addCashTransaction({ 
+            type: isReturn ? 'EXPENSE' : 'RECEIPT', 
+            category: 'CUSTOMER_PAYMENT', 
+            reference_id: id, 
+            related_name: customer.name, 
+            amount: cashPayment, 
+            notes: `تعديل سداد فاتورة #${oldInv.invoice_number}`, 
+            date: new Date().toISOString() 
+        });
+    }
+    
+    // عكس تأثير المخزون القديم
+    for (const item of oldInv.items) {
+        if (item.batch) {
+            const batchIdx = this.batches.findIndex(b => b.id === item.batch?.id);
+            if (batchIdx !== -1) {
+                const change = item.quantity + (item.bonus_quantity || 0);
+                if (oldInv.type === 'SALE') this.batches[batchIdx].quantity += change;
+                else this.batches[batchIdx].quantity -= change;
+                await this.addToOutbox('batches', 'update', this.batches[batchIdx]);
+            }
+        }
+    }
+
+    // تطبيق تأثير المخزون الجديد
+    for (const item of items) {
+        if (item.batch) {
+            const batchIdx = this.batches.findIndex(b => b.id === item.batch?.id);
+            if (batchIdx !== -1) {
+                const change = item.quantity + (item.bonus_quantity || 0);
+                if (oldInv.type === 'SALE') this.batches[batchIdx].quantity -= change;
+                else this.batches[batchIdx].quantity += change;
+                await this.addToOutbox('batches', 'update', this.batches[batchIdx]);
+            }
+        }
+    }
+
     Object.assign(this.invoices[idx], { 
       customer_id: customerId, 
       items, 
@@ -610,10 +735,40 @@ class Database {
     const inv = this.invoices.find(i => i.id === id);
     if (!inv) return { success: false, message: 'الفاتورة غير موجودة' };
     const customer = this.customers.find(c => c.id === inv.customer_id);
+    
+    // عكس تأثير المعاملات المالية المرتبطة
+    const relatedTxs = this.cashTransactions.filter(t => t.reference_id === id);
+    const totalCash = relatedTxs.reduce((s, t) => s + t.amount, 0);
+
     if (customer) { 
-      if (inv.type === 'SALE') customer.current_balance -= inv.net_total; else customer.current_balance += inv.net_total; 
+      if (inv.type === 'SALE') {
+          customer.current_balance -= (inv.net_total - totalCash);
+      } else {
+          customer.current_balance += (inv.net_total - totalCash);
+      }
       await this.addToOutbox('customers', 'update', customer);
     }
+
+    // حذف المعاملات المالية
+    for (const tx of relatedTxs) {
+        this.cashTransactions = this.cashTransactions.filter(t => t.id !== tx.id);
+        await this.addToOutbox('cashTransactions', 'delete', { id: tx.id });
+    }
+
+    // عكس تأثير المخزون
+    for (const item of inv.items) {
+        if (item.batch) {
+            const batchIdx = this.batches.findIndex(b => b.id === item.batch?.id);
+            if (batchIdx !== -1) {
+                const change = item.quantity + (item.bonus_quantity || 0);
+                if (inv.type === 'SALE') this.batches[batchIdx].quantity += change;
+                else this.batches[batchIdx].quantity -= change;
+                this.batches[batchIdx].updated_at = new Date().toISOString();
+                await this.addToOutbox('batches', 'update', this.batches[batchIdx]);
+            }
+        }
+    }
+
     this.invoices = this.invoices.filter(i => i.id !== id);
     await this.addToOutbox('invoices', 'delete', { id });
     await this.saveToLocalStore(); return { success: true };
@@ -624,6 +779,61 @@ class Database {
       this.cashTransactions.push(tx); 
       await this.addToOutbox('cashTransactions', 'insert', tx);
       await this.saveToLocalStore(); return { success: true };
+  }
+
+  async addManualCashTransaction(data: any) {
+      const res = await this.addCashTransaction(data);
+      if (res.success) {
+          const tx = this.cashTransactions[this.cashTransactions.length - 1];
+          if (tx.category === 'CUSTOMER_PAYMENT' && tx.reference_id) {
+              const customer = this.customers.find(c => c.id === tx.reference_id);
+              if (customer) {
+                  customer.current_balance -= (tx.type === 'RECEIPT' ? tx.amount : -tx.amount);
+                  await this.addToOutbox('customers', 'update', customer);
+              }
+          } else if (tx.category === 'SUPPLIER_PAYMENT' && tx.reference_id) {
+              const supplier = this.suppliers.find(s => s.id === tx.reference_id);
+              if (supplier) {
+                  supplier.current_balance -= (tx.type === 'EXPENSE' ? tx.amount : -tx.amount);
+                  await this.addToOutbox('suppliers', 'update', supplier);
+              }
+          }
+          await this.saveToLocalStore();
+      }
+      return res;
+  }
+
+  async deleteCashTransaction(id: string): Promise<{ success: boolean; message?: string }> {
+    const tx = this.cashTransactions.find(t => t.id === id);
+    if (!tx) return { success: false, message: 'المعاملة غير موجودة' };
+
+    // Reverse balance effect if it's a customer/supplier payment
+    if (tx.category === 'CUSTOMER_PAYMENT' && tx.reference_id) {
+        let customer = this.customers.find(c => c.id === tx.reference_id);
+        if (!customer) {
+            const inv = this.invoices.find(i => i.id === tx.reference_id);
+            if (inv) customer = this.customers.find(c => c.id === inv.customer_id);
+        }
+        if (customer) {
+            customer.current_balance += (tx.type === 'RECEIPT' ? tx.amount : -tx.amount);
+            await this.addToOutbox('customers', 'update', customer);
+        }
+    } else if (tx.category === 'SUPPLIER_PAYMENT' && tx.reference_id) {
+        let supplier = this.suppliers.find(s => s.id === tx.reference_id);
+        if (!supplier) {
+            const pinv = this.purchaseInvoices.find(i => i.id === tx.reference_id);
+            if (pinv) supplier = this.suppliers.find(s => s.id === pinv.supplier_id);
+        }
+        if (supplier) {
+            supplier.current_balance += (tx.type === 'EXPENSE' ? tx.amount : -tx.amount);
+            await this.addToOutbox('suppliers', 'update', supplier);
+        }
+    }
+
+    this.cashTransactions = this.cashTransactions.filter(t => t.id !== id);
+    await this.addToOutbox('cashTransactions', 'delete', { id });
+    await this.saveToLocalStore();
+    return { success: true };
   }
 
   async recordInvoicePayment(invoiceId: string, amount: number): Promise<{ success: boolean; message?: string }> {
@@ -743,6 +953,20 @@ class Database {
     await this.saveToLocalStore(); return { success: true }; 
   }
 
+  async setDefaultWarehouse(id: string) { 
+    for (const w of this.warehouses) {
+      const wasDefault = w.is_default;
+      const shouldBeDefault = w.id === id;
+      if (wasDefault !== shouldBeDefault) {
+        w.is_default = shouldBeDefault;
+        w.updated_at = new Date().toISOString();
+        await this.addToOutbox('warehouses', 'update', w);
+      }
+    }
+    await this.saveToLocalStore(); 
+    return { success: true }; 
+  }
+
   async addRepresentative(data: any) { 
     const r: Representative = { id: generateId(), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
     this.representatives.push(r); 
@@ -840,7 +1064,7 @@ class Database {
               await this.addCashTransaction({ 
                   type: isReturn ? 'RECEIPT' : 'EXPENSE', 
                   category: 'SUPPLIER_PAYMENT', 
-                  reference_id: supplier.id, 
+                  reference_id: invId, 
                   related_name: supplier.name, 
                   amount: cashPaid, 
                   notes: `سداد فاتورة مشتريات #${inv.invoice_number}`, 
@@ -872,13 +1096,66 @@ class Database {
       if (updateBalance) { 
         const supplier = this.suppliers.find(s => s.id === inv.supplier_id); 
         if (supplier) { 
-          if (inv.type === 'PURCHASE') supplier.current_balance -= inv.total_amount; else supplier.current_balance += inv.total_amount; 
+          // عكس تأثير الفاتورة والتحصيل
+          const relatedTxs = this.cashTransactions.filter(t => t.reference_id === id);
+          const totalCash = relatedTxs.reduce((s, t) => s + t.amount, 0);
+
+          if (inv.type === 'PURCHASE') {
+              supplier.current_balance -= (inv.total_amount - totalCash);
+          } else {
+              supplier.current_balance += (inv.total_amount - totalCash);
+          }
+
+          // حذف المعاملات المالية
+          for (const tx of relatedTxs) {
+              this.cashTransactions = this.cashTransactions.filter(t => t.id !== tx.id);
+              await this.addToOutbox('cashTransactions', 'delete', { id: tx.id });
+          }
+
           await this.addToOutbox('suppliers', 'update', supplier);
         } 
       }
+
+      // Revert product prices to previous latest purchase
+      if (inv.type === 'PURCHASE') {
+          for (const item of inv.items) {
+              await this.updateProductPriceFromLatestPurchase(item.product_id);
+          }
+      }
+
       this.purchaseInvoices = this.purchaseInvoices.filter(i => i.id !== id); 
       await this.addToOutbox('purchaseInvoices', 'delete', { id });
       await this.saveToLocalStore(); return { success: true }; 
+  }
+
+  async updateProductPriceFromLatestPurchase(productId: string) {
+      const productPurchaseInvoices = this.purchaseInvoices
+          .filter(pi => pi.status !== 'CANCELLED' && pi.type === 'PURCHASE')
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      for (const inv of productPurchaseInvoices) {
+          const item = inv.items.find(it => it.product_id === productId);
+          if (item) {
+              const pIdx = this.products.findIndex(p => p.id === productId);
+              if (pIdx !== -1) {
+                  this.products[pIdx].purchase_price = item.cost_price;
+                  this.products[pIdx].selling_price = item.selling_price;
+                  this.products[pIdx].selling_price_wholesale = item.selling_price_wholesale;
+                  this.products[pIdx].selling_price_half_wholesale = item.selling_price_half_wholesale;
+                  this.products[pIdx].updated_at = new Date().toISOString();
+                  await this.addToOutbox('products', 'update', this.products[pIdx]);
+                  return;
+              }
+          }
+      }
+  }
+
+  async syncAllProductPricesFromLatestPurchases() {
+      for (const product of this.products) {
+          await this.updateProductPriceFromLatestPurchase(product.id);
+      }
+      await this.saveToLocalStore();
+      return { success: true };
   }
 
   async createPurchaseOrder(supplierId: string, items: any[]) { 

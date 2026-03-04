@@ -75,7 +75,24 @@ export class LocalStore {
 
   async addToOutbox(item: OutboxItem) {
     await this.init();
-    return await mizanDb.outbox.add(item);
+    const outboxItem: OutboxItem = {
+      ...item,
+      createdAt: item.createdAt || new Date().toISOString(),
+      attempts: item.attempts ?? 0,
+      status: item.status ?? 'pending'
+    };
+    return await mizanDb.outbox.add(outboxItem);
+  }
+
+  async updateOutboxItem(id: number, patch: Partial<OutboxItem>) {
+    await this.init();
+    return await mizanDb.outbox.update(id, patch);
+  }
+
+  async markOutboxAsSent(id: number) {
+    await this.init();
+    // نختار حذف السجل نهائياً للحفاظ على حجم قاعدة البيانات المحلية صغيراً
+    await mizanDb.outbox.delete(id);
   }
 
   async getOutbox() {

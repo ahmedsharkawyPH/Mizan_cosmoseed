@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { t } from '../utils/t';
-import { ArrowUpRight, ArrowDownLeft, X, FileText, Filter, Plus, Wallet, ChevronRight, ChevronLeft, Search, Hash, Calendar, Printer, CheckCircle2 } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, X, FileText, Filter, Plus, Wallet, ChevronRight, ChevronLeft, Search, Hash, Calendar, Printer, CheckCircle2, Trash2 } from 'lucide-react';
 import { CashTransactionType, CashTransaction, Customer } from '../types';
 import SearchableSelect from '../components/SearchableSelect';
 // @ts-ignore
@@ -60,6 +60,7 @@ export default function CashRegister() {
   const [showPreview, setShowPreview] = useState(false);
   const [activeType, setActiveType] = useState<CashTransactionType>(CashTransactionType.RECEIPT);
   const [printTx, setPrintTx] = useState<any>(null);
+  const [txToDelete, setTxToDelete] = useState<CashTransaction | null>(null);
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState<string>('OTHER');
   const [relatedId, setRelatedId] = useState('');
@@ -124,7 +125,7 @@ export default function CashRegister() {
         db.addExpenseCategory(printTx.category);
       }
       
-      db.addCashTransaction({ 
+      db.addManualCashTransaction({ 
         type: printTx.type, 
         category: printTx.category, 
         reference_id: printTx.reference_id, 
@@ -154,6 +155,17 @@ export default function CashRegister() {
       }
       setPrintTx({ ...tx, balanceBefore, balanceAfter });
       setTimeout(() => window.print(), 100);
+  };
+
+  const handleDeleteTx = async (id: string) => {
+      const res = await db.deleteCashTransaction(id);
+      if (res.success) {
+          toast.success("تم حذف الحركة بنجاح");
+          setTxs(db.getCashTransactions());
+      } else {
+          toast.error(res.message || "فشل حذف الحركة");
+      }
+      setTxToDelete(null);
   };
 
   const filteredTxs = useMemo(() => {
@@ -194,6 +206,36 @@ export default function CashRegister() {
     <div className="space-y-6 relative pb-20 animate-in fade-in duration-500">
       <style>{PRINT_STYLES}</style>
       
+      {txToDelete && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden border-2 border-red-100 animate-in zoom-in duration-200">
+                  <div className="p-8 bg-red-50 text-red-700 flex flex-col items-center text-center">
+                      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                          <Trash2 className="w-10 h-10 text-red-600" />
+                      </div>
+                      <h3 className="text-2xl font-black mb-2">تأكيد حذف الحركة</h3>
+                      <p className="text-sm font-bold text-red-600/70">هل أنت متأكد من حذف هذه الحركة المالية؟</p>
+                      <p className="text-[10px] mt-2 text-red-500 font-black uppercase tracking-widest">سيتم التراجع عن التأثير المالي على الخزينة والحسابات</p>
+                  </div>
+
+                  <div className="p-8 space-y-4">
+                      <button 
+                          onClick={() => handleDeleteTx(txToDelete.id)}
+                          className="w-full py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-95"
+                      >
+                          تأكيد الحذف النهائي
+                      </button>
+                      <button 
+                          onClick={() => setTxToDelete(null)}
+                          className="w-full py-4 text-slate-400 font-black hover:text-slate-600 hover:bg-slate-50 rounded-2xl transition-all"
+                      >
+                          إلغاء
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Hidden Thermal Receipt for Print */}
       {printTx && (
           <div id="thermal-receipt" className="hidden print:block">
@@ -314,9 +356,14 @@ export default function CashRegister() {
                         {tx.type === 'RECEIPT' ? '+' : '-'}{currency}{tx.amount.toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-center">
-                        <button onClick={() => handleReprint(tx)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all border border-transparent hover:border-slate-100 shadow-sm" title="طباعة الإيصال">
-                           <Printer className="w-4 h-4" />
-                        </button>
+                        <div className="flex justify-center gap-2">
+                            <button onClick={() => handleReprint(tx)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all border border-transparent hover:border-slate-100 shadow-sm" title="طباعة الإيصال">
+                               <Printer className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setTxToDelete(tx)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-slate-100 shadow-sm" title="حذف">
+                               <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
                     </td>
                 </tr>
                 ))}

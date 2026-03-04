@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS products (
     package_type TEXT,
     items_per_package NUMERIC DEFAULT 1,
     purchase_price NUMERIC DEFAULT 0,
-    selling_price NUMERIC DEFAULT 0
+    selling_price NUMERIC DEFAULT 0,
+    selling_price_wholesale NUMERIC DEFAULT 0,
+    selling_price_half_wholesale NUMERIC DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS batches (
@@ -53,8 +55,11 @@ CREATE TABLE IF NOT EXISTS batches (
     quantity NUMERIC DEFAULT 0,
     purchase_price NUMERIC DEFAULT 0,
     selling_price NUMERIC DEFAULT 0,
+    selling_price_wholesale NUMERIC DEFAULT 0,
+    selling_price_half_wholesale NUMERIC DEFAULT 0,
     expiry_date TEXT,
     batch_status TEXT DEFAULT 'ACTIVE',
+    purchase_invoice_id TEXT,
     UNIQUE(product_id, warehouse_id, batch_number)
 );
 
@@ -126,6 +131,19 @@ CREATE TABLE IF NOT EXISTS suppliers (
     current_balance NUMERIC DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS representatives (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    version INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'ACTIVE',
+    code TEXT UNIQUE,
+    name TEXT NOT NULL,
+    phone TEXT,
+    commission_rate NUMERIC DEFAULT 0,
+    commission_target NUMERIC DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS invoices (
     id TEXT PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -140,6 +158,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     total_before_discount NUMERIC DEFAULT 0,
     total_discount NUMERIC DEFAULT 0,
     additional_discount NUMERIC DEFAULT 0,
+    cash_discount_percent NUMERIC DEFAULT 0,
+    cash_discount_value NUMERIC DEFAULT 0,
     commission_value NUMERIC DEFAULT 0,
     net_total NUMERIC DEFAULT 0,
     previous_balance NUMERIC DEFAULT 0,
@@ -158,11 +178,57 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
     invoice_number TEXT UNIQUE,
     document_number TEXT,
     supplier_id TEXT REFERENCES suppliers(id),
+    supplier_name TEXT,
     date TIMESTAMP WITH TIME ZONE,
     total_amount NUMERIC DEFAULT 0,
     paid_amount NUMERIC DEFAULT 0,
     items JSONB,
     type TEXT
+);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    version INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'ACTIVE',
+    order_number TEXT UNIQUE,
+    supplier_id TEXT REFERENCES suppliers(id),
+    date TIMESTAMP WITH TIME ZONE,
+    order_status TEXT DEFAULT 'PENDING',
+    notes TEXT,
+    items JSONB
+);
+
+CREATE TABLE IF NOT EXISTS pending_adjustments (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    version INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'ACTIVE',
+    product_id TEXT REFERENCES products(id),
+    warehouse_id TEXT REFERENCES warehouses(id),
+    system_qty NUMERIC DEFAULT 0,
+    actual_qty NUMERIC DEFAULT 0,
+    diff NUMERIC DEFAULT 0,
+    date TIMESTAMP WITH TIME ZONE,
+    adj_status TEXT DEFAULT 'PENDING'
+);
+
+CREATE TABLE IF NOT EXISTS daily_closings (
+    id TEXT PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    version INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'ACTIVE',
+    date TIMESTAMP WITH TIME ZONE,
+    total_sales NUMERIC DEFAULT 0,
+    total_expenses NUMERIC DEFAULT 0,
+    cash_balance NUMERIC DEFAULT 0,
+    bank_balance NUMERIC DEFAULT 0,
+    inventory_value NUMERIC DEFAULT 0,
+    notes TEXT,
+    closed_by TEXT
 );
 
 CREATE TABLE IF NOT EXISTS cash_transactions (
@@ -196,3 +262,49 @@ CREATE TABLE IF NOT EXISTS settings (
     printer_paper_size TEXT DEFAULT 'A4',
     invoice_template TEXT DEFAULT '1'
 );
+
+-- 5. إضافة مشغلات التحديث التلقائي (Triggers)
+CREATE TRIGGER update_warehouses_version BEFORE UPDATE ON warehouses FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_products_version BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_batches_version BEFORE UPDATE ON batches FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_customers_version BEFORE UPDATE ON customers FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_suppliers_version BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_representatives_version BEFORE UPDATE ON representatives FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_invoices_version BEFORE UPDATE ON invoices FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_purchase_invoices_version BEFORE UPDATE ON purchase_invoices FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_cash_transactions_version BEFORE UPDATE ON cash_transactions FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_purchase_orders_version BEFORE UPDATE ON purchase_orders FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_pending_adjustments_version BEFORE UPDATE ON pending_adjustments FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_daily_closings_version BEFORE UPDATE ON daily_closings FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+CREATE TRIGGER update_settings_version BEFORE UPDATE ON settings FOR EACH ROW EXECUTE FUNCTION update_version_and_timestamp();
+
+-- ==========================================
+-- 6. التحديثات الإضافية (Migrations)
+-- قم بتشغيل هذه الأوامر إذا كانت الجداول موجودة مسبقاً
+-- ==========================================
+
+-- تحديث جدول المنتجات
+ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+
+-- تحديث جدول التشغيلات
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS selling_price_half_wholesale NUMERIC DEFAULT 0;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS purchase_invoice_id TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS expiry_date TEXT;
+ALTER TABLE batches ADD COLUMN IF NOT EXISTS batch_status TEXT DEFAULT 'ACTIVE';
+
+-- تحديث جدول الفواتير
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_percent NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cash_discount_value NUMERIC DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS commission_value NUMERIC DEFAULT 0;
+
+-- تحديث جدول فواتير الشراء
+ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+
+-- تحديث جدول الإعدادات
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS printer_paper_size TEXT DEFAULT 'A4';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS invoice_template TEXT DEFAULT '1';
+
+-- تنبيه Supabase لتحديث ذاكرة التخزين المؤقت للمخطط
+NOTIFY pgrst, 'reload schema';

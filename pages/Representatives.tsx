@@ -18,6 +18,7 @@ export default function Representatives() {
   // Edit Mode
   const [isEditMode, setIsEditMode] = useState(false);
   const [currentRepId, setCurrentRepId] = useState('');
+  const [repToDelete, setRepToDelete] = useState<Representative | null>(null);
 
   const [form, setForm] = useState({ code: '', name: '', phone: '', commission_rate: 1, commission_target: 0 });
 
@@ -70,11 +71,10 @@ export default function Representatives() {
     }
   };
 
-  const handleDelete = (id: string) => {
-      if (window.confirm("هل أنت متأكد من حذف هذا المندوب؟")) {
-          db.deleteRepresentative(id);
-          setReps(db.getRepresentatives());
-      }
+  const handleDelete = async (id: string) => {
+      await db.deleteRepresentative(id);
+      setReps(db.getRepresentatives());
+      setRepToDelete(null);
   };
 
   // Quick Date Setters
@@ -161,6 +161,36 @@ export default function Representatives() {
   return (
     <div className="space-y-6">
       
+      {repToDelete && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden border-2 border-red-100 animate-in zoom-in duration-200">
+                  <div className="p-8 bg-red-50 text-red-700 flex flex-col items-center text-center">
+                      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                          <Trash2 className="w-10 h-10 text-red-600" />
+                      </div>
+                      <h3 className="text-2xl font-black mb-2">تأكيد حذف المندوب</h3>
+                      <p className="text-sm font-bold text-red-600/70">هل أنت متأكد من حذف المندوب {repToDelete.name}؟</p>
+                      <p className="text-[10px] mt-2 text-red-500 font-black uppercase tracking-widest">لن يتمكن المندوب من الوصول للنظام وسيتم فك ارتباطه بالعملاء</p>
+                  </div>
+
+                  <div className="p-8 space-y-4">
+                      <button 
+                          onClick={() => handleDelete(repToDelete.id)}
+                          className="w-full py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-95"
+                      >
+                          تأكيد الحذف النهائي
+                      </button>
+                      <button 
+                          onClick={() => setRepToDelete(null)}
+                          className="w-full py-4 text-slate-400 font-black hover:text-slate-600 hover:bg-slate-50 rounded-2xl transition-all"
+                      >
+                          إلغاء
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Top Tabs */}
       <div className="flex border-b border-gray-200">
           <button 
@@ -283,7 +313,7 @@ export default function Representatives() {
                                     <button onClick={() => handleOpenEdit(r)} className="text-gray-500 hover:text-blue-600 p-1.5 rounded hover:bg-blue-50 transition-colors" title={t('list.edit')}>
                                         <Edit2 className="w-4 h-4" />
                                     </button>
-                                    <button onClick={() => handleDelete(r.id)} className="text-gray-500 hover:text-red-600 p-1.5 rounded hover:bg-red-50 transition-colors" title="حذف">
+                                    <button onClick={() => setRepToDelete(r)} className="text-gray-500 hover:text-red-600 p-1.5 rounded hover:bg-red-50 transition-colors" title="حذف">
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>

@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
+import { useNavigationWarning } from '../hooks/useNavigationWarning';
+import ConfirmModal from '../components/ConfirmModal';
 import { Supplier, PurchaseInvoice, PurchaseItem } from '../types';
 import { Search, RotateCcw, Truck, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle, Loader2, Filter } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
@@ -18,6 +20,8 @@ export default function PurchaseReturn() {
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
   const [returnItems, setReturnItems] = useState<PurchaseItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [showConfirmBack, setShowConfirmBack] = useState(false);
   const [cashRefund, setCashRefund] = useState(0);
   const [invoiceSearch, setInvoiceSearch] = useState(''); 
 
@@ -43,6 +47,20 @@ export default function PurchaseReturn() {
       setInvoiceSearch(''); 
     }
   }, [selectedSupplier]);
+
+  useEffect(() => {
+    setHasChanges(returnItems.some(i => i.quantity > 0));
+  }, [returnItems]);
+
+  useNavigationWarning(hasChanges, isSubmitting);
+
+  const handleBack = () => {
+    if (hasChanges) {
+      setShowConfirmBack(true);
+    } else {
+      navigate('/purchases/list');
+    }
+  };
 
   const supplierOptions = useMemo(() => 
     suppliers.map(s => ({ value: s.id, label: s.name, subLabel: s.phone })), 
@@ -133,13 +151,15 @@ export default function PurchaseReturn() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-          <RotateCcw className="w-8 h-8 text-red-600" />
-          مرتجع مشتريات (من فاتورة سابقة)
-        </h1>
-        <button onClick={() => navigate('/purchases/list')} className="p-2 hover:bg-white rounded-full transition-all text-slate-400">
+        <div className="flex items-center gap-3">
+          <button onClick={handleBack} className="p-2 hover:bg-white rounded-full transition-all text-slate-400">
             <ArrowLeft className="w-6 h-6" />
-        </button>
+          </button>
+          <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+            <RotateCcw className="w-8 h-8 text-red-600" />
+            مرتجع مشتريات (من فاتورة سابقة)
+          </h1>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -320,6 +340,15 @@ export default function PurchaseReturn() {
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmModal 
+        isOpen={showConfirmBack}
+        onClose={() => setShowConfirmBack(false)}
+        onConfirm={() => navigate('/purchases/list')}
+        title="تنبيه: بيانات غير محفوظة"
+        message="لديك أصناف في المرتجع لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
+      />
     </div>
   );
 }

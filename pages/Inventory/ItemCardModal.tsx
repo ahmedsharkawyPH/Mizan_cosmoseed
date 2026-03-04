@@ -31,7 +31,7 @@ const ItemCardModal: React.FC<Props> = ({ isOpen, onClose, product, currency }) 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-100">
                         <div><span className="text-[10px] font-black text-slate-400 uppercase">كود الصنف</span><div className="font-mono text-blue-600 text-lg">{product.code || '---'}</div></div>
                         <div><span className="text-[10px] font-black text-slate-400 uppercase">الرصيد الإجمالي</span><div className="font-black text-emerald-600 text-lg">{product.batches?.reduce((s:any,b:any)=>s+b.quantity,0) || 0}</div></div>
-                        <div><span className="text-[10px] font-black text-slate-400 uppercase">سعر البيع الحالي</span><div className="font-black text-slate-800 text-lg">{currency}{product.selling_price}</div></div>
+                        <div><span className="text-[10px] font-black text-slate-400 uppercase">سعر البيع الحالي</span><div className="font-black text-slate-800 text-lg">{currency} {(product.display_selling_price || product.selling_price || 0).toLocaleString()}</div></div>
                     </div>
                     <table className="w-full text-xs text-right border-collapse">
                         <thead className="bg-slate-800 text-white font-black uppercase sticky top-0">

@@ -11,9 +11,12 @@ import {
   Calendar, DollarSign, TrendingUp, TrendingDown, Users, Package, 
   ArrowUpRight, ArrowDownLeft, Filter, Truck, Search, Briefcase, 
   Phone, ChevronRight, ChevronDown, Table2, BookOpen, Wallet, 
-  BarChart3, Activity, UserCheck, ShieldCheck, ShoppingBag, Star, Clock, AlertTriangle
+  BarChart3, Activity, UserCheck, ShieldCheck, ShoppingBag, Star, Clock, AlertTriangle,
+  Layers
 } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import ProductReport from '../components/ProductReport';
+import FinancialAnalysisReport from '../components/FinancialAnalysisReport';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
@@ -26,7 +29,7 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(today);
   
-  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'REPRESENTATIVES' | 'TELESALES' | 'DAILY_SHORTAGES' | 'BEST_SELLING_LIST' | 'STAGNANT_ITEMS'>('FINANCIAL');
+  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'REPRESENTATIVES' | 'TELESALES' | 'DAILY_SHORTAGES' | 'BEST_SELLING_LIST' | 'STAGNANT_ITEMS' | 'PRODUCT_REPORT'>('FINANCIAL');
 
   const handleQuickDate = (type: 'TODAY' | 'MONTH' | 'LAST_MONTH' | 'YEAR') => {
     const now = new Date();
@@ -179,6 +182,7 @@ export default function Reports() {
               { id: 'FINANCIAL', label: 'المالية (P&L)', icon: DollarSign },
               { id: 'SALES', label: 'المبيعات', icon: TrendingUp },
               { id: 'PURCHASES', label: 'المشتريات', icon: ShoppingBag },
+              { id: 'PRODUCT_REPORT', label: 'تقرير أصناف', icon: Layers },
               { id: 'REPRESENTATIVES', label: 'المندوبين', icon: Briefcase },
           ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
@@ -194,6 +198,13 @@ export default function Reports() {
                   <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm"><p className="text-emerald-500 text-[10px] font-black uppercase mb-1">مجمل الربح</p><h3 className="text-2xl font-black text-emerald-600">{currency}{financialData.grossProfit.toLocaleString()}</h3></div>
                   <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm"><p className="text-rose-500 text-[10px] font-black uppercase mb-1">المصروفات</p><h3 className="text-2xl font-black text-rose-600">-{currency}{financialData.expenses.toLocaleString()}</h3></div>
                   <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl border border-slate-800 ring-4 ring-slate-100"><p className="text-blue-400 text-[10px] font-black uppercase mb-1">صافي الأرباح</p><h3 className="text-3xl font-black text-white">{currency}{financialData.netProfit.toLocaleString()}</h3></div>
+              </div>
+
+              <div className="pt-6 border-t border-slate-100">
+                  <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2">
+                      <Table2 className="w-5 h-5 text-blue-600" /> التحليل المالي التفصيلي
+                  </h3>
+                  <FinancialAnalysisReport startDate={startDate} endDate={endDate} />
               </div>
           </div>
       )}
@@ -221,6 +232,9 @@ export default function Reports() {
                   </div>
               </div>
           </div>
+      )}
+      {activeTab === 'PRODUCT_REPORT' && (
+          <ProductReport startDate={startDate} endDate={endDate} />
       )}
     </div>
   );

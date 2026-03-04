@@ -10,21 +10,21 @@ export function useLatestPrices() {
   const { purchaseInvoices } = useData();
 
   return useMemo(() => {
-    const map: Record<string, number> = {};
+    const map: Record<string, { selling: number; purchase: number }> = {};
 
     // 1. ترتيب فواتير المشتريات من الأقدم للأحدث
     const sortedInvoices = [...purchaseInvoices].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
 
-    // 2. تحديث الخريطة بأحدث سعر بيع لكل منتج
-    // الفواتير الأحدث ستقوم بالكتابة فوق الأقدم تلقائياً
+    // 2. تحديث الخريطة بأحدث الأسعار لكل منتج
     sortedInvoices.forEach(inv => {
-      if (inv.status !== 'CANCELLED') {
+      if (inv.status !== 'CANCELLED' && inv.type === 'PURCHASE') {
         inv.items.forEach(item => {
-          if (typeof item.selling_price === 'number' && item.selling_price > 0) {
-            map[item.product_id] = item.selling_price;
-          }
+          map[item.product_id] = {
+            selling: item.selling_price || 0,
+            purchase: item.cost_price || 0
+          };
         });
       }
     });

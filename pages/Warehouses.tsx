@@ -45,6 +45,12 @@ export default function Warehouses() {
     setIsOpen(false);
   };
 
+  const handleSetDefault = async (id: string) => {
+    await db.setDefaultWarehouse(id);
+    setWarehouses(db.getWarehouses());
+    toast.success("تم تغيير المخزن الافتراضي بنجاح");
+  };
+
   const handleDelete = async (id: string) => {
     if (confirm(t('ware.delete_confirm'))) {
         const result = await db.deleteWarehouse(id);
@@ -96,6 +102,11 @@ export default function Warehouses() {
                     </td>
                     <td className="p-6 text-center">
                         <div className="flex justify-center gap-2">
+                            {!w.is_default && (
+                                <button onClick={() => handleSetDefault(w.id)} className="p-2 border border-slate-100 rounded-lg bg-white text-emerald-600 hover:bg-emerald-600 hover:text-white shadow-sm transition-all" title="تعيين كافتراضي">
+                                    <CheckCircle2 className="w-4 h-4" />
+                                </button>
+                            )}
                             <button onClick={() => handleOpenEdit(w)} className="p-2 border border-slate-100 rounded-lg bg-white text-blue-600 hover:bg-blue-600 hover:text-white shadow-sm transition-all" title="تعديل">
                                 <Edit2 className="w-4 h-4" />
                             </button>

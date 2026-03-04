@@ -7,7 +7,7 @@ export function useInventoryFilter(
   products: ProductWithBatches[], 
   settings: any, 
   bestSuppliersMap: Record<string, string>,
-  latestPricesMap: Record<string, number>
+  latestPricesMap: Record<string, { selling: number; purchase: number }>
 ) {
   const [searchQuery, setSearchQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('ALL');
@@ -54,13 +54,15 @@ export function useInventoryFilter(
             ? (p.batches?.reduce((s, b) => s + b.quantity, 0) || 0)
             : (p.batches?.find(b => b.warehouse_id === warehouseFilter)?.quantity || 0);
             
-        const display_selling_price = latestPricesMap[p.id] ?? p.selling_price ?? 0;
+        const display_selling_price = latestPricesMap[p.id]?.selling ?? p.selling_price ?? 0;
+        const display_purchase_price = latestPricesMap[p.id]?.purchase ?? p.purchase_price ?? 0;
 
         return {
             ...p,
             display_quantity,
             best_supplier_name: bestSuppliersMap[p.id] || '---',
             display_selling_price,
+            display_purchase_price,
         };
     });
 

@@ -28,6 +28,7 @@ export default function Suppliers() {
   const [isOpen, setIsOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
   
   const [form, setForm] = useState({ code: '', name: '', phone: '', contact_person: '', address: '', opening_balance: 0 });
 
@@ -89,11 +90,10 @@ export default function Suppliers() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("هل أنت متأكد من حذف هذا المورد؟ سيتم حذف السجل نهائياً.")) {
-      await db.deleteSupplier(id);
-      refreshData();
-      toast.success("تم حذف المورد");
-    }
+    await db.deleteSupplier(id);
+    refreshData();
+    toast.success("تم حذف المورد");
+    setSupplierToDelete(null);
   };
 
   const handleImport = async (e: any) => {
@@ -188,6 +188,36 @@ export default function Suppliers() {
 
   return (
     <div className="space-y-6">
+      {supplierToDelete && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden border-2 border-red-100 animate-in zoom-in duration-200">
+                  <div className="p-8 bg-red-50 text-red-700 flex flex-col items-center text-center">
+                      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                          <Trash2 className="w-10 h-10 text-red-600" />
+                      </div>
+                      <h3 className="text-2xl font-black mb-2">تأكيد حذف المورد</h3>
+                      <p className="text-sm font-bold text-red-600/70">هل أنت متأكد من حذف المورد {supplierToDelete.name}؟</p>
+                      <p className="text-[10px] mt-2 text-red-500 font-black uppercase tracking-widest">سيتم حذف كافة بيانات المورد وحركاته المالية وفواتير المشتريات المرتبطة</p>
+                  </div>
+
+                  <div className="p-8 space-y-4">
+                      <button 
+                          onClick={() => handleDelete(supplierToDelete.id)}
+                          className="w-full py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 shadow-lg shadow-red-100 transition-all active:scale-95"
+                      >
+                          تأكيد الحذف النهائي
+                      </button>
+                      <button 
+                          onClick={() => setSupplierToDelete(null)}
+                          className="w-full py-4 text-slate-400 font-black hover:text-slate-600 hover:bg-slate-50 rounded-2xl transition-all"
+                      >
+                          إلغاء
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
             <Truck className="w-6 h-6 text-blue-600" />
@@ -302,7 +332,7 @@ export default function Suppliers() {
                               <Edit className="w-4 h-4" />
                           </button>
                           <button 
-                              onClick={() => handleDelete(s.id)}
+                              onClick={() => setSupplierToDelete(s)}
                               className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                               title="حذف"
                           >

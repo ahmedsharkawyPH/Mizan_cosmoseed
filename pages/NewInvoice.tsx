@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { useData } from '../context/DataContext';
+import { useNavigationWarning } from '../hooks/useNavigationWarning';
+import ConfirmModal from '../components/ConfirmModal';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
 import { Plus, Trash2, Edit2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins, TrendingDown, Layers, ShoppingBag } from 'lucide-react';
@@ -22,11 +24,10 @@ export default function NewInvoice() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
-  const { createInvoice, updateInvoice } = useData();
+  const { createInvoice, updateInvoice, warehouses } = useData();
   
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<ProductWithBatches[]>([]);
-  const [warehouses] = useState(db.getWarehouses());
   
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -37,6 +38,8 @@ export default function NewInvoice() {
   const [previousBalance, setPreviousBalance] = useState<number>(0);
   const [commissionValue, setCommissionValue] = useState<number>(0); 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [showConfirmBack, setShowConfirmBack] = useState(false);
   
   const [isReturnMode, setIsReturnMode] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -49,18 +52,25 @@ export default function NewInvoice() {
       localStorage.setItem('invoice_settings', JSON.stringify(invoiceConfig));
   }, [invoiceConfig]);
 
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>(() => {
+    const defaultW = db.getWarehouses().find(w => w.is_default);
+    return defaultW ? defaultW.id : 'ALL';
+  });
   const [selectedProduct, setSelectedProduct] = useState<string>('');
 
-  const productSearchIndex = useMemo(
-    () => products.map(p => ({
+  const productSearchIndex = useMemo(() => {
+    const filtered = selectedWarehouse === 'ALL'
+      ? products
+      : products.filter(p =>
+          p.batches.some(b => b.warehouse_id === selectedWarehouse)
+        );
+    return filtered.map(p => ({
       id: p.id,
       name: p.name,
       code: p.code,
       barcode: (p as any).barcode || ''
-    })),
-    [products]
-  );
+    }));
+  }, [products, selectedWarehouse]);
 
   const customerSearchIndex = useMemo(
     () => customers.map(c => ({
@@ -104,8 +114,6 @@ export default function NewInvoice() {
     }) as ProductWithBatches);
 
     setProducts(completeProductsList);
-    const def = db.getWarehouses().find(w => w.is_default);
-    if(def) setSelectedWarehouse(def.id);
     if (location.state && (location.state as any).prefillItems) setCart((location.state as any).prefillItems);
     if (id) {
       const inv = db.getInvoices().find(i => i.id === id);
@@ -132,6 +140,20 @@ export default function NewInvoice() {
       setPreviousBalance(0);
     }
   }, [selectedCustomer, customers, id]);
+
+  useEffect(() => {
+    setHasChanges(cart.length > 0);
+  }, [cart]);
+
+  useNavigationWarning(hasChanges, isSubmitting);
+
+  const handleBack = () => {
+    if (hasChanges) {
+      setShowConfirmBack(true);
+    } else {
+      navigate('/invoices');
+    }
+  };
 
   const totals = useMemo(() => {
     let totalGross = 0;
@@ -180,24 +202,38 @@ export default function NewInvoice() {
 
   useEffect(() => {
     if (selectedProduct && editingIndex === null) {
-        const p = products.find(prod => prod.id === selectedProduct);
-        if (p) {
-            const customer = customers.find(c => c.id === selectedCustomer);
-            const priceSegment = customer?.price_segment || 'retail';
-            
-            const availableBatch = selectedWarehouse ? p.batches.find(b => b.warehouse_id === selectedWarehouse) : null;
-            
-            let price = availableBatch?.selling_price || p.selling_price || 0;
-            if (priceSegment === 'wholesale') {
-                price = availableBatch?.selling_price_wholesale || p.selling_price_wholesale || price;
-            } else if (priceSegment === 'half_wholesale') {
-                price = availableBatch?.selling_price_half_wholesale || p.selling_price_half_wholesale || price;
-            }
-            
-            setManualPrice(price);
-            setQty(1);
-            setTimeout(() => qtyRef.current?.focus(), 100);
+      const p = products.find(prod => prod.id === selectedProduct);
+      if (p) {
+        const customer = customers.find(c => c.id === selectedCustomer);
+        const priceSegment = customer?.price_segment || 'retail';
+
+        // ✅ إصلاح ALL + شريحة العميل
+        const availableBatch = selectedWarehouse === 'ALL'
+          ? p.batches[0] || null
+          : p.batches.find(b => b.warehouse_id === selectedWarehouse) || null;
+
+        let price: number;
+        if (priceSegment === 'wholesale') {
+          price = availableBatch?.selling_price_wholesale
+            || p.selling_price_wholesale
+            || availableBatch?.selling_price
+            || p.selling_price
+            || 0;
+        } else if (priceSegment === 'half_wholesale') {
+          price = availableBatch?.selling_price_half_wholesale
+            || p.selling_price_half_wholesale
+            || availableBatch?.selling_price
+            || p.selling_price
+            || 0;
+        } else {
+          // retail (قطاعي)
+          price = availableBatch?.selling_price || p.selling_price || 0;
         }
+
+        setManualPrice(price);
+        setQty(1);
+        setTimeout(() => qtyRef.current?.focus(), 100);
+      }
     }
   }, [selectedProduct, products, editingIndex, selectedCustomer, customers, selectedWarehouse]);
 
@@ -238,7 +274,10 @@ export default function NewInvoice() {
 
   const currentProduct = useMemo(() => products.find(p => p.id === selectedProduct), [selectedProduct, products]);
   const availableBatch = useMemo(() => {
-    if (!currentProduct || !selectedWarehouse) return null;
+    if (!currentProduct) return null;
+    if (selectedWarehouse === 'ALL') {
+      return currentProduct.batches[0] || null; // أول دُفعة متاحة
+    }
     return currentProduct.batches.find(b => b.warehouse_id === selectedWarehouse) || null;
   }, [currentProduct, selectedWarehouse]);
 
@@ -296,7 +335,7 @@ export default function NewInvoice() {
     <div className="flex flex-col h-full space-y-4 max-w-[1600px] mx-auto pb-6">
       <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <button onClick={() => navigate('/invoices')} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200">
+             <button onClick={handleBack} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-gray-200">
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
              </button>
              <h1 className="text-2xl font-bold text-gray-800 tracking-tight">
@@ -327,7 +366,8 @@ export default function NewInvoice() {
                  </h3>
                  <div className="flex items-center gap-2">
                     <label className="text-[10px] font-black text-slate-400">المخزن:</label>
-                    <select disabled={!selectedCustomer} className="bg-slate-50 border border-slate-200 text-sm rounded-xl p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                    <select className="bg-slate-50 border border-slate-200 text-sm rounded-xl p-2 font-bold focus:ring-2 focus:ring-blue-500" value={selectedWarehouse} onChange={e => setSelectedWarehouse(e.target.value)}>
+                        <option value="ALL">الكل</option>
                         {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                     </select>
                  </div>
@@ -504,6 +544,15 @@ export default function NewInvoice() {
              </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmModal 
+        isOpen={showConfirmBack}
+        onClose={() => setShowConfirmBack(false)}
+        onConfirm={() => navigate('/invoices')}
+        title="تنبيه: بيانات غير محفوظة"
+        message="لديك أصناف في الفاتورة لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
+      />
     </div>
   );
 }

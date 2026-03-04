@@ -28,6 +28,7 @@ interface DataContextType {
   addTransaction: (data: any) => Promise<any>;
   createInvoice: (cId: string, items: any[], cash: number, isRet: boolean, disc: number, user?: any, commission?: number, cashDiscPercent?: number, manualPrevBalance?: number) => Promise<{ success: boolean; id: string; message?: string }>;
   updateInvoice: (id: string, cId: string, items: any[], cash: number, cashDiscPercent?: number, manualPrevBalance?: number) => Promise<{ success: boolean; id: string; message?: string }>;
+  syncAllProductPrices: () => Promise<any>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -87,6 +88,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const res = await db.updateInvoice(id, cId, i, c, cdP, mPB); 
           refreshData(); 
           return res; 
+      },
+      syncAllProductPrices: async () => {
+          const res = await db.syncAllProductPricesFromLatestPurchases();
+          refreshData();
+          return res;
       }
   };
 

@@ -1,11 +1,14 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
+import { useNavigationWarning } from '../hooks/useNavigationWarning';
+import ConfirmModal from '../components/ConfirmModal';
 import { t } from '../utils/t';
 import { PurchaseItem, PurchaseInvoice as IPurchaseInvoice } from '../types';
 import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock, History, Truck, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
+import AddProductModal from '../components/AddProductModal';
 import { purchaseInvoiceSchema, productSchema } from '../utils/validation';
 // @ts-ignore
 import toast from 'react-hot-toast';
@@ -22,7 +25,7 @@ export default function PurchaseInvoice({ type }: Props) {
   
   const [suppliers, setSuppliers] = useState(db.getSuppliers());
   const [products, setProducts] = useState(db.getProductsWithBatches());
-  const [warehouses] = useState(db.getWarehouses());
+  const [warehouses, setWarehouses] = useState(db.getWarehouses());
   
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [documentNo, setDocumentNo] = useState('');
@@ -33,26 +36,31 @@ export default function PurchaseInvoice({ type }: Props) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null); 
   const [isLoadingInvoice, setIsLoadingInvoice] = useState(true); // افتراضياً جاري التحميل حتى تجهز القاعدة
   const [isSaving, setIsSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [showConfirmBack, setShowConfirmBack] = useState(false);
   
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
   const [qty, setQty] = useState(1);
   const [bonus, setBonus] = useState(0); 
   const [cost, setCost] = useState(0);
-  const [margin, setMargin] = useState(0); 
+  const [margin, setMargin] = useState(20); 
+  const [marginWholesale, setMarginWholesale] = useState(3);
+  const [marginHalfWholesale, setMarginHalfWholesale] = useState(8);
   const [sell, setSell] = useState(0);
   const [sellWholesale, setSellWholesale] = useState(0);
   const [sellHalfWholesale, setSellHalfWholesale] = useState(0);
 
   // States for Quick Add Product
   const [isAddProdModalOpen, setIsAddProdModalOpen] = useState(false);
-  const [newProdForm, setNewProdForm] = useState({ name: '', code: '', purchase_price: 0, selling_price: 0 });
 
   const productRef = useRef<SearchableSelectRef>(null);
   const costRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
   const bonusRef = useRef<HTMLInputElement>(null); 
   const marginRef = useRef<HTMLInputElement>(null);
+  const marginWholesaleRef = useRef<HTMLInputElement>(null);
+  const marginHalfWholesaleRef = useRef<HTMLInputElement>(null);
   const sellRef = useRef<HTMLInputElement>(null);
   const sellWholesaleRef = useRef<HTMLInputElement>(null);
   const sellHalfWholesaleRef = useRef<HTMLInputElement>(null);
@@ -68,10 +76,12 @@ export default function PurchaseInvoice({ type }: Props) {
         // 1. تحميل الأساسيات
         const allProducts = db.getProductsWithBatches();
         const allSuppliers = db.getSuppliers();
+        const allWarehouses = db.getWarehouses();
         setProducts(allProducts);
         setSuppliers(allSuppliers);
+        setWarehouses(allWarehouses);
 
-        const def = warehouses.find(w => w.is_default);
+        const def = allWarehouses.find(w => w.is_default);
         if (def) setSelectedWarehouse(def.id);
 
         // 2. تحميل الفاتورة للتعديل (فقط بعد جاهزية المنتجات)
@@ -92,6 +102,20 @@ export default function PurchaseInvoice({ type }: Props) {
 
     return () => clearInterval(readyCheck);
   }, [id, warehouses]);
+
+  useEffect(() => {
+    setHasChanges(cart.length > 0);
+  }, [cart]);
+
+  useNavigationWarning(hasChanges, isSaving);
+
+  const handleBack = () => {
+    if (hasChanges) {
+      setShowConfirmBack(true);
+    } else {
+      navigate('/purchases/list');
+    }
+  };
 
   const lastPurchasesIntelligence = useMemo(() => {
     if (!selProd) return [];
@@ -115,30 +139,41 @@ export default function PurchaseInvoice({ type }: Props) {
     return historyData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
   }, [selProd, suppliers]);
 
+  const calculatePrice = (cost: number, margin: number) => parseFloat((cost * (1 + margin / 100)).toFixed(2));
+  const calculateMargin = (cost: number, sell: number) => cost > 0 ? parseFloat((((sell / cost) - 1) * 100).toFixed(1)) : 0;
+
   const handleCostChange = (val: number) => {
     setCost(val);
-    if (val > 0 && margin > 0) {
-      const calculatedSell = val * (1 + margin / 100);
-      setSell(parseFloat(calculatedSell.toFixed(2)));
-    } else if (val > 0 && sell > 0) {
-      const calculatedMargin = ((sell / val) - 1) * 100;
-      setMargin(parseFloat(calculatedMargin.toFixed(1)));
+    if (val > 0) {
+      setSell(calculatePrice(val, margin));
+      setSellWholesale(calculatePrice(val, marginWholesale));
+      setSellHalfWholesale(calculatePrice(val, marginHalfWholesale));
     }
   };
 
-  const handleMarginChange = (val: number) => {
-    setMargin(val);
-    if (cost > 0) {
-      const calculatedSell = cost * (1 + val / 100);
-      setSell(parseFloat(calculatedSell.toFixed(2)));
+  const handleMarginChange = (val: number, type: 'retail' | 'wholesale' | 'half') => {
+    if (type === 'retail') {
+      setMargin(val);
+      if (cost > 0) setSell(calculatePrice(cost, val));
+    } else if (type === 'wholesale') {
+      setMarginWholesale(val);
+      if (cost > 0) setSellWholesale(calculatePrice(cost, val));
+    } else {
+      setMarginHalfWholesale(val);
+      if (cost > 0) setSellHalfWholesale(calculatePrice(cost, val));
     }
   };
 
-  const handleSellChange = (val: number) => {
-    setSell(val);
-    if (cost > 0 && val > 0) {
-      const calculatedMargin = ((val / cost) - 1) * 100;
-      setMargin(parseFloat(calculatedMargin.toFixed(1)));
+  const handleSellChange = (val: number, type: 'retail' | 'wholesale' | 'half') => {
+    if (type === 'retail') {
+      setSell(val);
+      if (cost > 0) setMargin(calculateMargin(cost, val));
+    } else if (type === 'wholesale') {
+      setSellWholesale(val);
+      if (cost > 0) setMarginWholesale(calculateMargin(cost, val));
+    } else {
+      setSellHalfWholesale(val);
+      if (cost > 0) setMarginHalfWholesale(calculateMargin(cost, val));
     }
   };
 
@@ -160,13 +195,24 @@ export default function PurchaseInvoice({ type }: Props) {
         }
         
         setCost(initialCost);
-        setSell(initialSell);
-        setSellWholesale(initialSellWholesale);
-        setSellHalfWholesale(initialSellHalfWholesale);
+        
+        // Always use default margins as requested
+        const defM = 20;
+        const defMW = 3;
+        const defMHW = 8;
+        
+        setMargin(defM);
+        setMarginWholesale(defMW);
+        setMarginHalfWholesale(defMHW);
+
         if (initialCost > 0) {
-            setMargin(parseFloat((((initialSell / initialCost) - 1) * 100).toFixed(1)));
+            setSell(calculatePrice(initialCost, defM));
+            setSellWholesale(calculatePrice(initialCost, defMW));
+            setSellHalfWholesale(calculatePrice(initialCost, defMHW));
         } else {
-            setMargin(0);
+            setSell(0);
+            setSellWholesale(0);
+            setSellHalfWholesale(0);
         }
         
         lastProcessedProdId.current = selProd;
@@ -219,7 +265,9 @@ export default function PurchaseInvoice({ type }: Props) {
     setQty(1);
     setBonus(0);
     setCost(0);
-    setMargin(0);
+    setMargin(20);
+    setMarginWholesale(3);
+    setMarginHalfWholesale(8);
     setSell(0);
     setSellWholesale(0);
     setSellHalfWholesale(0);
@@ -239,8 +287,11 @@ export default function PurchaseInvoice({ type }: Props) {
       setSell(item.selling_price);
       setSellWholesale(item.selling_price_wholesale || 0);
       setSellHalfWholesale(item.selling_price_half_wholesale || 0);
+      
       if (item.cost_price > 0) {
-          setMargin(parseFloat((((item.selling_price / item.cost_price) - 1) * 100).toFixed(1)));
+          setMargin(calculateMargin(item.cost_price, item.selling_price));
+          setMarginWholesale(calculateMargin(item.cost_price, item.selling_price_wholesale || 0));
+          setMarginHalfWholesale(calculateMargin(item.cost_price, item.selling_price_half_wholesale || 0));
       }
       setSelectedWarehouse(item.warehouse_id);
       toast("تم تحميل بيانات الصنف للتعديل");
@@ -252,49 +303,22 @@ export default function PurchaseInvoice({ type }: Props) {
       setQty(1);
       setBonus(0);
       setCost(0);
-      setMargin(0);
+      setMargin(20);
+      setMarginWholesale(3);
+      setMarginHalfWholesale(8);
       setSell(0);
       setSellWholesale(0);
       setSellHalfWholesale(0);
       lastProcessedProdId.current = '';
   };
 
-  const handleQuickAddProduct = async () => {
-      // التحقق من صحة البيانات باستخدام Zod
-      const validation = productSchema.safeParse({ 
-        name: newProdForm.name, 
-        code: newProdForm.code,
-        selling_price: newProdForm.selling_price,
-        purchase_price: newProdForm.purchase_price
-      });
-      
-      if (!validation.success) {
-        return toast.error(validation.error.issues[0].message);
-      }
-
-      // التحقق من وجود الكود محلياً قبل الإرسال للسحاب
-      const isDuplicate = products.some(p => p.code === newProdForm.code && p.code !== '');
-      if (isDuplicate) {
-          return toast.error("هذا الكود (الباركود) مسجل مسبقاً لمنتج آخر. يرجى استخدامه مباشرة أو تغيير الكود.");
-      }
-
-      const pData = { name: newProdForm.name, code: newProdForm.code };
-      const bData = { 
-          quantity: 0, 
-          purchase_price: newProdForm.purchase_price, 
-          selling_price: newProdForm.selling_price,
-          warehouse_id: selectedWarehouse || warehouses[0]?.id
-      };
-      const result = await db.addProduct(pData, bData);
-      if (result.success && result.id) {
-        toast.success("تم إضافة الصنف بنجاح");
-        setProducts(db.getProductsWithBatches()); 
-        setSelProd(result.id);
-        setIsAddProdModalOpen(false);
-        setNewProdForm({ name: '', code: '', purchase_price: 0, selling_price: 0 });
-      } else {
-        toast.error(result.message || "حدث خطأ أثناء إضافة الصنف");
-      }
+  const handleAddProductSave = async (pData: any, bData: any) => {
+    const result = await db.addProduct(pData, bData);
+    if (result.success && result.id) {
+      setProducts(db.getProductsWithBatches()); 
+      setSelProd(result.id);
+    }
+    return result;
   };
 
   const save = async () => {
@@ -341,7 +365,7 @@ export default function PurchaseInvoice({ type }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/purchases/list')} className="p-2 hover:bg-gray-100 rounded-full transition-all"><ArrowLeft className="w-5 h-5" /></button>
+        <button onClick={handleBack} className="p-2 hover:bg-gray-100 rounded-full transition-all"><ArrowLeft className="w-5 h-5" /></button>
         <h1 className={`text-2xl font-black ${isReturn ? 'text-red-600' : 'text-blue-600'}`}>
             {id ? 'تعديل فاتورة مشتريات' : (isReturn ? t('pur.return_title') : t('pur.title'))}
         </h1>
@@ -441,15 +465,14 @@ export default function PurchaseInvoice({ type }: Props) {
                         className="w-full"
                     />
                   </div>
-                  <button 
-                      type="button" 
-                      onClick={() => setIsAddProdModalOpen(true)}
-                      className="mb-1 p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
-                      title="إضافة صنف جديد للقاعدة"
-                      disabled={!selectedSupplier}
-                  >
-                      <PackagePlus className="w-5 h-5" />
-                  </button>
+                      <button 
+                          type="button" 
+                          onClick={() => setIsAddProdModalOpen(true)}
+                          className="relative z-10 mb-1 p-2.5 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                          title="إضافة صنف جديد للقاعدة"
+                      >
+                          <PackagePlus className="w-5 h-5" />
+                      </button>
               </div>
               
               {selProd && lastPurchasesIntelligence.length > 0 && (
@@ -476,23 +499,50 @@ export default function PurchaseInvoice({ type }: Props) {
                       <label htmlFor="purchase_bonus_input" className="text-[10px] font-black text-orange-400 uppercase mb-1 block">بونص</label>
                       <input id="purchase_bonus_input" name="bonus_quantity" ref={bonusRef} type="number" className="w-full border-2 border-orange-100 p-2.5 rounded-xl font-black text-center outline-none focus:border-orange-500 transition-all bg-orange-50/10" value={bonus || ''} onChange={e => setBonus(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && marginRef.current?.focus()} disabled={!selProd} placeholder="0" />
                   </div>
-                  <div className="md:col-span-2">
-                      <label htmlFor="purchase_margin_input" className="text-[10px] font-black text-indigo-600 uppercase mb-1 block">الربح %</label>
-                      <input id="purchase_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border-2 border-indigo-100 p-2.5 rounded-xl font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500 bg-indigo-50/20" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="%" />
+                  
+                  {/* Retail Pricing */}
+                  <div className="md:col-span-3 border-r border-slate-100 pr-4">
+                      <div className="grid grid-cols-2 gap-2">
+                          <div>
+                              <label htmlFor="purchase_margin_input" className="text-[10px] font-black text-indigo-600 uppercase mb-1 block">ربح قطاعي %</label>
+                              <input id="purchase_margin_input" name="profit_margin" ref={marginRef} type="number" className="w-full border-2 border-indigo-100 p-2.5 rounded-xl font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500 bg-indigo-50/20" value={margin || ''} onChange={e => handleMarginChange(Number(e.target.value), 'retail')} onKeyDown={e => e.key === 'Enter' && sellRef.current?.focus()} disabled={!selProd} placeholder="%" />
+                          </div>
+                          <div>
+                              <label htmlFor="purchase_sell_price_input" className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">بيع قطاعي</label>
+                              <input id="purchase_sell_price_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value), 'retail')} onKeyDown={e => e.key === 'Enter' && marginHalfWholesaleRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+                          </div>
+                      </div>
                   </div>
-                  <div className="md:col-span-2">
-                      <label htmlFor="purchase_sell_price_input" className="text-[10px] font-black text-emerald-600 uppercase mb-1 block">بيع قطاعي</label>
-                      <input id="purchase_sell_price_input" name="selling_price" ref={sellRef} type="number" className="w-full border-2 border-emerald-100 p-2.5 rounded-xl font-black text-emerald-700 outline-none focus:border-emerald-500 transition-all bg-emerald-50/20" value={sell || ''} onChange={e => handleSellChange(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellWholesaleRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+
+                  {/* Half Wholesale Pricing */}
+                  <div className="md:col-span-3 border-r border-slate-100 pr-4">
+                      <div className="grid grid-cols-2 gap-2">
+                          <div>
+                              <label htmlFor="purchase_margin_half_wholesale_input" className="text-[10px] font-black text-purple-600 uppercase mb-1 block">ربح نص جملة %</label>
+                              <input id="purchase_margin_half_wholesale_input" name="profit_margin_half_wholesale" ref={marginHalfWholesaleRef} type="number" className="w-full border-2 border-purple-100 p-2.5 rounded-xl font-bold text-purple-600 outline-none focus:ring-2 focus:ring-purple-500 bg-purple-50/20" value={marginHalfWholesale || ''} onChange={e => handleMarginChange(Number(e.target.value), 'half')} onKeyDown={e => e.key === 'Enter' && sellHalfWholesaleRef.current?.focus()} disabled={!selProd} placeholder="%" />
+                          </div>
+                          <div>
+                              <label htmlFor="purchase_sell_half_wholesale_input" className="text-[10px] font-black text-purple-600 uppercase mb-1 block">بيع نص جملة</label>
+                              <input id="purchase_sell_half_wholesale_input" name="selling_price_half_wholesale" ref={sellHalfWholesaleRef} type="number" className="w-full border-2 border-purple-100 p-2.5 rounded-xl font-black text-purple-700 outline-none focus:border-purple-500 transition-all bg-purple-50/20" value={sellHalfWholesale || ''} onChange={e => handleSellChange(Number(e.target.value), 'half')} onKeyDown={e => e.key === 'Enter' && marginWholesaleRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+                          </div>
+                      </div>
                   </div>
-                  <div className="md:col-span-2">
-                      <label htmlFor="purchase_sell_wholesale_input" className="text-[10px] font-black text-blue-600 uppercase mb-1 block">بيع جملة</label>
-                      <input id="purchase_sell_wholesale_input" name="selling_price_wholesale" ref={sellWholesaleRef} type="number" className="w-full border-2 border-blue-100 p-2.5 rounded-xl font-black text-blue-700 outline-none focus:border-blue-500 transition-all bg-blue-50/20" value={sellWholesale || ''} onChange={e => setSellWholesale(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && sellHalfWholesaleRef.current?.focus()} disabled={!selProd} placeholder="0.00" />
+
+                  {/* Wholesale Pricing */}
+                  <div className="md:col-span-3 border-r border-slate-100 pr-4">
+                      <div className="grid grid-cols-2 gap-2">
+                          <div>
+                              <label htmlFor="purchase_margin_wholesale_input" className="text-[10px] font-black text-blue-600 uppercase mb-1 block">ربح جملة %</label>
+                              <input id="purchase_margin_wholesale_input" name="profit_margin_wholesale" ref={marginWholesaleRef} type="number" className="w-full border-2 border-blue-100 p-2.5 rounded-xl font-bold text-blue-600 outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50/20" value={marginWholesale || ''} onChange={e => handleMarginChange(Number(e.target.value), 'wholesale')} onKeyDown={e => e.key === 'Enter' && sellWholesaleRef.current?.focus()} disabled={!selProd} placeholder="%" />
+                          </div>
+                          <div>
+                              <label htmlFor="purchase_sell_wholesale_input" className="text-[10px] font-black text-blue-600 uppercase mb-1 block">بيع جملة</label>
+                              <input id="purchase_sell_wholesale_input" name="selling_price_wholesale" ref={sellWholesaleRef} type="number" className="w-full border-2 border-blue-100 p-2.5 rounded-xl font-black text-blue-700 outline-none focus:border-blue-500 transition-all bg-blue-50/20" value={sellWholesale || ''} onChange={e => handleSellChange(Number(e.target.value), 'wholesale')} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
+                          </div>
+                      </div>
                   </div>
-                  <div className="md:col-span-2">
-                      <label htmlFor="purchase_sell_half_wholesale_input" className="text-[10px] font-black text-purple-600 uppercase mb-1 block">بيع نص جملة</label>
-                      <input id="purchase_sell_half_wholesale_input" name="selling_price_half_wholesale" ref={sellHalfWholesaleRef} type="number" className="w-full border-2 border-purple-100 p-2.5 rounded-xl font-black text-purple-700 outline-none focus:border-purple-500 transition-all bg-purple-50/20" value={sellHalfWholesale || ''} onChange={e => setSellHalfWholesale(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItem()} disabled={!selProd} placeholder="0.00" />
-                  </div>
-                  <div className="md:col-span-2">
+
+                  <div className="md:col-span-3">
                       <button id="purchase_add_btn" name="add_to_cart" onClick={addItem} type="button" className={`w-full ${editingIndex !== null ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white h-[46px] rounded-xl font-black shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50`} disabled={!selProd}>
                           {editingIndex !== null ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                           {editingIndex !== null ? 'تعديل' : 'إضافة'}
@@ -590,59 +640,23 @@ export default function PurchaseInvoice({ type }: Props) {
         </div>
       </div>
 
-      {/* --- Quick Add Product Modal --- */}
-      {isAddProdModalOpen && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 animate-in zoom-in duration-200">
-                  <div className="p-6 bg-blue-600 text-white flex justify-between items-center">
-                      <h3 className="text-xl font-black flex items-center gap-3"><PackagePlus className="w-6 h-6" /> تعريف صنف جديد</h3>
-                      <button onClick={() => setIsAddProdModalOpen(false)} className="p-2 hover:bg-white/20 rounded-full transition-colors"><X className="w-6 h-6" /></button>
-                  </div>
-                  <div className="p-8 space-y-5">
-                      <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">اسم الصنف</label>
-                          <input 
-                              type="text" 
-                              className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-blue-500 outline-none" 
-                              value={newProdForm.name} 
-                              onChange={e => setNewProdForm({...newProdForm, name: e.target.value})} 
-                              autoFocus
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">الكود / Barcode</label>
-                          <input 
-                              type="text" 
-                              className="w-full border-2 border-slate-100 p-3 rounded-xl font-mono focus:border-blue-500 outline-none" 
-                              value={newProdForm.code} 
-                              onChange={e => setNewProdForm({...newProdForm, code: e.target.value})} 
-                          />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">سعر التكلفة</label>
-                              <input 
-                                  type="number" 
-                                  className="w-full border-2 border-slate-100 p-3 rounded-xl font-black text-red-600" 
-                                  value={newProdForm.purchase_price || ''} 
-                                  onChange={e => setNewProdForm({...newProdForm, purchase_price: Number(e.target.value)})} 
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">سعر البيع</label>
-                              <input 
-                                  type="number" 
-                                  className="w-full border-2 border-slate-100 p-3 rounded-xl font-black text-emerald-600" 
-                                  value={newProdForm.selling_price || ''} 
-                                  onChange={e => setNewProdForm({...newProdForm, selling_price: Number(e.target.value)})} 
-                              />
-                          </div>
-                      </div>
-                      <button onClick={handleQuickAddProduct} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:bg-blue-600 transition-all active:scale-95">حفظ وإضافة للفاتورة</button>
-                  </div>
-              </div>
-          </div>
-      )}
+      {/* --- Shared Add Product Modal --- */}
+      <AddProductModal 
+        isOpen={isAddProdModalOpen} 
+        onClose={() => setIsAddProdModalOpen(false)} 
+        product={null} 
+        onSave={handleAddProductSave} 
+        warehouses={warehouses} 
+      />
+
+      {/* Confirmation Modal */}
+      <ConfirmModal 
+        isOpen={showConfirmBack}
+        onClose={() => setShowConfirmBack(false)}
+        onConfirm={() => navigate('/purchases/list')}
+        title="تنبيه: بيانات غير محفوظة"
+        message="لديك أصناف في الفاتورة لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
+      />
     </div>
   );
 }

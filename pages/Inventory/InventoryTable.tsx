@@ -8,7 +8,7 @@ interface Props {
     currency: string;
     onViewCard: (p: any) => void;
     onEdit: (p: any) => void;
-    onDelete: (id: string) => void;
+    onDelete: (p: any) => void;
 }
 
 const InventoryTable: React.FC<Props> = ({ 
@@ -22,6 +22,7 @@ const InventoryTable: React.FC<Props> = ({
                         <th className="px-6 py-4">الصنف</th>
                         <th className="px-6 py-4 text-center">كود</th>
                         <th className="px-6 py-4 text-center">أفضل مورد</th>
+                        <th className="px-6 py-4 text-center">سعر التكلفة</th>
                         <th className="px-6 py-4 text-center">سعر البيع المعتمد</th>
                         <th className="px-6 py-4 text-center">الرصيد</th>
                         <th className="px-6 py-4 text-center" title="حالة المزامنة">سحابة</th>
@@ -40,7 +41,15 @@ const InventoryTable: React.FC<Props> = ({
                             </td>
                             <td className="px-6 py-4 text-center">
                                 <div className="flex flex-col items-center">
-                                    <span className="text-blue-600 font-black">{currency}{(p.display_selling_price || 0).toLocaleString()}</span>
+                                    <span className="text-red-600 font-black">{currency} {(p.display_purchase_price || 0).toLocaleString()}</span>
+                                    {p.display_purchase_price !== p.purchase_price && (
+                                        <span className="text-[9px] text-slate-300 line-through">قاعدة: {p.purchase_price}</span>
+                                    )}
+                                </div>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                                <div className="flex flex-col items-center">
+                                    <span className="text-blue-600 font-black">{currency} {(p.display_selling_price || 0).toLocaleString()}</span>
                                     {p.display_selling_price !== p.selling_price && (
                                         <span className="text-[9px] text-slate-300 line-through">قاعدة: {p.selling_price}</span>
                                     )}
@@ -58,7 +67,7 @@ const InventoryTable: React.FC<Props> = ({
                                 <div className="flex justify-center gap-1">
                                     <button onClick={() => onViewCard(p)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="عرض الحركة"><ClipboardList className="w-4 h-4" /></button>
                                     <button onClick={() => onEdit(p)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="تعديل"><Edit className="w-4 h-4" /></button>
-                                    <button onClick={() => onDelete(p.id)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="حذف"><Trash2 className="w-4 h-4" /></button>
+                                    <button onClick={() => onDelete(p)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="حذف"><Trash2 className="w-4 h-4" /></button>
                                 </div>
                             </td>
                         </tr>
