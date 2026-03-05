@@ -6,7 +6,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { Supplier, PurchaseInvoice, PurchaseItem } from '../types';
 import { Search, RotateCcw, Truck, FileText, ChevronRight, CheckCircle2, ArrowLeft, Trash2, Save, X, AlertCircle, Loader2, Filter } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useBlocker } from 'react-router-dom';
 import { t } from '../utils/t';
 // @ts-ignore
 import toast from 'react-hot-toast';
@@ -53,6 +53,17 @@ export default function PurchaseReturn() {
   }, [returnItems]);
 
   useNavigationWarning(hasChanges, isSubmitting);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasChanges && !isSubmitting && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      setShowConfirmBack(true);
+    }
+  }, [blocker.state]);
 
   const handleBack = () => {
     if (hasChanges) {
@@ -344,8 +355,21 @@ export default function PurchaseReturn() {
       {/* Confirmation Modal */}
       <ConfirmModal 
         isOpen={showConfirmBack}
-        onClose={() => setShowConfirmBack(false)}
-        onConfirm={() => navigate('/purchases/list')}
+        onClose={() => {
+          if (blocker.state === "blocked") {
+            blocker.reset();
+          }
+          setShowConfirmBack(false);
+        }}
+        onConfirm={() => {
+          if (blocker.state === "blocked") {
+            blocker.proceed();
+          }
+          setShowConfirmBack(false);
+          if (blocker.state !== "blocked") {
+            navigate('/purchases/list');
+          }
+        }}
         title="تنبيه: بيانات غير محفوظة"
         message="لديك أصناف في المرتجع لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
       />

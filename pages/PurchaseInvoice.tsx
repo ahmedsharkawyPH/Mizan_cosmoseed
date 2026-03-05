@@ -6,7 +6,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { t } from '../utils/t';
 import { PurchaseItem, PurchaseInvoice as IPurchaseInvoice } from '../types';
 import { Plus, Save, ArrowLeft, Trash2, Edit, PackagePlus, X, TrendingUp, AlertCircle, FileText, Calendar, CheckCircle2, Hash, Clock, History, Truck, Loader2 } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useBlocker } from 'react-router-dom';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 import AddProductModal from '../components/AddProductModal';
 import { purchaseInvoiceSchema, productSchema } from '../utils/validation';
@@ -108,6 +108,17 @@ export default function PurchaseInvoice({ type }: Props) {
   }, [cart]);
 
   useNavigationWarning(hasChanges, isSaving);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasChanges && !isSaving && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      setShowConfirmBack(true);
+    }
+  }, [blocker.state]);
 
   const handleBack = () => {
     if (hasChanges) {
@@ -652,8 +663,21 @@ export default function PurchaseInvoice({ type }: Props) {
       {/* Confirmation Modal */}
       <ConfirmModal 
         isOpen={showConfirmBack}
-        onClose={() => setShowConfirmBack(false)}
-        onConfirm={() => navigate('/purchases/list')}
+        onClose={() => {
+          if (blocker.state === "blocked") {
+            blocker.reset();
+          }
+          setShowConfirmBack(false);
+        }}
+        onConfirm={() => {
+          if (blocker.state === "blocked") {
+            blocker.proceed();
+          }
+          setShowConfirmBack(false);
+          if (blocker.state !== "blocked") {
+            navigate('/purchases/list');
+          }
+        }}
         title="تنبيه: بيانات غير محفوظة"
         message="لديك أصناف في الفاتورة لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
       />

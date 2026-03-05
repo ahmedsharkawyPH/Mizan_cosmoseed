@@ -7,7 +7,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { authService } from '../services/auth';
 import { Customer, ProductWithBatches, CartItem, BatchStatus } from '../types';
 import { Plus, Trash2, Edit2, Save, Search, AlertCircle, Calculator, Package, Users, ArrowLeft, ChevronDown, Printer, Settings as SettingsIcon, Check, X, Eye, RotateCcw, ShieldAlert, Lock, Percent, Info, Tag, RefreshCw, AlertTriangle, ListChecks, Coins, TrendingDown, Layers, ShoppingBag } from 'lucide-react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, useBlocker } from 'react-router-dom';
 import { t } from '../utils/t';
 import SearchableSelect, { SearchableSelectRef } from '../components/SearchableSelect';
 import { saleInvoiceSchema } from '../utils/validation';
@@ -146,6 +146,17 @@ export default function NewInvoice() {
   }, [cart]);
 
   useNavigationWarning(hasChanges, isSubmitting);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasChanges && !isSubmitting && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      setShowConfirmBack(true);
+    }
+  }, [blocker.state]);
 
   const handleBack = () => {
     if (hasChanges) {
@@ -548,8 +559,21 @@ export default function NewInvoice() {
       {/* Confirmation Modal */}
       <ConfirmModal 
         isOpen={showConfirmBack}
-        onClose={() => setShowConfirmBack(false)}
-        onConfirm={() => navigate('/invoices')}
+        onClose={() => {
+          if (blocker.state === "blocked") {
+            blocker.reset();
+          }
+          setShowConfirmBack(false);
+        }}
+        onConfirm={() => {
+          if (blocker.state === "blocked") {
+            blocker.proceed();
+          }
+          setShowConfirmBack(false);
+          if (blocker.state !== "blocked") {
+            navigate('/invoices');
+          }
+        }}
         title="تنبيه: بيانات غير محفوظة"
         message="لديك أصناف في الفاتورة لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
       />

@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, Suspense, lazy } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createHashRouter, RouterProvider, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { db } from './services/db';
@@ -34,6 +34,51 @@ const InventoryAnalysis = lazy(() => import('./pages/InventoryAnalysis'));
 const Shortages = lazy(() => import('./pages/Shortages'));
 const DailyClosing = lazy(() => import('./pages/DailyClosing'));
 const Commissions = lazy(() => import('./pages/Commissions'));
+
+const router = createHashRouter([
+  {
+    path: '/login',
+    element: <Login />,
+  },
+  {
+    path: '/',
+    element: <ProtectedRoute />,
+    children: [
+      {
+        element: <Layout />,
+        children: [
+          { index: true, element: <Dashboard /> },
+          { path: 'invoice/new', element: <NewInvoice /> },
+          { path: 'invoice/edit/:id', element: <NewInvoice /> },
+          { path: 'invoices', element: <Invoices /> },
+          { path: 'invoice/return', element: <SalesReturn /> },
+          { path: 'today-items', element: <TodayItems /> },
+          { path: 'inventory', element: <Inventory /> },
+          { path: 'warehouses', element: <Warehouses /> },
+          { path: 'stock-take', element: <StockTake /> },
+          { path: 'inventory/analysis', element: <InventoryAnalysis /> },
+          { path: 'shortages', element: <Shortages /> },
+          { path: 'purchases/new', element: <PurchaseInvoice type="PURCHASE" /> },
+          { path: 'purchases/edit/:id', element: <PurchaseInvoice type="PURCHASE" /> },
+          { path: 'purchases/list', element: <PurchaseList /> },
+          { path: 'purchases/return-from-invoice', element: <PurchaseReturn /> },
+          { path: 'purchase-orders', element: <PurchaseOrders /> },
+          { path: 'customers', element: <Customers /> },
+          { path: 'suppliers', element: <Suppliers /> },
+          { path: 'cash', element: <CashRegister /> },
+          { path: 'daily-closing', element: <DailyClosing /> },
+          { path: 'commissions', element: <Commissions /> },
+          { path: 'reports', element: <Reports /> },
+          { path: 'settings', element: <Settings /> },
+        ],
+      },
+    ],
+  },
+  {
+    path: '*',
+    element: <Navigate to="/" replace />,
+  },
+]);
 
 const AppContent = () => {
   const { isLoading, loadingMessage } = useData();
@@ -79,51 +124,9 @@ const AppContent = () => {
   }
 
   return (
-      <HashRouter>
-        <Suspense fallback={<div className="h-screen w-full flex items-center justify-center bg-slate-50"><Loader2 className="w-8 h-8 text-blue-600 animate-spin" /></div>}>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route element={<ProtectedRoute />}>
-                <Route path="/" element={<Layout />}>
-                  <Route index element={<Dashboard />} />
-                  
-                  {/* Sales Routes */}
-                  <Route path="invoice/new" element={<NewInvoice />} />
-                  <Route path="invoice/edit/:id" element={<NewInvoice />} />
-                  <Route path="invoices" element={<Invoices />} />
-                  <Route path="invoice/return" element={<SalesReturn />} />
-                  <Route path="today-items" element={<TodayItems />} />
-
-                  {/* Inventory Routes */}
-                  <Route path="inventory" element={<Inventory />} />
-                  <Route path="warehouses" element={<Warehouses />} />
-                  <Route path="stock-take" element={<StockTake />} />
-                  <Route path="inventory/analysis" element={<InventoryAnalysis />} />
-                  <Route path="shortages" element={<Shortages />} />
-
-                  {/* Purchase Routes */}
-                  <Route path="purchases/new" element={<PurchaseInvoice type="PURCHASE" />} />
-                  <Route path="purchases/edit/:id" element={<PurchaseInvoice type="PURCHASE" />} />
-                  <Route path="purchases/list" element={<PurchaseList />} />
-                  <Route path="purchases/return-from-invoice" element={<PurchaseReturn />} />
-                  <Route path="purchase-orders" element={<PurchaseOrders />} />
-
-                  {/* Accounting Routes */}
-                  <Route path="customers" element={<Customers />} />
-                  <Route path="suppliers" element={<Suppliers />} />
-                  <Route path="cash" element={<CashRegister />} />
-                  <Route path="daily-closing" element={<DailyClosing />} />
-                  <Route path="commissions" element={<Commissions />} />
-
-                  {/* General */}
-                  <Route path="reports" element={<Reports />} />
-                  <Route path="settings" element={<Settings />} />
-                </Route>
-              </Route>
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-        </Suspense>
-      </HashRouter>
+      <Suspense fallback={<div className="h-screen w-full flex items-center justify-center bg-slate-50"><Loader2 className="w-8 h-8 text-blue-600 animate-spin" /></div>}>
+          <RouterProvider router={router} />
+      </Suspense>
   );
 }
 
