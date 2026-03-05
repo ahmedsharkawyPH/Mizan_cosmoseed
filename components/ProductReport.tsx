@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { db } from '../services/db';
 import { Invoice, PurchaseInvoice, Product } from '../types';
 import SearchableSelect from './SearchableSelect';
-import { Search, Calendar, User, Hash, ShoppingBag, TrendingUp, ChevronLeft, Package, FileText, Printer, X } from 'lucide-react';
+import { Search, Calendar, User, Hash, ShoppingBag, TrendingUp, ChevronLeft, Package, FileText, Printer, X, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { t } from '../utils/t';
 
 interface ProductReportProps {
@@ -13,7 +13,7 @@ interface ProductReportProps {
 
 export default function ProductReport({ startDate, endDate }: ProductReportProps) {
   const [selectedProductId, setSelectedProductId] = useState<string>('');
-  const [reportType, setReportType] = useState<'SALES' | 'PURCHASES'>('SALES');
+  const [reportType, setReportType] = useState<'SALES' | 'SALES_RETURN' | 'PURCHASES' | 'PURCHASES_RETURN'>('SALES');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | PurchaseInvoice | null>(null);
   
   const products = db.getAllProducts();
@@ -27,17 +27,19 @@ export default function ProductReport({ startDate, endDate }: ProductReportProps
   const filteredInvoices = useMemo(() => {
     if (!selectedProductId) return [];
 
-    if (reportType === 'SALES') {
+    if (reportType === 'SALES' || reportType === 'SALES_RETURN') {
+      const targetType = reportType === 'SALES' ? 'SALE' : 'RETURN';
       return db.getInvoices().filter(inv => {
         const date = inv.date.split('T')[0];
         const hasProduct = inv.items.some(item => item.product.id === selectedProductId);
-        return date >= startDate && date <= endDate && hasProduct;
+        return date >= startDate && date <= endDate && hasProduct && inv.type === targetType;
       }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } else {
+      const targetType = reportType === 'PURCHASES' ? 'PURCHASE' : 'RETURN';
       return db.getPurchaseInvoices().filter(inv => {
         const date = inv.date.split('T')[0];
         const hasProduct = inv.items.some(item => item.product_id === selectedProductId);
-        return date >= startDate && date <= endDate && hasProduct;
+        return date >= startDate && date <= endDate && hasProduct && inv.type === targetType;
       }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
   }, [selectedProductId, reportType, startDate, endDate]);
@@ -58,18 +60,30 @@ export default function ProductReport({ startDate, endDate }: ProductReportProps
             placeholder="ابحث باسم الصنف أو الكود..."
           />
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-xl">
+        <div className="flex bg-slate-100 p-1 rounded-xl overflow-x-auto scrollbar-hide">
           <button
             onClick={() => { setReportType('SALES'); setSelectedInvoice(null); }}
-            className={`px-6 py-2 rounded-lg text-sm font-black transition-all flex items-center gap-2 ${reportType === 'SALES' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${reportType === 'SALES' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <TrendingUp className="w-4 h-4" /> مبيعات
           </button>
           <button
+            onClick={() => { setReportType('SALES_RETURN'); setSelectedInvoice(null); }}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${reportType === 'SALES_RETURN' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <ArrowDownLeft className="w-4 h-4" /> مرتجع مبيعات
+          </button>
+          <button
             onClick={() => { setReportType('PURCHASES'); setSelectedInvoice(null); }}
-            className={`px-6 py-2 rounded-lg text-sm font-black transition-all flex items-center gap-2 ${reportType === 'PURCHASES' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${reportType === 'PURCHASES' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <ShoppingBag className="w-4 h-4" /> مشتريات
+          </button>
+          <button
+            onClick={() => { setReportType('PURCHASES_RETURN'); setSelectedInvoice(null); }}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap ${reportType === 'PURCHASES_RETURN' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <ArrowUpRight className="w-4 h-4" /> مرتجع مشتريات
           </button>
         </div>
       </div>
@@ -94,10 +108,10 @@ export default function ProductReport({ startDate, endDate }: ProductReportProps
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{reportType === 'SALES' ? 'العميل' : 'المورد'}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{reportType.startsWith('SALES') ? 'العميل' : 'المورد'}</p>
                     <p className="font-bold text-slate-700 flex items-center gap-2">
                       <User className="w-4 h-4 text-blue-500" />
-                      {reportType === 'SALES' 
+                      {reportType.startsWith('SALES') 
                         ? getCustomerName((selectedInvoice as Invoice).customer_id) 
                         : getSupplierName((selectedInvoice as PurchaseInvoice).supplier_id)}
                     </p>
@@ -182,7 +196,7 @@ export default function ProductReport({ startDate, endDate }: ProductReportProps
                       </div>
                       <div className="flex items-center gap-3 text-xs text-slate-500 font-bold">
                         <span className="flex items-center gap-1"><User className="w-3 h-3" /> 
-                          {reportType === 'SALES' ? getCustomerName((inv as Invoice).customer_id) : getSupplierName((inv as PurchaseInvoice).supplier_id)}
+                          {reportType.startsWith('SALES') ? getCustomerName((inv as Invoice).customer_id) : getSupplierName((inv as PurchaseInvoice).supplier_id)}
                         </span>
                         <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(inv.date).toLocaleDateString('ar-EG')}</span>
                       </div>

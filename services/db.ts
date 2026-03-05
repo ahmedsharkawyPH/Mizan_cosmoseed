@@ -79,24 +79,29 @@ class Database {
     if (onProgress) onProgress("جاري تحميل البيانات المحلية...");
     await this.loadFromLocalStore();
 
+    // وضع علامة التحميل المبدئي للسماح للتطبيق بالعمل فوراً
+    this.isFullyLoaded = true;
+
     if (!isSupabaseConfigured) {
       console.warn("Supabase is not configured. Running in local mode.");
-      this.isFullyLoaded = true;
       return;
     }
 
-    const hasData = this.products.length > 0 || this.invoices.length > 0;
-    
-    if (!hasData) {
-      console.log("No local data found. Starting full cloud sync...");
+    // محاولة المزامنة من السحابة عند البداية (Pull)
+    try {
+      if (onProgress) onProgress("جاري مزامنة البيانات من السحابة...");
       await this.syncFromCloud(onProgress);
-    } else {
-      console.log("Local data found. Ready.");
-      this.syncToCloud().catch(console.error);
+    } catch (err) {
+      console.error("Initial sync from cloud failed:", err);
+      if (onProgress) onProgress("فشلت المزامنة السحابية، العمل بالوضع المحلي.");
     }
 
+    // تشغيل المزامنة إلى السحابة في الخلفية (Push)
+    this.syncToCloud().catch(err => {
+      console.error("Background sync to cloud failed:", err);
+    });
+
     this.recalculateAllBalances();
-    this.isFullyLoaded = true;
   }
 
   private async migrateFromOldIdb(onProgress?: (msg: string) => void) {
@@ -154,7 +159,6 @@ class Database {
     }
 
     const outbox = await localStore.getOutbox();
-    // فلترة العناصر التي لم تُرسل بعد أو التي فشلت محاولات إرسالها
     const pendingItems = outbox.filter(item => !item.status || item.status === 'pending');
     if (pendingItems.length === 0) return;
 
@@ -165,6 +169,47 @@ class Database {
 
     const MAX_ATTEMPTS = 5;
 
+    // دالة لتنظيف الـ payload قبل الإرسال لـ Supabase
+    const cleanPayloadForSupabase = (entityType: string, payload: any) => {
+      // الحقول العامة التي يجب إزالتها من كل الجداول
+      const { sync_status, sync_error, ...baseClean } = payload;
+      
+      switch (entityType) {
+        case 'invoices': {
+          const { commission_value, ...rest } = baseClean;
+          return rest;
+        }
+        case 'warehouses': {
+          // إذا كان هناك حقول إضافية في النوع المحلي غير موجودة في السحابة
+          return baseClean;
+        }
+        case 'customers': {
+          // التأكد من الحقول الأساسية فقط
+          return {
+            id: baseClean.id,
+            code: baseClean.code,
+            name: baseClean.name,
+            phone: baseClean.phone ?? null,
+            area: baseClean.area ?? null,
+            address: baseClean.address ?? null,
+            distribution_line: baseClean.distribution_line ?? null,
+            opening_balance: baseClean.opening_balance ?? 0,
+            current_balance: baseClean.current_balance ?? 0,
+            credit_limit: baseClean.credit_limit ?? 0,
+            representative_code: baseClean.representative_code ?? null,
+            default_discount_percent: baseClean.default_discount_percent ?? 0,
+            price_segment: baseClean.price_segment ?? 'retail',
+            created_at: baseClean.created_at,
+            updated_at: baseClean.updated_at ?? new Date().toISOString(),
+            version: baseClean.version ?? 1,
+            status: baseClean.status ?? 'ACTIVE'
+          };
+        }
+        default:
+          return baseClean;
+      }
+    };
+
     try {
       const processItem = async (item: OutboxItem) => {
         const { entityType, operation, payload, id } = item;
@@ -174,28 +219,7 @@ class Database {
         try {
           if (operation === 'insert' || operation === 'update') {
             const table = this.mapEntityTypeToTable(entityType);
-            
-            let finalPayload = payload;
-            if (entityType === 'customers') {
-              finalPayload = {
-                id: payload.id,
-                code: payload.code,
-                name: payload.name,
-                phone: payload.phone ?? null,
-                area: payload.area ?? null,
-                address: payload.address ?? null,
-                distribution_line: payload.distribution_line ?? null,
-                opening_balance: payload.opening_balance ?? 0,
-                current_balance: payload.current_balance ?? 0,
-                credit_limit: payload.credit_limit ?? 0,
-                representative_code: payload.representative_code ?? null,
-                default_discount_percent: payload.default_discount_percent ?? 0,
-                price_segment: payload.price_segment ?? 'retail',
-                created_at: payload.created_at,
-                updated_at: payload.updated_at ?? new Date().toISOString(),
-                version: payload.version ?? 1,
-              };
-            }
+            const finalPayload = cleanPayloadForSupabase(entityType, payload);
             
             const { error } = await supabase.from(table).upsert(finalPayload, {
               onConflict: 'id',
@@ -206,29 +230,12 @@ class Database {
               success = true;
               this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
             } else {
+              // معالجة أخطاء محددة
               if (error.code === '23505') {
-                console.warn(`تعارض في المفتاح الفريد لـ ${entityType}، يتم التحديث بدلاً من الإضافة...`);
-                
-                let updateQuery = supabase.from(table).update(finalPayload);
-                
-                if (entityType === 'batches') {
-                  updateQuery = updateQuery
-                    .eq('product_id', payload.product_id)
-                    .eq('warehouse_id', payload.warehouse_id)
-                    .eq('batch_number', payload.batch_number);
-                } else {
-                  let uniqueKey = 'id';
-                  let uniqueValue = payload.id;
-                  
-                  if (payload.invoice_number) { uniqueKey = 'invoice_number'; uniqueValue = payload.invoice_number; }
-                  else if (payload.ref_number) { uniqueKey = 'ref_number'; uniqueValue = payload.ref_number; }
-                  else if (payload.order_number) { uniqueKey = 'order_number'; uniqueValue = payload.order_number; }
-                  else if (payload.code) { uniqueKey = 'code'; uniqueValue = payload.code; }
-
-                  updateQuery = updateQuery.eq(uniqueKey, uniqueValue);
-                }
-
-                const { error: updateError } = await updateQuery;
+                // تعارض مفتاح فريد - محاولة التحديث
+                const { error: updateError } = await supabase.from(table)
+                  .update(finalPayload)
+                  .eq('id', payload.id);
                   
                 if (!updateError) {
                   success = true;
@@ -237,7 +244,8 @@ class Database {
                   throw updateError;
                 }
               } else if (error.code === '23503') {
-                console.warn(`تعارض في العلاقات للمنتج: ${payload.name || payload.id}. تم إلغاء التحديث لتجنب فقدان البيانات.`);
+                // خطأ Foreign Key - قد يكون بسبب ترتيب العمليات، نعتبره نجاحاً مؤقتاً أو نتجاهله إذا كان المنتج موجوداً
+                console.warn(`Foreign key conflict for ${entityType}: ${payload.id}`);
                 success = true; 
                 this.updateLocalSyncStatus(entityType, payload.id, 'Synced');
               } else {
@@ -254,7 +262,6 @@ class Database {
             await localStore.markOutboxAsSent(id);
           }
         } catch (err: any) {
-          console.error(`Failed to sync outbox item ${id}:`, err);
           const attempts = (item.attempts || 0) + 1;
           const errorMsg = err.message || String(err);
           
@@ -278,7 +285,6 @@ class Database {
               status: 'pending'
             });
           }
-          // نلقي الخطأ مجدداً لإيقاف المعالجة المتسلسلة للمجموعة الحالية
           throw err;
         }
       };
@@ -363,12 +369,12 @@ class Database {
     }
   }
 
-  async addToOutbox(entityType: string, operation: 'insert' | 'update' | 'delete', payload: any) {
+  async addToOutbox(entityType: string, operation: 'insert' | 'update' | 'delete', payload: any, options?: { noSync?: boolean }) {
     if (operation === 'insert' || operation === 'update') {
       this.updateLocalSyncStatus(entityType, payload.id, 'Pending');
     }
     
-    // Strip sync_status and sync_error before saving to outbox to avoid sending them to Supabase
+    // Strip sync_status and sync_error before saving to outbox
     const { sync_status, sync_error, ...cleanPayload } = payload;
     
     await localStore.addToOutbox({
@@ -377,7 +383,12 @@ class Database {
       payload: cleanPayload,
       createdAt: new Date().toISOString()
     });
-    this.syncToCloud().catch(console.error);
+
+    if (!options?.noSync) {
+      this.syncToCloud().catch(err => {
+        console.warn("Background sync failed (expected if offline):", err.message);
+      });
+    }
   }
 
   async syncFromCloud(onProgress?: (msg: string) => void) {
@@ -596,11 +607,11 @@ class Database {
 
     // 1. تسجيل الفاتورة في Outbox أولاً
     this.invoices.push(invoice);
-    await this.addToOutbox('invoices', 'insert', invoice);
+    await this.addToOutbox('invoices', 'insert', invoice, { noSync: true });
 
     // 2. تحديث العميل
     customer.current_balance = finalBalanceAfterPayment;
-    await this.addToOutbox('customers', 'update', customer);
+    await this.addToOutbox('customers', 'update', customer, { noSync: true });
     
     // 3. إضافة معاملة مالية إن وجدت
     if (cashPayment > 0) {
@@ -612,7 +623,7 @@ class Database {
             amount: cashPayment, 
             notes: `سداد فاتورة #${invoice.invoice_number}`, 
             date: invoice.date 
-        });
+        }, { noSync: true });
     }
 
     // 4. تحديث المخزون (التشغيلات)
@@ -628,12 +639,13 @@ class Database {
                     this.batches[batchIdx].quantity -= change;
                 }
                 this.batches[batchIdx].updated_at = new Date().toISOString();
-                await this.addToOutbox('batches', 'update', this.batches[batchIdx]);
+                await this.addToOutbox('batches', 'update', this.batches[batchIdx], { noSync: true });
             }
         }
     }
     
     await this.saveToLocalStore(); 
+    this.syncToCloud().catch(console.error);
     return { success: true, id: invoiceId };
   }
 
@@ -774,10 +786,10 @@ class Database {
     await this.saveToLocalStore(); return { success: true };
   }
 
-  async addCashTransaction(data: any) {
+  async addCashTransaction(data: any, options?: { noSync?: boolean }) {
       const tx: CashTransaction = { id: generateId(), ref_number: this.generateDocNumber('TX', this.cashTransactions), ...data, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), version: 1, status: 'ACTIVE' };
       this.cashTransactions.push(tx); 
-      await this.addToOutbox('cashTransactions', 'insert', tx);
+      await this.addToOutbox('cashTransactions', 'insert', tx, options);
       await this.saveToLocalStore(); return { success: true };
   }
 
@@ -1020,7 +1032,7 @@ class Database {
           
           // ⚠️ الخطوة الأهم: إضافة الفاتورة أولاً إلى قاعدة البيانات المحلية وإلى الـ Outbox
           this.purchaseInvoices.push(inv);
-          await this.addToOutbox('purchaseInvoices', 'insert', inv);
+          await this.addToOutbox('purchaseInvoices', 'insert', inv, { noSync: true });
 
           for (const item of items) {
               const batchId = generateId();
@@ -1045,7 +1057,7 @@ class Database {
               
               // ⚠️ إضافة التشغيلة إلى الـ Outbox *بعد* الفاتورة
               this.batches.push(batch);
-              await this.addToOutbox('batches', 'insert', batch);
+              await this.addToOutbox('batches', 'insert', batch, { noSync: true });
 
               const pIdx = this.products.findIndex(p => p.id === item.product_id);
               if (pIdx !== -1) {
@@ -1054,7 +1066,7 @@ class Database {
                   this.products[pIdx].selling_price_wholesale = item.selling_price_wholesale;
                   this.products[pIdx].selling_price_half_wholesale = item.selling_price_half_wholesale;
                   this.products[pIdx].updated_at = new Date().toISOString();
-                  await this.addToOutbox('products', 'update', this.products[pIdx]);
+                  await this.addToOutbox('products', 'update', this.products[pIdx], { noSync: true });
               }
           }
 
@@ -1069,13 +1081,14 @@ class Database {
                   amount: cashPaid, 
                   notes: `سداد فاتورة مشتريات #${inv.invoice_number}`, 
                   date: inv.date 
-              }); 
+              }, { noSync: true }); 
               supplier.current_balance -= cashPaid; 
             } 
-            await this.addToOutbox('suppliers', 'update', supplier);
+            await this.addToOutbox('suppliers', 'update', supplier, { noSync: true });
           }
 
           await this.saveToLocalStore(); 
+          this.syncToCloud().catch(console.error);
           return { success: true, id: invId };
       } catch (err: any) {
           console.error("Error creating purchase invoice:", err);
