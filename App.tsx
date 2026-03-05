@@ -20,6 +20,7 @@ const CashRegister = lazy(() => import('./pages/CashRegister/index'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Login = lazy(() => import('./pages/Login'));
+const CustomerReport = lazy(() => import('./pages/CustomerReport'));
 
 // Pages for missing routes
 const PurchaseInvoice = lazy(() => import('./pages/PurchaseInvoice'));
@@ -69,6 +70,7 @@ const router = createHashRouter([
           { path: 'daily-closing', element: <DailyClosing /> },
           { path: 'commissions', element: <Commissions /> },
           { path: 'reports', element: <Reports /> },
+          { path: 'reports/customer', element: <CustomerReport /> },
           { path: 'settings', element: <Settings /> },
         ],
       },

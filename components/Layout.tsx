@@ -8,7 +8,7 @@ import {
   Truck, Users, AlertTriangle, TrendingUp, ChevronDown, ChevronRight, 
   Phone, Search, Command, ShoppingBag, PlusCircle, Warehouse as WarehouseIcon, 
   LayoutGrid, ClipboardCheck, ShieldCheck, ClipboardList, RefreshCw, CheckCircle2,
-  AlertCircle, ListChecks, RotateCcw, Coins, Boxes, Wallet, Save
+  AlertCircle, ListChecks, RotateCcw, Coins, Boxes, Wallet, Save, BarChart3
 } from 'lucide-react';
 import { db } from '../services/db';
 import { t, isRTL } from '../utils/t';
@@ -123,7 +123,17 @@ export default function Layout() {
             { label: 'نظام العمولات', path: '/commissions', icon: Coins }
         ]
     },
-    { label: t('nav.reports'), path: '/reports', icon: TrendingUp, perm: 'VIEW_REPORTS', roles: ['ADMIN'] },
+    {
+        key: 'reports_mgmt',
+        label: t('nav.reports'),
+        icon: TrendingUp,
+        perm: 'VIEW_REPORTS',
+        roles: ['ADMIN'],
+        children: [
+            { label: 'التقارير التحليلية', path: '/reports', icon: BarChart3 },
+            { label: 'تقارير العملاء', path: '/reports/customer', icon: Users }
+        ]
+    },
   ];
 
   return (
