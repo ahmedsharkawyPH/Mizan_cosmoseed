@@ -461,28 +461,55 @@ class Database {
     }
   }
 
+  /**
+   * جلب كافة السجلات من جدول معين باستخدام Pagination (range) لتجاوز حد الـ 1000 صف في Supabase.
+   */
   async fetchAllFromTable(table: string) {
     if (!isSupabaseConfigured) return [];
     try {
-        let retryCount = 0;
-        const maxRetries = 3;
+        let allData: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
 
-        while (retryCount <= maxRetries) {
-            const { data, error } = await supabase.from(table).select('*').limit(100000);
-            
-            if (error) {
-                if (retryCount < maxRetries) {
-                    retryCount++;
-                    await new Promise(r => setTimeout(r, 1000 * retryCount));
-                    continue;
+        while (hasMore) {
+            let retryCount = 0;
+            const maxRetries = 3;
+            let pageData: any[] | null = null;
+
+            while (retryCount <= maxRetries) {
+                const { data, error } = await supabase
+                    .from(table)
+                    .select('*')
+                    .range(from, from + pageSize - 1);
+                
+                if (error) {
+                    if (retryCount < maxRetries) {
+                        retryCount++;
+                        await new Promise(r => setTimeout(r, 1000 * retryCount));
+                        continue;
+                    }
+                    throw error;
                 }
-                throw error;
+                pageData = data;
+                break;
             }
 
-            return data || [];
+            if (pageData && pageData.length > 0) {
+                allData = [...allData, ...pageData];
+                // إذا كان عدد السجلات أقل من حجم الصفحة، فهذا يعني أننا وصلنا للنهاية
+                if (pageData.length < pageSize) {
+                    hasMore = false;
+                } else {
+                    from += pageSize;
+                }
+            } else {
+                hasMore = false;
+            }
         }
-        return [];
+        return allData;
     } catch (err) { 
+        console.error(`Error fetching all from ${table}:`, err);
         return []; 
     }
   }
