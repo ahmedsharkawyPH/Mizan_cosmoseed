@@ -1,6 +1,7 @@
 
 import { supabase, isSupabaseConfigured } from './supabase';
-import { localStore, OutboxItem } from './localStore';
+import { localStore } from './localStore';
+import { OutboxItem, LocalSnapshot } from './dbTypes';
 import { openDB } from 'idb'; // DEXIE MIGRATION: Used for one-time migration
 import { 
   Warehouse, Product, Batch, Representative, Customer, Supplier, 
@@ -159,7 +160,19 @@ class Database {
     }
 
     const outbox = await localStore.getOutbox();
-    const pendingItems = outbox.filter(item => !item.status || item.status === 'pending');
+    const now = new Date().getTime();
+    const pendingItems = outbox.filter(item => {
+      if (item.status === 'sent' || item.status === 'permanently_failed' || item.status === 'in_progress') return false;
+      
+      // If it failed before, check backoff
+      if (item.status === 'failed' && item.updatedAt) {
+        const lastAttempt = new Date(item.updatedAt).getTime();
+        const delay = localStore.calculateBackoff(item.attempts);
+        if (now - lastAttempt < delay) return false;
+      }
+      
+      return true;
+    });
     if (pendingItems.length === 0) return;
 
     this.isSyncingToCloud = true;
@@ -212,9 +225,12 @@ class Database {
 
     try {
       const processItem = async (item: OutboxItem) => {
-        const { entityType, operation, payload, id } = item;
+        const { entityType, operation, payload, id, attempts } = item;
         if (id === undefined) return;
         let success = false;
+
+        // Update status to in_progress
+        await localStore.updateOutboxItem(id, { status: 'in_progress' });
 
         try {
           if (operation === 'insert' || operation === 'update') {
@@ -262,27 +278,28 @@ class Database {
             await localStore.markOutboxAsSent(id);
           }
         } catch (err: any) {
-          const attempts = (item.attempts || 0) + 1;
+          const newAttempts = (attempts || 0) + 1;
           const errorMsg = err.message || String(err);
+          const MAX_ATTEMPTS = 5;
           
-          if (attempts >= MAX_ATTEMPTS) {
+          if (newAttempts >= MAX_ATTEMPTS) {
             await localStore.updateOutboxItem(id, {
-              attempts,
+              attempts: newAttempts,
               lastError: errorMsg,
-              status: 'permanent_failed'
+              status: 'permanently_failed'
             });
             await localStore.logError({
               entityType,
               operation,
               payloadId: payload.id || 'N/A',
-              error: errorMsg,
-              timestamp: new Date().toISOString()
+              error: err,
+              metadata: { attempts: newAttempts }
             });
           } else {
             await localStore.updateOutboxItem(id, {
-              attempts,
+              attempts: newAttempts,
               lastError: errorMsg,
-              status: 'pending'
+              status: 'failed'
             });
           }
           throw err;
@@ -379,9 +396,9 @@ class Database {
     
     await localStore.addToOutbox({
       entityType,
+      entityId: payload.id,
       operation,
-      payload: cleanPayload,
-      createdAt: new Date().toISOString()
+      payload: cleanPayload
     });
 
     if (!options?.noSync) {
@@ -534,7 +551,8 @@ class Database {
         'dailyClosings', 'pendingAdjustments', 'purchaseOrders'
       ];
       tables.forEach(table => {
-        if (data[table]) (this as any)[table] = data[table];
+        const key = table as keyof LocalSnapshot;
+        if (data[key]) (this as any)[table] = data[key];
       });
       if (data.settings) this.settings = { ...this.settings, ...data.settings };
     }
@@ -543,12 +561,20 @@ class Database {
   async saveToLocalStore(force: boolean = false) {
     if (this.saveTimeout) clearTimeout(this.saveTimeout);
     const perform = async () => {
-      const pkg = {
-        products: this.products, batches: this.batches, customers: this.customers,
-        invoices: this.invoices, suppliers: this.suppliers, cashTransactions: this.cashTransactions,
-        warehouses: this.warehouses, representatives: this.representatives, dailyClosings: this.dailyClosings,
-        pendingAdjustments: this.pendingAdjustments, purchaseOrders: this.purchaseOrders,
-        purchaseInvoices: this.purchaseInvoices, settings: this.settings
+      const pkg: Partial<LocalSnapshot> = {
+        products: this.products, 
+        batches: this.batches, 
+        customers: this.customers,
+        invoices: this.invoices, 
+        suppliers: this.suppliers, 
+        cashTransactions: this.cashTransactions,
+        warehouses: this.warehouses, 
+        representatives: this.representatives, 
+        dailyClosings: this.dailyClosings,
+        pendingAdjustments: this.pendingAdjustments, 
+        purchaseOrders: this.purchaseOrders,
+        purchaseInvoices: this.purchaseInvoices, 
+        settings: this.settings
       };
       await localStore.saveAll(pkg);
     };
