@@ -131,7 +131,8 @@ export default function Layout() {
         roles: ['ADMIN'],
         children: [
             { label: 'التقارير التحليلية', path: '/reports', icon: BarChart3 },
-            { label: 'تقارير العملاء', path: '/reports/customer', icon: Users }
+            { label: 'تقارير العملاء', path: '/reports/customer', icon: Users },
+            { label: 'تقارير الموردين', path: '/reports/supplier', icon: Truck }
         ]
     },
   ];

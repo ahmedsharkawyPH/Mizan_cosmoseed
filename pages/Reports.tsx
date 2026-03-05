@@ -18,6 +18,7 @@ import { useLocation } from 'react-router-dom';
 import ProductReport from '../components/ProductReport';
 import FinancialAnalysisReport from '../components/FinancialAnalysisReport';
 import CustomerReportComp from '../components/CustomerReportComp';
+import SupplierReportComp from '../components/SupplierReportComp';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
@@ -30,7 +31,7 @@ export default function Reports() {
   const [startDate, setStartDate] = useState(firstDay);
   const [endDate, setEndDate] = useState(today);
   
-  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'REPRESENTATIVES' | 'TELESALES' | 'DAILY_SHORTAGES' | 'BEST_SELLING_LIST' | 'STAGNANT_ITEMS' | 'PRODUCT_REPORT' | 'CUSTOMER_REPORT'>('FINANCIAL');
+  const [activeTab, setActiveTab] = useState<'FINANCIAL' | 'SALES' | 'PURCHASES' | 'INVENTORY' | 'REPRESENTATIVES' | 'TELESALES' | 'DAILY_SHORTAGES' | 'BEST_SELLING_LIST' | 'STAGNANT_ITEMS' | 'PRODUCT_REPORT' | 'CUSTOMER_REPORT' | 'SUPPLIER_REPORT'>('FINANCIAL');
 
   const handleQuickDate = (type: 'TODAY' | 'MONTH' | 'LAST_MONTH' | 'YEAR') => {
     const now = new Date();
@@ -185,6 +186,7 @@ export default function Reports() {
               { id: 'PURCHASES', label: 'المشتريات', icon: ShoppingBag },
               { id: 'PRODUCT_REPORT', label: 'تقرير أصناف', icon: Layers },
               { id: 'CUSTOMER_REPORT', label: 'تقرير عميل', icon: Users },
+              { id: 'SUPPLIER_REPORT', label: 'تقرير مورد', icon: Truck },
               { id: 'REPRESENTATIVES', label: 'المندوبين', icon: Briefcase },
           ].map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'}`}>
@@ -240,6 +242,9 @@ export default function Reports() {
       )}
       {activeTab === 'CUSTOMER_REPORT' && (
           <CustomerReportComp startDate={startDate} endDate={endDate} />
+      )}
+      {activeTab === 'SUPPLIER_REPORT' && (
+          <SupplierReportComp startDate={startDate} endDate={endDate} />
       )}
     </div>
   );
