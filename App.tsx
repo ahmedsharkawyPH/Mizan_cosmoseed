@@ -8,23 +8,24 @@ import { DataProvider, useData } from './context/DataContext';
 import { Loader2, Database, ShieldCheck, RefreshCw } from 'lucide-react';
 // @ts-ignore
 import { Toaster } from 'react-hot-toast';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 
-// Lazy load pages
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const NewInvoice = lazy(() => import('./pages/NewInvoice'));
-const Invoices = lazy(() => import('./pages/Invoices'));
+// --- CRITICAL PAGES (Direct Import for Offline Support) ---
+import Dashboard from './pages/Dashboard';
+import NewInvoice from './pages/NewInvoice';
+import PurchaseInvoice from './pages/PurchaseInvoice';
+import CashRegister from './pages/CashRegister/index';
+import Login from './pages/Login';
+import Invoices from './pages/Invoices';
+
+// --- NON-CRITICAL PAGES (Lazy Load) ---
 const Inventory = lazy(() => import('./pages/Inventory'));
 const Customers = lazy(() => import('./pages/Customers'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
-const CashRegister = lazy(() => import('./pages/CashRegister/index'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
-const Login = lazy(() => import('./pages/Login'));
 const CustomerReport = lazy(() => import('./pages/CustomerReport'));
 const SupplierReport = lazy(() => import('./pages/SupplierReport'));
-
-// Pages for missing routes
-const PurchaseInvoice = lazy(() => import('./pages/PurchaseInvoice'));
 const PurchaseList = lazy(() => import('./pages/PurchaseList'));
 const PurchaseReturn = lazy(() => import('./pages/PurchaseReturn'));
 const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
@@ -41,10 +42,12 @@ const router = createHashRouter([
   {
     path: '/login',
     element: <Login />,
+    errorElement: <RouteErrorBoundary />,
   },
   {
     path: '/',
     element: <ProtectedRoute />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       {
         element: <Layout />,
