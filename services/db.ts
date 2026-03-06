@@ -89,12 +89,19 @@ class Database {
     }
 
     // محاولة المزامنة من السحابة عند البداية (Pull)
-    try {
-      if (onProgress) onProgress("جاري مزامنة البيانات من السحابة...");
-      await this.syncFromCloud(onProgress);
-    } catch (err) {
-      console.error("Initial sync from cloud failed:", err);
-      if (onProgress) onProgress("فشلت المزامنة السحابية، العمل بالوضع المحلي.");
+    // نتحقق من آخر وقت مزامنة لتجنب التكرار المفرط
+    const lastSync = this.settings.last_sync_time;
+    const now = Date.now();
+    const syncInterval = 5 * 60 * 1000; // 5 دقائق
+
+    if (!lastSync || (now - new Date(lastSync).getTime() > syncInterval)) {
+      try {
+        if (onProgress) onProgress("جاري مزامنة البيانات من السحابة...");
+        await this.syncFromCloud(onProgress);
+      } catch (err) {
+        console.error("Initial sync from cloud failed:", err);
+        if (onProgress) onProgress("فشلت المزامنة السحابية، العمل بالوضع المحلي.");
+      }
     }
 
     // تشغيل المزامنة إلى السحابة في الخلفية (Push)
@@ -431,14 +438,11 @@ class Database {
         { name: 'pending_adjustments', prop: 'pendingAdjustments', label: 'التسويات' }
       ];
 
-      // Parallel fetch for better performance
-      const results = await Promise.all(tables.map(async (table) => {
+      // معالجة الجداول بالتسلسل أو بمحدودية توازي لتجنب الضغط
+      for (const table of tables) {
         if (onProgress) onProgress(`جاري جلب ${table.label}...`);
         const cloudData = await this.fetchAllFromTable(table.name);
-        return { table, cloudData };
-      }));
-
-      for (const { table, cloudData } of results) {
+        
         // Merge logic: Last Write Wins
         const localData = (this as any)[table.prop] || [];
         const mergedData = [...localData];
@@ -466,6 +470,9 @@ class Database {
         this.settings = { ...this.settings, ...settingsData };
       }
 
+      // تحديث وقت المزامنة
+      this.settings.last_sync_time = new Date().toISOString();
+
       await this.saveToLocalStore(true);
       if (onProgress) onProgress("تمت المزامنة بنجاح");
     } catch (err: any) {
@@ -480,27 +487,34 @@ class Database {
 
   /**
    * جلب كافة السجلات من جدول معين باستخدام Pagination (range) لتجاوز حد الـ 1000 صف في Supabase.
+   * يدعم التحكم في حجم الدفعة والحد الأقصى للسجلات.
    */
-  async fetchAllFromTable(table: string) {
+  async fetchAllFromTable(table: string, options: { batchSize?: number; maxRecords?: number } = {}) {
     if (!isSupabaseConfigured) return [];
+    
+    const pageSize = options.batchSize || 1000;
+    const maxRecords = options.maxRecords || 50000; // حد أمان افتراضي
+    
     try {
         let allData: any[] = [];
         let from = 0;
-        const pageSize = 1000;
         let hasMore = true;
 
-        while (hasMore) {
+        while (hasMore && allData.length < maxRecords) {
             let retryCount = 0;
             const maxRetries = 3;
             let pageData: any[] | null = null;
 
+            // محاولة جلب الصفحة مع إعادة المحاولة في حال الفشل
             while (retryCount <= maxRetries) {
                 const { data, error } = await supabase
                     .from(table)
                     .select('*')
-                    .range(from, from + pageSize - 1);
+                    .range(from, from + pageSize - 1)
+                    .order('id', { ascending: true }); // ترتيب ثابت لضمان عدم تكرار البيانات
                 
                 if (error) {
+                    console.warn(`Retry ${retryCount} for table ${table} at offset ${from}:`, error.message);
                     if (retryCount < maxRetries) {
                         retryCount++;
                         await new Promise(r => setTimeout(r, 1000 * retryCount));
@@ -514,6 +528,7 @@ class Database {
 
             if (pageData && pageData.length > 0) {
                 allData = [...allData, ...pageData];
+                
                 // إذا كان عدد السجلات أقل من حجم الصفحة، فهذا يعني أننا وصلنا للنهاية
                 if (pageData.length < pageSize) {
                     hasMore = false;
