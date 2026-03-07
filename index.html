@@ -45,7 +45,11 @@
       }
     </script>
     <style>
-      body { font-family: 'Cairo', 'Inter', sans-serif; background-color: #f8fafc; }
+      body { 
+        font-family: 'Cairo', 'Inter', sans-serif; 
+        background-color: #f8fafc; 
+        overscroll-behavior-y: contain; /* Disable pull-to-refresh on mobile */
+      }
       ::-webkit-scrollbar { width: 6px; height: 6px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }

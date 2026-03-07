@@ -138,6 +138,21 @@ const AppContent = () => {
 }
 
 function App() {
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Standard way to trigger the browser's confirmation dialog
+      e.preventDefault();
+      e.returnValue = ''; // Required for some browsers
+      return ''; // Required for others
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   return (
     <DataProvider>
       <Toaster position="top-right" />
