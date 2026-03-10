@@ -3,11 +3,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/db';
 import { PurchaseInvoice } from '../types';
 import { t } from '../utils/t';
-import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2, RefreshCcw, ShoppingCart, RotateCcw, AlertCircle, ArrowRightLeft, AlertTriangle } from 'lucide-react';
+import { Search, Eye, PlusCircle, ArrowLeft, X, Printer, Filter, FileText, ChevronRight, ChevronLeft, Hash, Edit, Trash2, RefreshCcw, ShoppingCart, RotateCcw, AlertCircle, ArrowRightLeft, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SyncStatusIndicator } from '../components/SyncStatusIndicator';
 // @ts-ignore
 import toast from 'react-hot-toast';
+// @ts-ignore
+import html2canvas from 'html2canvas';
+// @ts-ignore
+import { jsPDF } from 'jspdf';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -24,6 +28,7 @@ export default function PurchaseList() {
   const [jumpPage, setJumpPage] = useState('');
 
   const [selectedInvoice, setSelectedInvoice] = useState<PurchaseInvoice | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [conversionInvoice, setConversionInvoice] = useState<PurchaseInvoice | null>(null);
   const [invoiceToDelete, setInvoiceToDelete] = useState<PurchaseInvoice | null>(null);
 
@@ -114,6 +119,37 @@ export default function PurchaseList() {
       }));
       navigate('/invoice/new', { state: { prefillItems: salesItems } });
       setConversionInvoice(null);
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!selectedInvoice) return;
+    const element = document.getElementById('purchase-invoice-preview');
+    if (!element) return;
+    
+    setIsExporting(true);
+    const toastId = toast.loading('جاري إنشاء ملف PDF...');
+    
+    try {
+        const canvas = await html2canvas(element, { 
+            scale: 2, 
+            useCORS: true, 
+            backgroundColor: '#ffffff',
+            windowWidth: 1200 
+        });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Purchase_Invoice_${selectedInvoice.invoice_number}.pdf`);
+        toast.success('تم تحميل الفاتورة بنجاح', { id: toastId });
+    } catch (err) {
+        console.error('PDF Export Error:', err);
+        toast.error('فشل تصدير الفاتورة', { id: toastId });
+    } finally {
+        setIsExporting(false);
+    }
   };
 
   return (
@@ -409,21 +445,31 @@ export default function PurchaseList() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
               <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-100">
                   <div className="px-8 py-6 border-b flex justify-between items-center bg-slate-50/50">
-                      <div>
-                          <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
-                              {selectedInvoice.type === 'PURCHASE' ? 'تفاصيل فاتورة شراء' : 'تفاصيل مرتجع مشتريات'}
-                              <span className="text-xs font-mono bg-blue-600 text-white px-3 py-1 rounded-lg shadow-sm">{selectedInvoice.invoice_number}</span>
-                          </h3>
-                          <div className="flex items-center gap-4 mt-2">
-                              <p className="text-xs text-slate-500 font-bold">
-                                {new Date(selectedInvoice.date).toLocaleString('ar-EG')} • المورد: <span className="text-blue-600">{selectedInvoice.supplier_name || getSupplierName(selectedInvoice.supplier_id)}</span>
-                              </p>
+                      <div className="flex items-center gap-4">
+                          <div>
+                              <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                                  {selectedInvoice.type === 'PURCHASE' ? 'تفاصيل فاتورة شراء' : 'تفاصيل مرتجع مشتريات'}
+                                  <span className="text-xs font-mono bg-blue-600 text-white px-3 py-1 rounded-lg shadow-sm">{selectedInvoice.invoice_number}</span>
+                              </h3>
+                              <div className="flex items-center gap-4 mt-2">
+                                  <p className="text-xs text-slate-500 font-bold">
+                                    {new Date(selectedInvoice.date).toLocaleString('ar-EG')} • المورد: <span className="text-blue-600">{selectedInvoice.supplier_name || getSupplierName(selectedInvoice.supplier_id)}</span>
+                                  </p>
+                              </div>
                           </div>
+                          <button 
+                            onClick={handleDownloadPDF} 
+                            disabled={isExporting}
+                            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg shadow-red-100 transition-all disabled:opacity-50"
+                          >
+                            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                            تحميل PDF
+                          </button>
                       </div>
                       <button onClick={() => setSelectedInvoice(null)} className="p-3 hover:bg-red-50 hover:text-red-500 rounded-xl text-slate-400 transition-all"><X className="w-6 h-6" /></button>
                   </div>
                   
-                  <div className="flex-1 overflow-auto p-8 bg-white">
+                  <div className="flex-1 overflow-auto p-8 bg-white" id="purchase-invoice-preview">
                       <div className="overflow-x-auto">
                           <table className="w-full text-sm border-collapse min-w-[600px]">
                               <thead>
