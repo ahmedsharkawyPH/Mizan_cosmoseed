@@ -38,6 +38,8 @@ export default function PurchaseInvoice({ type }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [showConfirmBack, setShowConfirmBack] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [pendingItem, setPendingItem] = useState<PurchaseItem | null>(null);
   
   const [selectedWarehouse, setSelectedWarehouse] = useState('');
   const [selProd, setSelProd] = useState('');
@@ -234,6 +236,33 @@ export default function PurchaseInvoice({ type }: Props) {
     }
   }, [selProd, products, editingIndex]);
 
+  const confirmAddItem = (item: PurchaseItem) => {
+    if (editingIndex !== null) {
+        const updatedCart = [...cart];
+        updatedCart[editingIndex] = item;
+        setCart(updatedCart);
+        setEditingIndex(null);
+        toast.success("تم تحديث الصنف");
+    } else {
+        setCart(prev => [...prev, item]);
+        toast.success("تمت الإضافة للفاتورة");
+    }
+
+    setSelProd('');
+    setQty(1);
+    setBonus(0);
+    setCost(0);
+    setMargin(20);
+    setMarginWholesale(3);
+    setMarginHalfWholesale(8);
+    setSell(0);
+    setSellWholesale(0);
+    setSellHalfWholesale(0);
+    lastProcessedProdId.current = ''; 
+    
+    setTimeout(() => productRef.current?.focus(), 100);
+  };
+
   const addItem = () => {
     if (!selProd) {
         toast.error("يرجى اختيار الصنف أولاً");
@@ -260,31 +289,16 @@ export default function PurchaseInvoice({ type }: Props) {
       expiry_date: '2099-12-31',
       serial_number: editingIndex !== null ? cart[editingIndex].serial_number : cart.length + 1
     };
-    
-    if (editingIndex !== null) {
-        const updatedCart = [...cart];
-        updatedCart[editingIndex] = newItem;
-        setCart(updatedCart);
-        setEditingIndex(null);
-        toast.success("تم تحديث الصنف");
-    } else {
-        setCart(prev => [...prev, newItem]);
-        toast.success("تمت الإضافة للفاتورة");
-    }
 
-    setSelProd('');
-    setQty(1);
-    setBonus(0);
-    setCost(0);
-    setMargin(20);
-    setMarginWholesale(3);
-    setMarginHalfWholesale(8);
-    setSell(0);
-    setSellWholesale(0);
-    setSellHalfWholesale(0);
-    lastProcessedProdId.current = ''; 
+    // التحقق من التكرار
+    const isDuplicate = cart.some(item => item.product_id === selProd);
+    if (isDuplicate && editingIndex === null) {
+        setPendingItem(newItem);
+        setShowDuplicateModal(true);
+        return;
+    }
     
-    setTimeout(() => productRef.current?.focus(), 100);
+    confirmAddItem(newItem);
   };
 
   const handleEditItem = (index: number) => {
@@ -680,6 +694,26 @@ export default function PurchaseInvoice({ type }: Props) {
         }}
         title="تنبيه: بيانات غير محفوظة"
         message="لديك أصناف في الفاتورة لم يتم حفظها بعد، هل أنت متأكد من الخروج؟ سيتم فقدان كافة البيانات المدخلة."
+      />
+
+      {/* Duplicate Item Modal */}
+      <ConfirmModal 
+        isOpen={showDuplicateModal}
+        onClose={() => {
+          setShowDuplicateModal(false);
+          setPendingItem(null);
+        }}
+        onConfirm={() => {
+          if (pendingItem) {
+            confirmAddItem(pendingItem);
+          }
+          setShowDuplicateModal(false);
+          setPendingItem(null);
+        }}
+        title="تنبيه: صنف مكرر"
+        message={`هذا الصنف (${pendingItem?.product_name || ''}) موجود بالفعل في الفاتورة. هل تريد إضافته مرة أخرى؟`}
+        confirmText="موافقة على التكرار"
+        cancelText="عدم التكرار"
       />
     </div>
   );
