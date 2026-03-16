@@ -8,7 +8,12 @@ import toast from 'react-hot-toast';
 export async function generatePriceListPdf(products: any[], settings: any, priceType: 'retail' | 'wholesale' | 'half_wholesale' = 'retail') {
     const toastId = toast.loading("جاري تحضير تقرير PDF...");
     
-    products.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    products.sort((a, b) => 
+      (a.name || '').localeCompare(b.name || '', 'ar', { 
+        sensitivity: 'base', 
+        ignorePunctuation: true 
+      })
+    );
     const itemsPerPage = 160; 
     const chunks: any[][] = [];
     for (let i = 0; i < products.length; i += itemsPerPage) {
@@ -65,8 +70,13 @@ export async function generatePriceListPdf(products: any[], settings: any, price
                 </div>
             `;
             document.body.appendChild(pageDiv);
-            const canvas = await html2canvas(pageDiv, { scale: 1.5, useCORS: true, backgroundColor: '#ffffff' });
-            const imgData = canvas.toDataURL('image/jpeg', 0.9); 
+            const canvas = await html2canvas(pageDiv, {
+              scale: 3,
+              useCORS: true,
+              backgroundColor: '#ffffff',
+              logging: false
+            });
+            const imgData = canvas.toDataURL('image/png', 1.0);
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             if (i > 0) pdf.addPage();
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
