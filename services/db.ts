@@ -21,10 +21,20 @@ const DB_VERSION = 4.3;
 
 // دالة مساعدة لتوليد مُعرّف فريد آمن لتجنب تعارض المفاتيح الأساسية (Primary Keys Collision)
 const generateId = () => {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
+    try {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return crypto.randomUUID();
+        }
+    } catch (e) {
+        console.warn("crypto.randomUUID not available, using fallback");
     }
-    return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+    
+    // Fallback UUID v4 generator for older mobile browsers
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
 };
 
 class Database {
@@ -157,10 +167,25 @@ class Database {
     }
   }
 
+  private syncPromise: Promise<void> | null = null;
+
   async syncToCloud() {
     if (!isSupabaseConfigured) return;
-    if (this.isSyncingToCloud) return;
+    
+    // إذا كانت هناك عملية مزامنة جارية، ننتظرها ثم نبدأ واحدة جديدة للتأكد من شمول البيانات الجديدة
+    if (this.syncPromise) {
+      await this.syncPromise;
+    }
 
+    this.syncPromise = this._doSync();
+    try {
+      await this.syncPromise;
+    } finally {
+      this.syncPromise = null;
+    }
+  }
+
+  private async _doSync() {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
         console.warn("Offline: Sync postponed.");
         return;
@@ -180,6 +205,7 @@ class Database {
       
       return true;
     });
+    
     if (pendingItems.length === 0) return;
 
     this.isSyncingToCloud = true;
@@ -358,7 +384,7 @@ class Database {
 
     } finally {
       this.isSyncingToCloud = false;
-      this.activeOperations--;
+      this.activeOperations = Math.max(0, this.activeOperations - 1);
       this.notifySyncState();
     }
   }
@@ -713,7 +739,14 @@ class Database {
     }
     
     await this.saveToLocalStore(); 
-    this.syncToCloud().catch(console.error);
+    
+    // محاولة المزامنة فوراً وضمان استمرارها
+    try {
+        await this.syncToCloud();
+    } catch (err) {
+        console.error("Immediate sync failed, will retry in background:", err);
+    }
+    
     return { success: true, id: invoiceId };
   }
 
@@ -1156,7 +1189,13 @@ class Database {
           }
 
           await this.saveToLocalStore(); 
-          this.syncToCloud().catch(console.error);
+          
+          try {
+              await this.syncToCloud();
+          } catch (err) {
+              console.error("Immediate sync failed for purchase invoice:", err);
+          }
+          
           return { success: true, id: invId };
       } catch (err: any) {
           console.error("Error creating purchase invoice:", err);

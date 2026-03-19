@@ -249,17 +249,39 @@ export default function NewInvoice() {
   }, [selectedProduct, products, editingIndex, selectedCustomer, customers, selectedWarehouse]);
 
   const handleCheckout = async (print: boolean = false) => {
-    // التحقق من صحة البيانات باستخدام Zod
-    const validation = saleInvoiceSchema.safeParse({ 
-      customerId: selectedCustomer, 
-      items: cart, 
-      cashPayment 
-    });
-    
-    if (!validation.success) {
-      return toast.error(validation.error.issues[0].message);
+    // التحقق من الحقول المطلوبة
+    if (!selectedCustomer) {
+      toast.error('يجب اختيار عميل');
+      customerRef.current?.focus();
+      return;
+    }
+    if (cart.length === 0) {
+      toast.error('يجب إضافة عنصر واحد على الأقل');
+      productRef.current?.focus();
+      return;
     }
     
+    // التحقق من صحة العناصر
+    const invalidItems = cart.some(item => 
+      item.quantity <= 0 || 
+      (!item.unit_price && !item.batch?.selling_price && !item.product.selling_price)
+    );
+    if (invalidItems) {
+      toast.error('تحقق من كميات وسعر العناصر');
+      return;
+    }
+
+    // التحقق من الـ schema
+    const validation = saleInvoiceSchema.safeParse({
+      customerId: selectedCustomer,
+      items: cart,
+      cashPayment
+    });
+    if (!validation.success) {
+      toast.error(validation.error.issues[0].message);
+      return;
+    }
+
     setIsSubmitting(true);
     const user = authService.getCurrentUser();
     try {
@@ -430,11 +452,11 @@ export default function NewInvoice() {
               <div className="grid grid-cols-12 gap-4">
                 <div className="col-span-6 md:col-span-4">
                   <label className="block text-[10px] font-black text-slate-400 mb-1">سعر البيع ({currency})</label>
-                  <input ref={priceRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-blue-600 focus:border-blue-500 outline-none" value={manualPrice} onChange={e => setManualPrice(Number(e.target.value))} disabled={!selectedProduct} />
+                  <input ref={priceRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-blue-600 focus:border-blue-500 outline-none" min="0" step="0.01" value={manualPrice || 0} onChange={(e) => setManualPrice(Number(e.target.value) || 0)} disabled={!selectedProduct} />
                 </div>
                 <div className="col-span-3 md:col-span-3">
                   <label className="block text-[10px] font-black text-slate-400 mb-1">الكمية</label>
-                  <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center focus:border-blue-500 outline-none" value={qty} onChange={e => setQty(Number(e.target.value))} onKeyDown={e => e.key === 'Enter' && addItemToCart()} disabled={!selectedProduct} />
+                  <input ref={qtyRef} type="number" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-black text-center focus:border-blue-500 outline-none" min="0" step="0.01" value={qty || 0} onChange={(e) => setQty(Number(e.target.value) || 0)} onKeyDown={e => e.key === 'Enter' && addItemToCart()} disabled={!selectedProduct} />
                 </div>
                 <div className="col-span-3 md:col-span-5 flex items-end gap-2">
                   {editingIndex !== null && (
@@ -498,7 +520,7 @@ export default function NewInvoice() {
                 <div className="grid grid-cols-2 gap-4 pt-2">
                     <div>
                         <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">الخصم النقدي %</label>
-                        <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-red-600 focus:border-red-400 outline-none" value={cashDiscountPercent || ''} onChange={e => setCashDiscountPercent(Number(e.target.value))} />
+                        <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-red-600 focus:border-red-400 outline-none" min="0" step="0.01" value={cashDiscountPercent || 0} onChange={(e) => setCashDiscountPercent(Number(e.target.value) || 0)} />
                     </div>
                     <div>
                         <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">قيمة الخصم</label>
@@ -508,13 +530,13 @@ export default function NewInvoice() {
 
                 <div className="pt-2">
                     <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">الحساب السابق</label>
-                    <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-blue-600 focus:border-blue-400 outline-none" value={previousBalance || ''} onChange={e => setPreviousBalance(Number(e.target.value))} />
+                    <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-blue-600 focus:border-blue-400 outline-none" min="0" step="0.01" value={previousBalance || 0} onChange={(e) => setPreviousBalance(Number(e.target.value) || 0)} />
                 </div>
 
                 {!isReturnMode && (
                     <div className="flex items-center gap-3 pt-2">
                         <label className="text-xs font-black text-slate-400 uppercase whitespace-nowrap">العمولة:</label>
-                        <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-amber-600 focus:border-amber-400 outline-none" value={commissionValue || ''} onChange={e => setCommissionValue(Number(e.target.value))} />
+                        <input type="number" className="w-full border-2 border-slate-100 p-2 rounded-xl text-center font-black text-amber-600 focus:border-amber-400 outline-none" min="0" step="0.01" value={commissionValue || 0} onChange={(e) => setCommissionValue(Number(e.target.value) || 0)} />
                     </div>
                 )}
 
@@ -525,12 +547,18 @@ export default function NewInvoice() {
                 
                 <div className="pt-6">
                     <label className="block text-xs font-black text-slate-400 uppercase mb-2">المسدد نقداً (كاش)</label>
-                    <input type="number" className="w-full border-2 border-emerald-100 p-4 rounded-2xl text-2xl font-black text-emerald-600 bg-emerald-50/20 focus:ring-4 focus:ring-emerald-500/10 outline-none" value={cashPayment || ''} onChange={e => setCashPayment(Number(e.target.value))} />
+                    <input type="number" className="w-full border-2 border-emerald-100 p-4 rounded-2xl text-2xl font-black text-emerald-600 bg-emerald-50/20 focus:ring-4 focus:ring-emerald-500/10 outline-none" min="0" step="0.01" value={cashPayment || 0} onChange={(e) => setCashPayment(Number(e.target.value) || 0)} />
                 </div>
                 
                 <div className="grid grid-cols-1 gap-3 pt-6">
-                    <button onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-600 transition-all shadow-xl active:scale-95 disabled:opacity-30"><Printer className="w-5 h-5" /> حفظ وطباعة</button>
-                    <button onClick={() => handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-white border-2 border-slate-100 text-slate-400 py-4 rounded-2xl font-black hover:text-slate-800 hover:border-slate-800 transition-all active:scale-95 disabled:opacity-30">حفظ فقط</button>
+                    <button onClick={() => handleCheckout(true)} disabled={isSubmitting || cart.length === 0} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-blue-600 transition-all shadow-xl active:scale-95 disabled:opacity-30">
+                        {isSubmitting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Printer className="w-5 h-5" />}
+                        حفظ وطباعة
+                    </button>
+                    <button onClick={() => handleCheckout(false)} disabled={isSubmitting || cart.length === 0} className="w-full bg-white border-2 border-slate-100 text-slate-400 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:text-slate-800 hover:border-slate-800 transition-all active:scale-95 disabled:opacity-30">
+                        {isSubmitting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                        حفظ فقط
+                    </button>
                 </div>
             </div>
         </div>
